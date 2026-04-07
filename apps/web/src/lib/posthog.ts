@@ -3,6 +3,10 @@ import posthog from 'posthog-js';
 export function initPostHog(): void {
   if (typeof window === 'undefined') return;
   if (!process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN) return;
+  // Some WebView environments (Electron, Capacitor, in-app browsers) don't
+  // support the Blob constructor. PostHog uses Blob internally — skip init
+  // rather than crash the app in those environments.
+  if (typeof Blob === 'undefined' || typeof Blob !== 'function') return;
 
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN, {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
