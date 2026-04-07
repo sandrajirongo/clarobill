@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { ApiErrorResponse } from '@medscan/shared';
+import type { ApiErrorResponse } from '@clarobill/shared';
 
 // POST /api/bills/[billId]/analyze
 // Forwards the analysis request to the FastAPI engine.

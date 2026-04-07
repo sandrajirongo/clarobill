@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { Bill, LineItem, AnalysisResult, BillingError } from '@medscan/shared';
+import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
 
 interface BillResultsViewProps {
   bill: Bill;

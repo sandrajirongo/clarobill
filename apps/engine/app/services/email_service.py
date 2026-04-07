@@ -58,12 +58,12 @@ class EmailService:
         message = Mail(
             from_email=self._from_email,
             to_emails=to_email,
-            subject=f"Your MedScan Report — {bill_file_name}",
+            subject=f"Your Clarobill Report — {bill_file_name}",
             html_content=self._email_body_html(bill_file_name),
         )
 
         message.attachment = [
-            self._make_attachment(report_pdf, "medscan-report.pdf", "medscan-report"),
+            self._make_attachment(report_pdf, "clarobill-report.pdf", "clarobill-report"),
             self._make_attachment(dispute_letter_pdf, "dispute-letter.pdf", "dispute-letter"),
         ]
 
@@ -85,12 +85,12 @@ class EmailService:
         return f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1a2e">
           <div style="background:#1a1a2e;padding:24px 32px;margin-bottom:32px">
-            <h1 style="color:white;font-size:20px;margin:0">MedScan</h1>
+            <h1 style="color:white;font-size:20px;margin:0">Clarobill</h1>
           </div>
           <p>Your medical bill analysis is ready.</p>
           <p>We've attached two documents to this email:</p>
           <ul>
-            <li><strong>MedScan Report</strong> — a full breakdown of findings and potential
+            <li><strong>Clarobill Report</strong> — a full breakdown of findings and potential
               overcharges on <em>{bill_file_name}</em>.</li>
             <li><strong>Dispute Letter</strong> — a ready-to-send letter you can submit to
               your provider. Fill in your name, date of birth, and today's date before sending.</li>
@@ -98,6 +98,6 @@ class EmailService:
           <p>If you have questions, reply to this email.</p>
           <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
           <p style="font-size:11px;color:#999">
-            MedScan is an informational tool. This report does not constitute legal or medical advice.
+            Clarobill is an informational tool. This report does not constitute legal or medical advice.
           </p>
         </div>"""

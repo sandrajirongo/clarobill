@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { validateUploadedFile } from '@/lib/utils/file-validation';
-import type { MedScanError } from '@medscan/shared';
+import type { ClarobillError } from '@clarobill/shared';
 
 export type UploadState =
   | { status: 'idle' }
@@ -10,7 +10,7 @@ export type UploadState =
   | { status: 'uploading'; progress: number }
   | { status: 'analyzing' }
   | { status: 'complete'; billId: string }
-  | { status: 'error'; error: MedScanError };
+  | { status: 'error'; error: ClarobillError };
 
 export function useBillUpload() {
   const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle' });

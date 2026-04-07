@@ -106,7 +106,7 @@ def load_sample(year: int) -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Load CMS Medicare fee schedule into MedScan DB")
+    parser = argparse.ArgumentParser(description="Load CMS Medicare fee schedule into Clarobill DB")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", type=Path, help="Path to the fee schedule CSV file")
     group.add_argument("--sample", action="store_true", help="Load sample rates for dev/testing")

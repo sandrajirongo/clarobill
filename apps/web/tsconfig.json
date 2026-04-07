@@ -21,7 +21,7 @@
     "noImplicitOverride": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@medscan/shared": ["../../packages/shared/src/index.ts"]
+      "@clarobill/shared": ["../../packages/shared/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

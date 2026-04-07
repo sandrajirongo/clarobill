@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { ApiErrorResponse } from '@medscan/shared';
+import type { ApiErrorResponse } from '@clarobill/shared';
 
 // GET /api/bills/[billId]/download?type=report|dispute-letter
 // Generates a short-lived signed URL for private Supabase Storage objects.

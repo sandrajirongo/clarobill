@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
 import { stripe, REPORT_PRICE_CENTS } from '@/lib/stripe';
-import type { ApiErrorResponse } from '@medscan/shared';
+import type { ApiErrorResponse } from '@clarobill/shared';
 
 // POST /api/stripe/checkout
 // Creates a Stripe Checkout Session for purchasing a bill report.

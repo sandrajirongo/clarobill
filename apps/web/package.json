@@ -1,5 +1,5 @@
 {
-  "name": "@medscan/web",
+  "name": "@clarobill/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@medscan/shared": "*",
+    "@clarobill/shared": "*",
     "@sentry/nextjs": "8.55.0",
     "@stripe/stripe-js": "4.9.0",
     "@supabase/ssr": "0.5.2",

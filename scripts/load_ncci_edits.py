@@ -107,7 +107,7 @@ def load_sample() -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Load CMS NCCI edit pairs into MedScan DB")
+    parser = argparse.ArgumentParser(description="Load CMS NCCI edit pairs into Clarobill DB")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", type=Path, help="Path to the CMS NCCI CSV file")
     group.add_argument("--sample", action="store_true", help="Load sample data for dev/testing")

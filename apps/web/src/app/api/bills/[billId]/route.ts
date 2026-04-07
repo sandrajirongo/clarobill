@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { Bill, ApiErrorResponse } from '@medscan/shared';
+import type { Bill, ApiErrorResponse } from '@clarobill/shared';
 
 // GET /api/bills/[billId]
 // Returns the bill status — used by the polling loop in useBillUpload.

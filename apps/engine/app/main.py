@@ -1,4 +1,4 @@
-"""FastAPI application entry point for the MedScan engine service."""
+"""FastAPI application entry point for the Clarobill engine service."""
 
 import logging
 

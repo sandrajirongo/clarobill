@@ -83,7 +83,7 @@ export interface BillAnalysisResponse {
 
 // ─── Error Types ─────────────────────────────────────────────────────────────
 
-export type MedScanError =
+export type ClarobillError =
   | { code: 'OCR_FAILED'; detail: string; billId: string }
   | { code: 'INVALID_CPT_CODE'; detail: string; cptCode: string }
   | { code: 'PAYMENT_FAILED'; detail: string; stripeError: string }
@@ -94,6 +94,6 @@ export type MedScanError =
   | { code: 'INVALID_FILE_TYPE'; detail: string; receivedType: string };
 
 export interface ApiErrorResponse {
-  error: MedScanError;
+  error: ClarobillError;
   requestId: string;
 }

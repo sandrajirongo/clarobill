@@ -12,7 +12,7 @@ from app.services.email_service import EmailService
 @pytest.fixture()
 def service() -> EmailService:
     """Email service in test mode — no SendGrid calls."""
-    return EmailService(api_key="SG.test", from_email="test@medscan.com", test_mode=True)
+    return EmailService(api_key="SG.test", from_email="test@clarobill.com", test_mode=True)
 
 
 class TestSendReportEmail:

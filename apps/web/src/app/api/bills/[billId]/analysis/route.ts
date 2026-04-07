@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { BillAnalysisResponse, ApiErrorResponse } from '@medscan/shared';
+import type { BillAnalysisResponse, ApiErrorResponse } from '@clarobill/shared';
 
 // GET /api/bills/[billId]/analysis
 // Returns the full bill analysis — bill, line items, and analysis result.

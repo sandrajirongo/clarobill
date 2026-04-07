@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { BillAnalysisResponse } from '@medscan/shared';
+import type { BillAnalysisResponse } from '@clarobill/shared';
 import { BillResultsView } from '@/components/bill-results-view';
 
 interface PageProps {

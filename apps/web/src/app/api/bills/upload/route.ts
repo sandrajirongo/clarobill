@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { BillUploadResponse, ApiErrorResponse } from '@medscan/shared';
+import type { BillUploadResponse, ApiErrorResponse } from '@clarobill/shared';
 
 const STORAGE_BUCKET = 'bills';
 
