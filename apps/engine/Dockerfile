@@ -14,11 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Install Python dependencies before copying source — maximises layer cache hits
-COPY pyproject.toml .
+COPY apps/engine/pyproject.toml .
 RUN pip install --no-cache-dir -e ".[dev]" || pip install --no-cache-dir -e .
 
 # Copy application source
-COPY . .
+COPY apps/engine/ .
 
 EXPOSE 8000
 
