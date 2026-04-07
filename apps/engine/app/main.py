@@ -38,7 +38,7 @@ if settings.sentry_dsn:
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
 app = FastAPI(
-    title="MedScan Engine",
+    title="Clarobill Engine",
     description="AI-powered medical bill analysis service",
     version="0.0.1",
     # Disable docs in production — internal service, not public API
