@@ -4,6 +4,8 @@
   background: var(--cream);
   display: flex;
   flex-direction: column;
+  font-family: var(--fb);
+  color: var(--txt);
 }
 
 /* ─── Nav ────────────────────────────────────────────────────────────────── */
