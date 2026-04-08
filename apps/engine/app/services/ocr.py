@@ -76,21 +76,33 @@ class OcrService:
         return text
 
     async def _extract_from_pdf(self, file_bytes: bytes) -> str:
-        # PDF processing uses the async batch annotate API
-        # For now, treat first-page as image (Phase 2 will handle multi-page PDFs)
+        # Vision's annotate_image API only accepts images, not PDFs.
+        # PDFs must use batch_annotate_files with InputConfig(mime_type="application/pdf").
+        input_config = vision.InputConfig(content=file_bytes, mime_type="application/pdf")
         feature = vision.Feature(type_=vision.Feature.Type.DOCUMENT_TEXT_DETECTION)
-        image = vision.Image(content=file_bytes)
-        request = vision.AnnotateImageRequest(image=image, features=[feature])
-        response = self._client.annotate_image(request)
+        file_request = vision.AnnotateFileRequest(
+            input_config=input_config,
+            features=[feature],
+        )
+        response = self._client.batch_annotate_files(requests=[file_request])
 
-        if response.error.message:
-            raise OcrExtractionError(f"Google Vision API error: {response.error.message}")
+        if not response.responses:
+            raise OcrExtractionError("No response from Vision API for PDF.")
 
-        text = response.full_text_annotation.text
+        # Concatenate text from all pages
+        pages_text: list[str] = []
+        for file_response in response.responses:
+            for page_response in file_response.responses:
+                if page_response.error.message:
+                    raise OcrExtractionError(f"Google Vision API error: {page_response.error.message}")
+                if page_response.full_text_annotation.text:
+                    pages_text.append(page_response.full_text_annotation.text)
+
+        text = "\n".join(pages_text)
         if not text:
             raise OcrExtractionError("No text detected in the uploaded PDF.")
 
-        logger.info("OCR extracted %d characters from PDF", len(text))
+        logger.info("OCR extracted %d characters from PDF (%d pages)", len(text), len(pages_text))
         return text
 
     @staticmethod
