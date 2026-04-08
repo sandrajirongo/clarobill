@@ -72,7 +72,10 @@ export default function LandingPage(): JSX.Element {
           </span>
         </div>
         <div className={s.carouselTrackWrap}>
-          <div className={s.carouselTrack}>
+          <div
+            className={s.carouselTrack}
+            style={{ animation: 'scroll-logos 22s linear infinite' }}
+          >
             {/* Duplicate set for seamless infinite loop */}
             {[...LOGOS, ...LOGOS].map((name, i) => (
               <span key={i} className={s.clogo}>{name}</span>

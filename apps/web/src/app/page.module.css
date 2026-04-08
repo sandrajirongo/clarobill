@@ -41,7 +41,7 @@
   background: var(--cream);
   padding: clamp(3rem, 8vw, 5.5rem) clamp(1.25rem, 5vw, 2.75rem) clamp(2.5rem, 6vw, 4rem);
 }
-.heroInner { max-width: 600px; }
+.heroInner { max-width: 600px; margin: 0 auto; text-align: center; }
 .heroEyebrow {
   display: inline-block;
   background: var(--cream2);
@@ -69,14 +69,14 @@
   font-size: clamp(.92rem, 2vw, 1.02rem);
   color: var(--txt2);
   max-width: 480px;
-  margin-bottom: 2rem;
+  margin: 0 auto 2rem;
   line-height: 1.7;
   font-weight: 400;
 }
 .heroCtaRow {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: .7rem;
 }
 .btnSageLg {
@@ -160,7 +160,7 @@
   display: flex;
   gap: 2.5rem;
   width: max-content;
-  animation: scroll-logos 22s linear infinite;
+  /* animation applied via inline style in page.tsx — avoids CSS Modules keyframe name hashing */
 }
 .carouselTrack:hover { animation-play-state: paused; }
 .clogo {
@@ -169,7 +169,7 @@
   color: rgba(255, 255, 255, .65);
   letter-spacing: .02em;
   white-space: nowrap;
-  padding: .2rem 0;
+  padding: .2rem 1.25rem;
 }
 
 /* ─── STATS + REVIEWS ───────────────────────────────────────────────────── */
