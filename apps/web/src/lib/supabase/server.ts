@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 // Server-side Supabase client — use in Server Components, Server Actions,
@@ -26,6 +27,15 @@ export async function createSupabaseServerClient() {
         },
       },
     }
+  );
+}
+
+// Service role client — bypasses RLS for admin operations (storage signed URLs, etc.)
+// Never expose this client to the browser. Server-side only.
+export function createSupabaseServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 }
 

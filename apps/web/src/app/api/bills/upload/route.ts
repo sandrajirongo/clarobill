@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseServiceClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { BillUploadResponse, ApiErrorResponse } from '@clarobill/shared';
 
 const STORAGE_BUCKET = 'bills';
@@ -93,8 +93,10 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
     .update({ file_path: filePath })
     .eq('id', bill.id);
 
-  // Create a signed upload URL (10 minute expiry)
-  const { data: signedUpload, error: signedError } = await supabase
+  // Create a signed upload URL using the service role client —
+  // the anon key lacks permission to create signed upload URLs.
+  const serviceClient = createSupabaseServiceClient();
+  const { data: signedUpload, error: signedError } = await serviceClient
     .storage
     .from(STORAGE_BUCKET)
     .createSignedUploadUrl(filePath);
