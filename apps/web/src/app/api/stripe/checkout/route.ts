@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
+import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { stripe, REPORT_PRICE_CENTS } from '@/lib/stripe';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
+const REFERRAL_DISCOUNT_CENTS = 500; // $5.00
+
 // POST /api/stripe/checkout
 // Creates a Stripe Checkout Session for purchasing a bill report.
-// Returns the session URL which the client redirects to.
+// Applies a $5 referral discount if the user signed up via a referral link.
 export async function POST(
   request: Request
 ): Promise<NextResponse<{ checkoutUrl: string } | ApiErrorResponse>> {
@@ -19,7 +21,6 @@ export async function POST(
 
   const { billId } = await request.json() as { billId: string };
 
-  // Confirm the bill exists, belongs to this user, and analysis is complete
   const supabase = await createSupabaseServerClient();
   const { data: bill } = await supabase
     .from('bills')
@@ -33,6 +34,18 @@ export async function POST(
       { status: 400 }
     );
   }
+
+  // Check for a pending referral discount — one-time use per referred user
+  const service = createSupabaseServiceClient();
+  const { data: pendingReferral } = await service
+    .from('referrals')
+    .select('id, referrer_user_id')
+    .eq('referred_user_id', user.id)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  const discountCents = pendingReferral ? REFERRAL_DISCOUNT_CENTS : 0;
+  const finalAmountCents = Math.max(0, REPORT_PRICE_CENTS - discountCents);
 
   const origin = request.headers.get('origin') ?? 'http://localhost:3000';
 
@@ -50,7 +63,6 @@ export async function POST(
       { onConflict: 'stripe_session_id' }
     );
 
-    // Trigger report generation via the engine (same as the Stripe webhook does)
     const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
     const reportRes = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
       method: 'POST',
@@ -64,16 +76,20 @@ export async function POST(
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
 
+  const discountLabel = discountCents > 0
+    ? ` (includes $${(discountCents / 100).toFixed(2)} referral discount)`
+    : '';
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     line_items: [
       {
         price_data: {
           currency: 'usd',
-          unit_amount: REPORT_PRICE_CENTS,
+          unit_amount: finalAmountCents,
           product_data: {
             name: 'Clarobill Full Report',
-            description: `Detailed analysis and dispute letter for: ${bill.file_name}`,
+            description: `Detailed analysis and dispute letter for: ${bill.file_name}${discountLabel}`,
           },
         },
         quantity: 1,
@@ -82,6 +98,8 @@ export async function POST(
     metadata: {
       bill_id: billId,
       user_id: user.id,
+      referral_id: pendingReferral?.id ?? '',
+      referrer_user_id: pendingReferral?.referrer_user_id ?? '',
     },
     customer_email: user.email,
     success_url: `${origin}/dashboard/bills/${billId}?payment=success`,
@@ -95,12 +113,11 @@ export async function POST(
     );
   }
 
-  // Record the pending payment
   await supabase.from('payments').insert({
     user_id: user.id,
     bill_id: billId,
     stripe_session_id: session.id,
-    amount_cents: REPORT_PRICE_CENTS,
+    amount_cents: finalAmountCents,
     currency: 'usd',
     status: 'pending',
   });

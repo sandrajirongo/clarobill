@@ -2,7 +2,7 @@ import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 
 // Stripe requires the raw body for signature verification — don't parse as JSON first
 export const runtime = 'nodejs';
@@ -85,4 +85,30 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   } else {
     console.info('[webhook] Report generated and emailed for bill %s', billId);
   }
+
+  // Convert referral discount and credit the referrer
+  const referralId = session.metadata?.['referral_id'];
+  const referrerUserId = session.metadata?.['referrer_user_id'];
+  if (referralId && referrerUserId) {
+    await settleReferral(referralId, referrerUserId);
+  }
+}
+
+const REFERRAL_REWARD_CENTS = 500; // $5 credit for the referrer
+
+async function settleReferral(referralId: string, referrerUserId: string): Promise<void> {
+  const service = createSupabaseServiceClient();
+
+  // Mark the referral as converted
+  await service
+    .from('referrals')
+    .update({ status: 'converted' })
+    .eq('id', referralId)
+    .eq('status', 'pending'); // idempotent — only update if still pending
+
+  // Add $5 credit to the referrer's balance
+  await service.rpc('increment_referral_credits', {
+    p_user_id: referrerUserId,
+    p_amount: REFERRAL_REWARD_CENTS,
+  });
 }

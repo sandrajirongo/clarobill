@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 
 // Handles two Supabase auth redirect flows:
 //
 // 1. PKCE magic link — Supabase sends ?code=... and we exchange it for a session.
 // 2. Email confirmation — Supabase sends ?token_hash=...&type=signup (or recovery,
-//    invite, etc.) and we verify the OTP directly. This flow is used when a new user
-//    confirms their account via the "confirm your email" link.
+//    invite, etc.) and we verify the OTP directly.
 //
-// Both flows land here because emailRedirectTo is set to /auth/callback in signInWithOtp.
+// After either flow succeeds, we apply any pending referral code from the cookie.
 export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
@@ -19,18 +19,58 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   const supabase = await createSupabaseServerClient();
 
+  let authSuccess = false;
+
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${redirectTo}`);
-    }
+    if (!error) authSuccess = true;
   } else if (tokenHash && type) {
-    // Email confirmation / OTP verification flow
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
-    if (!error) {
-      return NextResponse.redirect(`${origin}${redirectTo}`);
-    }
+    if (!error) authSuccess = true;
   }
 
-  return NextResponse.redirect(`${origin}/auth/sign-in?error=auth_failed`);
+  if (!authSuccess) {
+    return NextResponse.redirect(`${origin}/auth/sign-in?error=auth_failed`);
+  }
+
+  // Apply referral code if one was set before sign-in
+  const cookieStore = await cookies();
+  const referralCode = cookieStore.get('referral_code')?.value;
+  if (referralCode) {
+    await applyReferral(supabase, referralCode);
+    // Clear the referral cookie — it's single-use
+    cookieStore.delete('referral_code');
+  }
+
+  const response = NextResponse.redirect(`${origin}${redirectTo}`);
+  return response;
+}
+
+async function applyReferral(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  code: string,
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  // Look up who owns this referral code
+  const service = createSupabaseServiceClient();
+  const { data: referralCode } = await service
+    .from('referral_codes')
+    .select('user_id')
+    .eq('code', code)
+    .maybeSingle();
+
+  // Don't let users refer themselves
+  if (!referralCode || referralCode.user_id === user.id) return;
+
+  // Create the referral record — unique on referred_user_id so this is idempotent
+  await service.from('referrals').upsert(
+    {
+      referrer_user_id: referralCode.user_id,
+      referred_user_id: user.id,
+      status: 'pending',
+    },
+    { onConflict: 'referred_user_id', ignoreDuplicates: true }
+  );
 }
