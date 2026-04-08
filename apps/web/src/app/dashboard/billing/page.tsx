@@ -73,21 +73,21 @@ export default async function BillingPage(): Promise<JSX.Element> {
 }
 
 function StatusBadge({ status }: { status: string }): JSX.Element {
-  const cls: Record<string, string> = {
-    complete: s.badgeReady,
-    pending:  s.badgePending,
-    failed:   s.badgeFailed,
-    refunded: s.badgePending,
-  };
-  const labels: Record<string, string> = {
-    complete: 'Paid',
-    pending:  'Pending',
-    failed:   'Failed',
-    refunded: 'Refunded',
-  };
+  const badgeCls =
+    status === 'complete' ? s.badgeReady :
+    status === 'failed'   ? s.badgeFailed :
+    s.badgePending;
+
+  const label =
+    status === 'complete' ? 'Paid' :
+    status === 'pending'  ? 'Pending' :
+    status === 'failed'   ? 'Failed' :
+    status === 'refunded' ? 'Refunded' :
+    status;
+
   return (
-    <span className={`${s.badge} ${cls[status] ?? s.badgePending}`}>
-      {labels[status] ?? status}
+    <span className={`${s.badge} ${badgeCls}`}>
+      {label}
     </span>
   );
 }
