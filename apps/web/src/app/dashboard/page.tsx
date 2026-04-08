@@ -3,30 +3,28 @@ import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase
 import { BillUploader } from '@/components/bill-uploader';
 import { SavingsTracker } from '@/components/savings-tracker';
 import { ReferralCard } from '@/components/referral-card';
+import s from './dashboard.module.css';
 
-const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  pending:        { label: 'Pending',     className: 'bg-slate-100 text-slate-500' },
-  ocr_processing: { label: 'Reading…',   className: 'bg-blue-50 text-blue-600' },
-  analyzing:      { label: 'Analyzing…', className: 'bg-blue-50 text-blue-600' },
-  complete:       { label: 'Ready',       className: 'bg-green-50 text-green-700' },
-  failed:         { label: 'Failed',      className: 'bg-red-50 text-red-600' },
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  pending:        { label: 'Pending',    cls: 'badgePending' },
+  ocr_processing: { label: 'Reading…',  cls: 'badgeReading' },
+  analyzing:      { label: 'Analyzing…',cls: 'badgeReading' },
+  complete:       { label: 'Ready',      cls: 'badgeReady'   },
+  failed:         { label: 'Failed',     cls: 'badgeFailed'  },
 };
 
 export default async function DashboardPage(): Promise<JSX.Element> {
   const user = await getAuthenticatedUser();
   const supabase = await createSupabaseServerClient();
 
-  // Fetch bills, analyses, and referral data in parallel
   const [billsResult, analysesResult, referralResult] = await Promise.all([
     supabase
       .from('bills')
       .select('id, file_name, status, created_at')
       .order('created_at', { ascending: false }),
-
     supabase
       .from('analysis_results')
       .select('total_potential_savings, total_charges, errors'),
-
     supabase
       .from('referral_codes')
       .select('code, credits_cents')
@@ -38,18 +36,10 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   const analyses = analysesResult.data ?? [];
   const referralCode = referralResult.data;
 
-  // Aggregate savings stats
-  const totalSavings = analyses.reduce(
-    (sum, a) => sum + Number(a.total_potential_savings), 0
-  );
-  const totalErrors = analyses.reduce(
-    (sum, a) => sum + ((a.errors as unknown[]).length), 0
-  );
-  const totalChargesReviewed = analyses.reduce(
-    (sum, a) => sum + Number(a.total_charges), 0
-  );
+  const totalSavings = analyses.reduce((sum, a) => sum + Number(a.total_potential_savings), 0);
+  const totalErrors  = analyses.reduce((sum, a) => sum + ((a.errors as unknown[]).length), 0);
+  const totalChargesReviewed = analyses.reduce((sum, a) => sum + Number(a.total_charges), 0);
 
-  // Completed referrals for this user
   const { data: referrals } = await supabase
     .from('referrals')
     .select('status')
@@ -57,14 +47,9 @@ export default async function DashboardPage(): Promise<JSX.Element> {
 
   const convertedCount = (referrals ?? []).filter((r) => r.status === 'converted').length;
 
-  const hasBills = bills.length > 0;
-  const hasAnalyses = analyses.length > 0;
-
   return (
-    <main className="max-w-3xl mx-auto px-6 py-8 space-y-10">
-
-      {/* Savings tracker — only shown when there is something to show */}
-      {hasAnalyses && (
+    <main className={s.page}>
+      {analyses.length > 0 && (
         <SavingsTracker
           totalSavings={totalSavings}
           totalErrors={totalErrors}
@@ -73,64 +58,44 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         />
       )}
 
-      {/* Upload */}
       <section>
-        <div className="mb-4">
-          <h1 className="text-xl font-semibold text-slate-900">
-            {hasBills ? 'Analyze a New Bill' : 'Your Bills'}
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Upload a medical bill, EOB, or superbill — PDF, JPEG, or PNG
-          </p>
+        <h1 className={s.pageTitle}>{bills.length > 0 ? 'Analyze a New Bill' : 'Your Bills'}</h1>
+        <p className={s.pageSub}>Upload a medical bill, EOB, or superbill — PDF, JPEG, or PNG</p>
+        <div style={{ marginTop: '1.25rem' }}>
+          <BillUploader />
         </div>
-        <BillUploader />
       </section>
 
-      {/* Previous bills */}
-      {hasBills && (
+      {bills.length > 0 && (
         <section>
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">
-            Previous Uploads
-          </h2>
-          <ul className="space-y-2">
+          <p className={s.sectionLabel}>Previous Uploads</p>
+          <ul className={s.billList}>
             {bills.map((bill) => {
-              const status = STATUS_LABELS[bill.status];
+              const st = STATUS_BADGE[bill.status];
               const isComplete = bill.status === 'complete';
-
               const uploadedDate = new Date(bill.created_at).toLocaleDateString('en-US', {
                 month: 'short', day: 'numeric', year: 'numeric',
               });
-
-              // delete_after is computed from created_at — not stored in DB
-              const deleteAfterDate = new Date(
+              const deleteAfter = new Date(
                 new Date(bill.created_at).getTime() + 60 * 24 * 60 * 60 * 1000
-              );
-              const deleteAfter = deleteAfterDate.toLocaleDateString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric',
-              });
+              ).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
               return (
-                <li
-                  key={bill.id}
-                  className="bg-white rounded-xl border border-slate-100 shadow-sm px-5 py-4 flex items-center justify-between gap-4"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{bill.file_name}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                <li key={bill.id} className={s.billItem}>
+                  <div style={{ minWidth: 0 }}>
+                    <p className={s.billName}>{bill.file_name}</p>
+                    <p className={s.billMeta}>
                       Uploaded {uploadedDate}
                       {' · '}
-                      <span className="text-amber-500">File deleted {deleteAfter}</span>
+                      <span className={s.billRetention}>Deleted {deleteAfter}</span>
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${status?.className ?? 'bg-slate-100 text-slate-500'}`}>
-                      {status?.label ?? bill.status}
+                  <div className={s.billActions}>
+                    <span className={`${s.badge} ${s[st?.cls ?? 'badgePending']}`}>
+                      {st?.label ?? bill.status}
                     </span>
                     {isComplete && (
-                      <Link
-                        href={`/dashboard/bills/${bill.id}`}
-                        className="text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors"
-                      >
+                      <Link href={`/dashboard/bills/${bill.id}`} className={s.viewLink}>
                         View →
                       </Link>
                     )}
@@ -142,7 +107,6 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         </section>
       )}
 
-      {/* Referral card — shown once user has a referral code (after migration runs) */}
       {referralCode && (
         <ReferralCard
           referralCode={referralCode.code}
@@ -150,7 +114,6 @@ export default async function DashboardPage(): Promise<JSX.Element> {
           creditsEarned={referralCode.credits_cents}
         />
       )}
-
     </main>
   );
 }

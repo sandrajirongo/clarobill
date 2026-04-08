@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import s from '../dashboard.module.css';
 
 export default function ProfilePage(): JSX.Element {
   const [email, setEmail] = useState('');
@@ -44,81 +45,73 @@ export default function ProfilePage(): JSX.Element {
   const initial = email.charAt(0).toUpperCase();
 
   return (
-    <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Profile</h1>
+    <main className={s.page}>
+      <div>
+        <h1 className={s.pageTitle}>Profile</h1>
+        <p className={s.pageSub}>Manage your account and privacy settings</p>
+      </div>
 
-      {/* Account card */}
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Account</h2>
-        </div>
-        <div className="px-6 py-6 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-brand-600 text-white text-xl font-bold flex items-center justify-center shrink-0">
-            {initial || '?'}
-          </div>
+      {/* Account */}
+      <div className={s.card}>
+        <div className={s.cardHeader}><p className={s.cardTitle}>Account</p></div>
+        <div className={s.cardBody} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className={s.profileAvatar}>{initial || '?'}</div>
           <div>
-            <p className="text-base font-semibold text-slate-900">{email || '—'}</p>
-            {memberSince && (
-              <p className="text-sm text-slate-400 mt-0.5">Member since {memberSince}</p>
-            )}
+            <p className={s.profileEmail}>{email || '—'}</p>
+            {memberSince && <p className={s.profileSince}>Member since {memberSince}</p>}
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Data & privacy */}
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Data & Privacy</h2>
-        </div>
-        <div className="px-6 py-5 space-y-3">
+      {/* Data & Privacy */}
+      <div className={s.card}>
+        <div className={s.cardHeader}><p className={s.cardTitle}>Data & Privacy</p></div>
+        <div className={s.cardBody}>
           <InfoRow label="Data storage" value="AES-256 encryption at rest, TLS 1.3 in transit" />
           <InfoRow label="Bill file retention" value="Raw files deleted automatically after 60 days" />
           <InfoRow label="Analysis results" value="Kept indefinitely — accessible in Reports" />
           <InfoRow label="Data sharing" value="Never sold or shared with third parties" />
         </div>
-      </section>
+      </div>
 
       {/* Danger zone */}
-      <section className="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-red-100 bg-red-50">
-          <h2 className="text-xs font-semibold text-red-600 uppercase tracking-wide">Danger Zone</h2>
-        </div>
-        <div className="px-6 py-6">
-          <div className="flex items-start justify-between gap-6">
+      <div className={s.card} style={{ borderColor: '#FECACA' }}>
+        <div className={s.dangerCardHeader}><p className={s.dangerCardTitle}>Danger Zone</p></div>
+        <div className={s.cardBody}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem' }}>
             <div>
-              <p className="text-sm font-medium text-slate-900">Delete my account</p>
-              <p className="text-sm text-slate-500 mt-1">
+              <p style={{ fontSize: '.875rem', fontWeight: 600, color: 'var(--txt)', marginBottom: '.3rem' }}>
+                Delete my account
+              </p>
+              <p style={{ fontSize: '.84rem', color: 'var(--txt2)', lineHeight: 1.6 }}>
                 Permanently removes your account, all uploaded bills, and analysis results. This cannot be undone.
               </p>
             </div>
             {!showDeleteConfirm && (
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="shrink-0 text-sm font-semibold text-red-600 border border-red-200 rounded-lg px-4 py-2 hover:bg-red-50 transition-colors"
-              >
+              <button onClick={() => setShowDeleteConfirm(true)} className={s.dangerBtn}>
                 Delete account
               </button>
             )}
           </div>
 
           {showDeleteConfirm && (
-            <div className="mt-4 p-4 bg-red-50 rounded-xl border border-red-200">
-              <p className="text-sm font-medium text-red-800 mb-3">
+            <div className={s.dangerConfirm}>
+              <p className={s.dangerConfirmText}>
                 This will permanently delete all your bills, analyses, and reports. Are you sure?
               </p>
-              {deleteError && <p className="text-xs text-red-700 mb-2">{deleteError}</p>}
-              <div className="flex gap-2">
+              {deleteError && <p className={s.dangerErrorText}>{deleteError}</p>}
+              <div className={s.dangerActions}>
                 <button
                   onClick={() => { setShowDeleteConfirm(false); setDeleteError(null); }}
                   disabled={isDeleting}
-                  className="text-sm text-slate-600 border border-slate-200 bg-white rounded-lg px-4 py-2 hover:bg-slate-50 transition-colors"
+                  className={s.cancelBtn}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDeleteAccount}
                   disabled={isDeleting}
-                  className="text-sm font-semibold text-white bg-red-600 rounded-lg px-4 py-2 hover:bg-red-700 transition-colors disabled:opacity-50"
+                  className={s.confirmDeleteBtn}
                 >
                   {isDeleting ? 'Deleting…' : 'Yes, delete everything'}
                 </button>
@@ -126,16 +119,16 @@ export default function ProfilePage(): JSX.Element {
             </div>
           )}
         </div>
-      </section>
+      </div>
     </main>
   );
 }
 
 function InfoRow({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="flex justify-between gap-4 text-sm">
-      <span className="text-slate-500 shrink-0">{label}</span>
-      <span className="text-slate-700 text-right">{value}</span>
+    <div className={s.infoRow}>
+      <span className={s.infoLabel}>{label}</span>
+      <span className={s.infoValue}>{value}</span>
     </div>
   );
 }

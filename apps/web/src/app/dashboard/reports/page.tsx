@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import s from '../dashboard.module.css';
 
 export default async function ReportsPage(): Promise<JSX.Element> {
   const supabase = await createSupabaseServerClient();
 
-  // Load analysis results that have at least one generated document,
-  // joined with the bill for the file name and payment amount.
   const { data: results } = await supabase
     .from('analysis_results')
     .select(`
@@ -29,13 +28,22 @@ export default async function ReportsPage(): Promise<JSX.Element> {
   );
 
   return (
-    <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Reports & Dispute Letters</h1>
+    <main className={s.page}>
+      <div>
+        <h1 className={s.pageTitle}>Reports & Dispute Letters</h1>
+        <p className={s.pageSub}>Download your full analysis and ready-to-send dispute letter</p>
+      </div>
 
       {reportsWithDocs.length === 0 ? (
-        <EmptyState />
+        <div className={s.emptyState}>
+          <p className={s.emptyText}>
+            No reports generated yet.<br />
+            Reports and dispute letters appear here after you unlock a full analysis.
+          </p>
+          <Link href="/dashboard" className={s.emptyAction}>Analyze a bill</Link>
+        </div>
       ) : (
-        <ul className="space-y-3">
+        <ul style={{ display: 'flex', flexDirection: 'column', gap: '.75rem', listStyle: 'none', padding: 0, margin: 0 }}>
           {reportsWithDocs.map((result) => {
             const bill = result.bills as unknown as {
               id: string;
@@ -48,29 +56,25 @@ export default async function ReportsPage(): Promise<JSX.Element> {
             const amountPaid = payment
               ? payment.amount_cents === 0 ? 'Free' : `$${(payment.amount_cents / 100).toFixed(2)}`
               : 'Free';
-
             const generatedDate = new Date(result.created_at).toLocaleDateString('en-US', {
               month: 'short', day: 'numeric', year: 'numeric',
             });
 
             return (
-              <li key={result.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-6 py-5">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/dashboard/bills/${result.bill_id}`}
-                      className="text-sm font-semibold text-slate-900 hover:text-brand-600 transition-colors truncate block"
-                    >
+              <li key={result.id} className={s.reportItem}>
+                <div className={s.reportTop}>
+                  <div style={{ minWidth: 0 }}>
+                    <Link href={`/dashboard/bills/${result.bill_id}`} className={s.reportName}>
                       {fileName}
                     </Link>
-                    <p className="text-xs text-slate-400 mt-0.5">{generatedDate} · {amountPaid}</p>
+                    <p className={s.reportMeta}>{generatedDate} · {amountPaid}</p>
                     {Number(result.total_potential_savings) > 0 && (
-                      <p className="text-xs text-green-700 font-medium mt-1">
+                      <p className={s.reportSavings}>
                         ${Number(result.total_potential_savings).toFixed(2)} potential savings identified
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className={s.reportBtns}>
                     {result.report_url && (
                       <DownloadButton billId={result.bill_id} type="report" label="Report" />
                     )}
@@ -88,8 +92,6 @@ export default async function ReportsPage(): Promise<JSX.Element> {
   );
 }
 
-// Server-rendered placeholder; actual download requires a signed URL fetched client-side.
-// We render an anchor that links to the download API route so it works without JS.
 function DownloadButton({
   billId,
   type,
@@ -104,26 +106,9 @@ function DownloadButton({
       href={`/api/bills/${billId}/download?type=${type}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-xs font-semibold text-brand-600 border border-brand-600/20 bg-brand-50 rounded-lg px-3 py-2 hover:bg-brand-100 transition-colors"
+      className={s.dlBtn}
     >
       ↓ {label}
     </a>
-  );
-}
-
-function EmptyState(): JSX.Element {
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm px-6 py-16 text-center">
-      <p className="text-slate-400 text-sm">No reports generated yet.</p>
-      <p className="text-slate-400 text-sm mt-1">
-        Reports and dispute letters appear here after you unlock a full analysis.
-      </p>
-      <Link
-        href="/dashboard"
-        className="inline-block mt-4 bg-brand-600 text-white text-sm font-semibold rounded-lg px-5 py-2.5 hover:bg-brand-700 transition-colors"
-      >
-        Analyze a bill
-      </Link>
-    </div>
   );
 }
