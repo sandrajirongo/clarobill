@@ -86,8 +86,26 @@ def load_from_file(path: Path, year: int) -> list[dict]:
                 "facility_rate": facility_rate,
                 "non_facility_rate": non_facility_rate,
                 "year": year,
+                "_modifier": row.get("modifier", "").strip(),
             })
-    return rows
+
+    # Deduplicate by (cpt_code, locality_code, year) — the DB unique constraint.
+    # Prefer the base code row (empty modifier) over modifier variants since we
+    # want the standard rate for outlier detection, not a modified rate.
+    seen: dict[tuple, dict] = {}
+    for row in rows:
+        key = (row["cpt_code"], row["locality_code"], row["year"])
+        existing = seen.get(key)
+        if existing is None or (existing["_modifier"] != "" and row["_modifier"] == ""):
+            seen[key] = row
+
+    deduped = []
+    for row in seen.values():
+        row.pop("_modifier")
+        deduped.append(row)
+
+    print(f"  Deduplicated {len(rows)} rows → {len(deduped)} unique codes.")
+    return deduped
 
 
 def load_sample(year: int) -> list[dict]:
