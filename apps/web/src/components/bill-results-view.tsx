@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
+import s from './bill-results-view.module.css';
 
 interface BillResultsViewProps {
   bill: Bill;
@@ -12,18 +13,6 @@ interface BillResultsViewProps {
   hasPaid: boolean;
   paymentStatus: string | null;
 }
-
-const SEVERITY_STYLES: Record<string, string> = {
-  critical: 'bg-red-50 border-red-200 text-red-800',
-  warning: 'bg-amber-50 border-amber-200 text-amber-800',
-  info: 'bg-blue-50 border-blue-200 text-blue-800',
-};
-
-const SEVERITY_BADGE: Record<string, string> = {
-  critical: 'bg-red-100 text-red-700',
-  warning: 'bg-amber-100 text-amber-700',
-  info: 'bg-blue-100 text-blue-700',
-};
 
 export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   const { bill, analysis, hiddenErrorCount, hasPaid, paymentStatus } = props;
@@ -51,27 +40,24 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   }
 
   return (
-    <main className="p-6 md:p-10">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <main className={s.main}>
+      <div className={s.inner}>
 
-        {/* Access-confirmed banner — only shown immediately after checkout */}
         {paymentStatus === 'success' && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-green-800 text-sm">
+          <div className={s.successBanner}>
             Access confirmed. Your full report and dispute letter are being prepared below.
           </div>
         )}
 
         {/* Header */}
         <div>
-          <Link href="/dashboard" className="text-sm text-teal-600 hover:text-teal-700 transition-colors mb-3 inline-block">
-            ← My Bills
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Bill Analysis</h1>
-          <p className="text-sm text-gray-500 mt-1">{bill.fileName}</p>
+          <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
+          <h1 className={s.pageTitle}>Bill Analysis</h1>
+          <p className={s.fileName}>{bill.fileName}</p>
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className={s.summaryGrid}>
           <SummaryCard label="Total Charges" value={`$${analysis.totalCharges.toFixed(2)}`} />
           <SummaryCard
             label="Potential Savings"
@@ -85,23 +71,18 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         </div>
 
         {/* AI Summary */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Summary
-          </h2>
-          <p className="text-gray-700 leading-relaxed">{analysis.aiSummary}</p>
+        <div className={s.card}>
+          <p className={s.cardLabel}>Summary</p>
+          <p className={s.summaryText}>{analysis.aiSummary}</p>
         </div>
 
         {/* Findings */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-            Findings
-          </h2>
-
+        <div className={s.card}>
+          <p className={s.cardLabel}>Findings</p>
           {analysis.errors.length === 0 && hiddenErrorCount === 0 ? (
-            <p className="text-gray-500 text-sm">No billing errors were detected.</p>
+            <p className={s.emptyText}>No billing errors were detected.</p>
           ) : (
-            <div className="space-y-3">
+            <div className={s.errorList}>
               {analysis.errors.map((error, i) => (
                 <ErrorCard key={i} error={error} />
               ))}
@@ -112,35 +93,31 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
 
         {/* Paywall CTA */}
         {!hasPaid && (
-          <div className="bg-gray-900 text-white rounded-xl p-6 text-center space-y-4">
-            <h2 className="text-lg font-bold">Get the Full Report</h2>
-            <p className="text-gray-400 text-sm">
+          <div className={s.paywallCta}>
+            <h2 className={s.paywallCtaTitle}>Get the Full Report</h2>
+            <p className={s.paywallCtaSub}>
               Unlock all findings, a detailed PDF report, and a ready-to-send dispute letter.
             </p>
-            <p className="text-3xl font-bold">$9.99</p>
-            {checkoutError && (
-              <p className="text-red-400 text-sm">{checkoutError}</p>
-            )}
+            <p className={s.paywallCtaPrice}>$9.99</p>
+            {checkoutError && <p className={s.paywallError}>{checkoutError}</p>}
             <button
               onClick={handleGetFullReport}
               disabled={isStartingCheckout}
-              className="w-full bg-white text-gray-900 font-semibold py-3 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+              className={s.paywallBtn}
             >
-              {isStartingCheckout ? 'Redirecting...' : 'Get Full Report & Dispute Letter'}
+              {isStartingCheckout ? 'Redirecting…' : 'Get Full Report & Dispute Letter'}
             </button>
           </div>
         )}
 
         {/* Download links (post-payment) */}
         {hasPaid && (analysis.reportUrl || analysis.disputeLetterUrl) && (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-              Your Documents
-            </h2>
-            <p className="text-sm text-gray-500 mb-4">
+          <div className={s.card}>
+            <p className={s.cardLabel}>Your Documents</p>
+            <p className={s.summaryText} style={{ marginBottom: '1rem' }}>
               Download your full report and dispute letter below.
             </p>
-            <div className="flex gap-3">
+            <div className={s.downloadRow}>
               {analysis.reportUrl && (
                 <DownloadButton billId={bill.id} type="report" label="Download Report" />
               )}
@@ -156,29 +133,39 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   );
 }
 
-function SummaryCard({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }): JSX.Element {
+function SummaryCard({ label, value, highlight = false }: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}): JSX.Element {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
-      <div className={`text-xl font-bold ${highlight ? 'text-green-600' : 'text-gray-900'}`}>
-        {value}
-      </div>
-      <div className="text-xs text-gray-400 mt-1 uppercase tracking-wide">{label}</div>
+    <div className={s.summaryCard}>
+      <p className={`${s.summaryValue} ${highlight ? s.summaryValueHighlight : ''}`}>{value}</p>
+      <p className={s.summaryLabel}>{label}</p>
     </div>
   );
 }
 
 function ErrorCard({ error }: { error: BillingError }): JSX.Element {
+  const cardCls =
+    error.severity === 'critical' ? s.errorCardCritical :
+    error.severity === 'warning'  ? s.errorCardWarning :
+    s.errorCardInfo;
+
+  const badgeCls =
+    error.severity === 'critical' ? s.errorBadgeCritical :
+    error.severity === 'warning'  ? s.errorBadgeWarning :
+    s.errorBadgeInfo;
+
   return (
-    <div className={`border rounded-lg p-4 ${SEVERITY_STYLES[error.severity] ?? 'bg-gray-50 border-gray-200'}`}>
-      <div className="flex items-start gap-3">
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${SEVERITY_BADGE[error.severity] ?? 'bg-gray-100 text-gray-700'}`}>
-          {error.severity.toUpperCase()}
-        </span>
+    <div className={`${s.errorCard} ${cardCls}`}>
+      <div className={s.errorTop}>
+        <span className={`${s.errorBadge} ${badgeCls}`}>{error.severity.toUpperCase()}</span>
         <div>
-          <p className="text-sm font-medium">{error.code.replace(/_/g, ' ')}</p>
-          <p className="text-sm mt-1 opacity-80">{error.description}</p>
+          <p className={s.errorTitle}>{error.code.replace(/_/g, ' ')}</p>
+          <p className={s.errorDesc}>{error.description}</p>
           {error.estimatedOvercharge > 0 && (
-            <p className="text-sm font-semibold mt-2">
+            <p className={s.errorOvercharge}>
               Estimated overcharge: ${error.estimatedOvercharge.toFixed(2)}
             </p>
           )}
@@ -190,16 +177,20 @@ function ErrorCard({ error }: { error: BillingError }): JSX.Element {
 
 function PaywallCard({ count }: { count: number }): JSX.Element {
   return (
-    <div className="border border-dashed border-gray-300 rounded-lg p-4 text-center">
-      <p className="text-sm text-gray-500">
-        <span className="font-semibold text-gray-700">{count} more issue{count > 1 ? 's' : ''}</span>{' '}
+    <div className={s.paywallCard}>
+      <p className={s.paywallText}>
+        <span className={s.paywallCount}>{count} more issue{count > 1 ? 's' : ''}</span>{' '}
         hidden — unlock the full report to see all findings.
       </p>
     </div>
   );
 }
 
-function DownloadButton({ billId, type, label }: { billId: string; type: 'report' | 'dispute-letter'; label: string }): JSX.Element {
+function DownloadButton({ billId, type, label }: {
+  billId: string;
+  type: 'report' | 'dispute-letter';
+  label: string;
+}): JSX.Element {
   const [loading, setLoading] = useState(false);
 
   async function handleDownload(): Promise<void> {
@@ -215,12 +206,8 @@ function DownloadButton({ billId, type, label }: { billId: string; type: 'report
   }
 
   return (
-    <button
-      onClick={handleDownload}
-      disabled={loading}
-      className="flex-1 border border-gray-200 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-    >
-      {loading ? 'Generating link...' : label}
+    <button onClick={handleDownload} disabled={loading} className={s.downloadBtn}>
+      {loading ? 'Generating link…' : label}
     </button>
   );
 }
