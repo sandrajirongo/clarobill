@@ -1,14 +1,14 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
-import type { BillAnalysisResponse } from '@clarobill/shared';
 import { BillResultsView } from '@/components/bill-results-view';
+import type { BillingError } from '@clarobill/shared';
 
 interface PageProps {
   params: Promise<{ billId: string }>;
   searchParams: Promise<{ payment?: string }>;
 }
 
-// Server Component — fetches analysis and payment status server-side.
+// Server Component — queries Supabase directly (no HTTP self-call).
 // Only the teaser (first error) is passed to the client when the user hasn't paid.
 export default async function BillResultsPage({ params, searchParams }: PageProps): Promise<JSX.Element> {
   const user = await getAuthenticatedUser();
@@ -19,17 +19,28 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
 
   const supabase = await createSupabaseServerClient();
 
-  // Fetch full analysis (RLS enforces ownership)
-  const analysisRes = await fetch(
-    `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/bills/${billId}/analysis`,
-    { headers: { Cookie: '' }, cache: 'no-store' }
-  );
+  // Fetch bill — RLS enforces ownership
+  const { data: bill } = await supabase
+    .from('bills')
+    .select('id, user_id, file_name, file_path, file_size, mime_type, status, created_at, updated_at')
+    .eq('id', billId)
+    .single();
 
-  if (!analysisRes.ok) redirect('/dashboard');
+  if (!bill) redirect('/dashboard');
 
-  const data: BillAnalysisResponse = await analysisRes.json();
+  const { data: lineItems } = await supabase
+    .from('line_items')
+    .select('id, bill_id, cpt_code, description, service_date, quantity, unit_charge, total_charge, modifier, diagnosis_pointers')
+    .eq('bill_id', billId);
 
-  // Check if the user has a completed payment for this bill
+  const { data: analysis } = await supabase
+    .from('analysis_results')
+    .select('id, bill_id, errors, total_charges, estimated_fair_value, total_potential_savings, ai_summary, dispute_letter_url, report_url, created_at')
+    .eq('bill_id', billId)
+    .single();
+
+  if (!analysis) redirect('/dashboard');
+
   const { data: payment_record } = await supabase
     .from('payments')
     .select('status')
@@ -39,15 +50,47 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
 
   const hasPaid = payment_record !== null;
 
-  // Enforce the paywall at the data layer — only pass all errors if paid
-  const visibleErrors = hasPaid ? data.analysis.errors : data.analysis.errors.slice(0, 1);
-  const hiddenErrorCount = hasPaid ? 0 : Math.max(0, data.analysis.errors.length - 1);
+  const errors = analysis.errors as BillingError[];
+  const visibleErrors = hasPaid ? errors : errors.slice(0, 1);
+  const hiddenErrorCount = hasPaid ? 0 : Math.max(0, errors.length - 1);
 
   return (
     <BillResultsView
-      bill={data.bill}
-      lineItems={data.lineItems}
-      analysis={{ ...data.analysis, errors: visibleErrors }}
+      bill={{
+        id: bill.id,
+        userId: bill.user_id,
+        fileName: bill.file_name,
+        filePath: bill.file_path,
+        fileSize: bill.file_size,
+        mimeType: bill.mime_type,
+        status: bill.status,
+        createdAt: bill.created_at,
+        updatedAt: bill.updated_at,
+      }}
+      lineItems={(lineItems ?? []).map((item) => ({
+        id: item.id,
+        billId: item.bill_id,
+        cptCode: item.cpt_code,
+        description: item.description,
+        serviceDate: item.service_date,
+        quantity: item.quantity,
+        unitCharge: Number(item.unit_charge),
+        totalCharge: Number(item.total_charge),
+        modifier: item.modifier,
+        diagnosisPointers: item.diagnosis_pointers,
+      }))}
+      analysis={{
+        id: analysis.id,
+        billId: analysis.bill_id,
+        errors: visibleErrors,
+        totalCharges: Number(analysis.total_charges),
+        estimatedFairValue: Number(analysis.estimated_fair_value),
+        totalPotentialSavings: Number(analysis.total_potential_savings),
+        aiSummary: analysis.ai_summary,
+        disputeLetterUrl: analysis.dispute_letter_url,
+        reportUrl: analysis.report_url,
+        createdAt: analysis.created_at,
+      }}
       hiddenErrorCount={hiddenErrorCount}
       hasPaid={hasPaid}
       paymentStatus={payment ?? null}
