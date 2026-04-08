@@ -20,7 +20,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   const [billsResult, analysesResult, referralResult] = await Promise.all([
     supabase
       .from('bills')
-      .select('id, file_name, status, created_at, delete_after')
+      .select('id, file_name, status, created_at')
       .order('created_at', { ascending: false }),
 
     supabase
@@ -101,11 +101,13 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 month: 'short', day: 'numeric', year: 'numeric',
               });
 
-              const deleteAfter = bill.delete_after
-                ? new Date(bill.delete_after as string).toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', year: 'numeric',
-                  })
-                : null;
+              // delete_after is computed from created_at — not stored in DB
+              const deleteAfterDate = new Date(
+                new Date(bill.created_at).getTime() + 60 * 24 * 60 * 60 * 1000
+              );
+              const deleteAfter = deleteAfterDate.toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric',
+              });
 
               return (
                 <li
@@ -116,9 +118,8 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     <p className="text-sm font-medium text-slate-900 truncate">{bill.file_name}</p>
                     <p className="text-xs text-slate-400 mt-0.5">
                       Uploaded {uploadedDate}
-                      {deleteAfter && (
-                        <> · <span className="text-amber-500">File deleted {deleteAfter}</span></>
-                      )}
+                      {' · '}
+                      <span className="text-amber-500">File deleted {deleteAfter}</span>
                     </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
