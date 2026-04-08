@@ -2,26 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design tokens from clarobill-final.html ──────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --sage: #2D4A2A;
+  --sage-l: #3D6038;
+  --sage-dark: #1E3019;
+  --green-em: #4A8A30;
+  --cream: #F4F2EC;
+  --cream2: #ECEAE1;
+  --cream3: #E4E1D6;
+  --white: #FFFFFF;
+  --accent: #C8F060;
+  --accent-h: #B4DC48;
+  --step-hi: rgba(200, 240, 96, .18);
+  --txt: #1A1A14;
+  --txt2: #585850;
+  --txt3: #8A8A80;
+  --border: #DDDAD0;
+  --fd: var(--font-fraunces), Georgia, serif;
+  --fb: var(--font-syne), system-ui, sans-serif;
+  --r-full: 9999px;
+  --r-xl: 1.25rem;
+  --r-lg: .75rem;
+
+  /* Legacy — kept for Tailwind bg-background / text-foreground utilities */
+  --background: var(--cream);
+  --foreground: var(--txt);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Base ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
+
+html { scroll-behavior: smooth; }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--fb);
+  background: var(--cream);
+  color: var(--txt);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Carousel animation ────────────────────────────────────────────────── */
+@keyframes scroll-logos {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ─── Scroll reveal ─────────────────────────────────────────────────────── */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity .5s ease, transform .5s ease;
+}
+[data-reveal="visible"] {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+  .text-balance { text-wrap: balance; }
 }
