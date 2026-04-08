@@ -42,7 +42,7 @@ export function Logo({ size = 'md', variant = 'light' }: LogoProps): JSX.Element
       </div>
       <span
         className={`font-bold ${s.wordmark}`}
-        style={{ color: wordmarkColor, letterSpacing: '-.02em' }}
+        style={{ color: wordmarkColor, letterSpacing: '-.02em', fontFamily: 'var(--fd, Georgia, serif)' }}
       >
         Claro<em style={{ fontStyle: 'italic' }}>Bill</em>
       </span>
