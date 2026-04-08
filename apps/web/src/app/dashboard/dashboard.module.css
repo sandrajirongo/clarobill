@@ -123,6 +123,57 @@
 }
 .signOutBtn:hover { background: var(--cream2); color: var(--txt2); }
 
+/* ─── Mobile nav (bottom tab bar) ───────────────────────────────────────── */
+.mobileNav {
+  display: none;
+}
+@media (max-width: 639px) {
+  /* Hide desktop nav elements */
+  .navLinks   { display: none; }
+  .avatarEmail { display: none; }
+  .signOutBtn { display: none; }
+
+  /* Show bottom tab bar */
+  .mobileNav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    height: 58px;
+    background: rgba(244, 242, 236, .97);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+    align-items: stretch;
+  }
+  .mobileNavItem {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
+    text-decoration: none;
+    color: var(--txt3);
+    font-size: .6rem;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    transition: color .15s;
+    padding: .5rem 0;
+  }
+  .mobileNavItem:hover { color: var(--txt2); }
+  .mobileNavItemActive { color: var(--sage); }
+  .mobileNavIcon {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+  }
+  /* Push page content above the fixed tab bar */
+  .shell { padding-bottom: 58px; }
+}
+
 /* ─── Page wrapper ───────────────────────────────────────────────────────── */
 .page {
   max-width: 760px;

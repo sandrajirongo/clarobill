@@ -11,7 +11,7 @@ export default function AppleIcon(): ImageResponse {
           width: 180,
           height: 180,
           borderRadius: 40,
-          background: '#0d9488',
+          background: '#2D4A2A',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -19,10 +19,12 @@ export default function AppleIcon(): ImageResponse {
       >
         <span
           style={{
-            color: 'white',
+            color: '#C8F060',
             fontSize: 110,
             fontWeight: 700,
+            fontStyle: 'italic',
             lineHeight: 1,
+            fontFamily: 'serif',
           }}
         >
           C

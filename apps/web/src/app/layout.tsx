@@ -22,6 +22,18 @@ const syne = Syne({
 export const metadata: Metadata = {
   title: 'ClaroBill — Find Errors in Your Medical Bill',
   description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+  themeColor: '#2D4A2A',
+  openGraph: {
+    title: 'ClaroBill — Find Errors in Your Medical Bill',
+    description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+    siteName: 'ClaroBill',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'ClaroBill — Find Errors in Your Medical Bill',
+    description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+  },
 };
 
 export default function RootLayout({
