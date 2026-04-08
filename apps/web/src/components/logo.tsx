@@ -4,21 +4,48 @@ interface LogoProps {
 }
 
 const sizes = {
-  sm: { box: 'w-7 h-7 rounded-lg', letter: 'text-sm', wordmark: 'text-xl' },
-  md: { box: 'w-9 h-9 rounded-xl', letter: 'text-base', wordmark: 'text-2xl' },
-  lg: { box: 'w-12 h-12 rounded-2xl', letter: 'text-2xl', wordmark: 'text-3xl' },
+  sm: { boxPx: 28, radius: 8,  fontSize: 15, wordmark: 'text-xl'  },
+  md: { boxPx: 36, radius: 10, fontSize: 19, wordmark: 'text-2xl' },
+  lg: { boxPx: 48, radius: 13, fontSize: 25, wordmark: 'text-3xl' },
 };
 
 export function Logo({ size = 'md', variant = 'light' }: LogoProps): JSX.Element {
   const s = sizes[size];
-  const wordmarkColor = variant === 'dark' ? 'text-white' : 'text-gray-900';
+  const wordmarkColor = variant === 'dark' ? '#fff' : 'var(--txt, #1a2e18)';
 
   return (
-    <div className="flex items-center gap-2.5">
-      <div className={`${s.box} bg-teal-600 flex items-center justify-center shrink-0`}>
-        <span className={`text-white font-bold ${s.letter}`}>C</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+      <div
+        style={{
+          width: s.boxPx,
+          height: s.boxPx,
+          borderRadius: s.radius,
+          background: '#2D4A2A',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            color: '#C8F060',
+            fontSize: s.fontSize,
+            fontWeight: 700,
+            fontStyle: 'italic',
+            fontFamily: 'Georgia, serif',
+            lineHeight: 1,
+          }}
+        >
+          C
+        </span>
       </div>
-      <span className={`font-bold ${s.wordmark} ${wordmarkColor}`}>Claro<em style={{ fontStyle: 'italic' }}>Bill</em></span>
+      <span
+        className={`font-bold ${s.wordmark}`}
+        style={{ color: wordmarkColor, letterSpacing: '-.02em' }}
+      >
+        Claro<em style={{ fontStyle: 'italic' }}>Bill</em>
+      </span>
     </div>
   );
 }
