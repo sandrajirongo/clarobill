@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
 
@@ -50,18 +51,21 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-10">
+    <main className="p-6 md:p-10">
       <div className="max-w-3xl mx-auto space-y-6">
 
-        {/* Payment success banner */}
+        {/* Access-confirmed banner — only shown immediately after checkout */}
         {paymentStatus === 'success' && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-green-800 text-sm">
-            Payment confirmed. Your full report and dispute letter have been emailed to you.
+            Access confirmed. Your full report and dispute letter are being prepared below.
           </div>
         )}
 
         {/* Header */}
         <div>
+          <Link href="/dashboard" className="text-sm text-teal-600 hover:text-teal-700 transition-colors mb-3 inline-block">
+            ← My Bills
+          </Link>
           <h1 className="text-2xl font-bold text-gray-900">Bill Analysis</h1>
           <p className="text-sm text-gray-500 mt-1">{bill.fileName}</p>
         </div>
@@ -134,7 +138,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
               Your Documents
             </h2>
             <p className="text-sm text-gray-500 mb-4">
-              Your documents were also emailed to you. Use the links below to download them again.
+              Download your full report and dispute letter below.
             </p>
             <div className="flex gap-3">
               {analysis.reportUrl && (

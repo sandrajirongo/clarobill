@@ -70,7 +70,7 @@ export default function SignInPage(): JSX.Element {
               role="alert"
               className={`text-sm rounded-lg px-3 py-2 ${
                 message.type === 'success'
-                  ? 'bg-green-50 text-green-700'
+                  ? 'bg-green-50 text-green-900'
                   : 'bg-red-50 text-red-700'
               }`}
             >

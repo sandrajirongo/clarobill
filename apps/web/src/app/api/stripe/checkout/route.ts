@@ -36,7 +36,7 @@ export async function POST(
 
   const origin = request.headers.get('origin') ?? 'http://localhost:3000';
 
-  // Beta mode: skip Stripe and grant free access by inserting a completed payment record.
+  // Beta mode: skip Stripe, grant free access, and trigger report generation.
   if (process.env.BETA_MODE === 'true') {
     await supabase.from('payments').upsert(
       {
@@ -49,6 +49,18 @@ export async function POST(
       },
       { onConflict: 'stripe_session_id' }
     );
+
+    // Trigger report generation via the engine (same as the Stripe webhook does)
+    const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
+    const reportRes = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_email: user.email, user_id: user.id }),
+    });
+    if (!reportRes.ok) {
+      console.error('[beta-checkout] Report generation failed for bill %s, status %d', billId, reportRes.status);
+    }
+
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
 
