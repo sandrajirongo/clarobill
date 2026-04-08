@@ -38,7 +38,7 @@ export default function LandingPage(): JSX.Element {
         <div className={s.heroInner}>
           <div className={s.heroEyebrow}>AI Medical Bill Review</div>
           <h1 className={s.heroH1}>
-            Medical bills are <em>wrong</em> 80% of the time
+            Medical bills are <em>wrong</em>{' '}80% of the time
           </h1>
           <p className={s.heroSub}>
             ClaroBill uses AI to find duplicate charges, upcoding errors, and billing
