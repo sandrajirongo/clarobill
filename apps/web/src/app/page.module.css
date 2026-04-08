@@ -183,6 +183,7 @@
   border-radius: 1.75rem;
   padding: 2rem 2rem 1.5rem;
   box-shadow: 0 2px 28px rgba(0, 0, 0, .06);
+  overflow: hidden;
 }
 .testiScroll {
   display: flex;
@@ -252,12 +253,14 @@
 .statBox {
   background: var(--cream);
   border-radius: var(--r-xl);
-  padding: 1.4rem 1.5rem;
+  padding: 1.4rem 1.25rem;
   border: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 0;
 }
 .statNum {
   font-family: var(--fd);
-  font-size: 2.6rem;
+  font-size: clamp(1.75rem, 6vw, 2.6rem);
   line-height: 1;
   font-weight: 700;
   color: var(--txt);
