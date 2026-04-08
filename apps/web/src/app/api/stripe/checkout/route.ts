@@ -36,6 +36,22 @@ export async function POST(
 
   const origin = request.headers.get('origin') ?? 'http://localhost:3000';
 
+  // Beta mode: skip Stripe and grant free access by inserting a completed payment record.
+  if (process.env.BETA_MODE === 'true') {
+    await supabase.from('payments').upsert(
+      {
+        user_id: user.id,
+        bill_id: billId,
+        stripe_session_id: `beta_${billId}`,
+        amount_cents: 0,
+        currency: 'usd',
+        status: 'complete',
+      },
+      { onConflict: 'stripe_session_id' }
+    );
+    return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     line_items: [
