@@ -18,7 +18,7 @@ export function Logo({ size = 'md', variant = 'light' }: LogoProps): JSX.Element
       <div className={`${s.box} bg-teal-600 flex items-center justify-center shrink-0`}>
         <span className={`text-white font-bold ${s.letter}`}>C</span>
       </div>
-      <span className={`font-bold ${s.wordmark} ${wordmarkColor}`}>Clarobill</span>
+      <span className={`font-bold ${s.wordmark} ${wordmarkColor}`}>Claro<em style={{ fontStyle: 'italic' }}>Bill</em></span>
     </div>
   );
 }

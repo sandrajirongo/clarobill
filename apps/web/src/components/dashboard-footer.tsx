@@ -11,7 +11,7 @@ export function DashboardFooter(): JSX.Element {
         <div className={s.footerLinks}>
           <a href="/legal/privacy" className={s.footerLink}>Privacy</a>
           <a href="/legal/terms" className={s.footerLink}>Terms</a>
-          <span className={s.footerLink}>© {new Date().getFullYear()} Clarobill</span>
+          <span className={s.footerLink}>© {new Date().getFullYear()} Claro<em style={{ fontStyle: 'italic' }}>Bill</em></span>
         </div>
       </div>
     </footer>

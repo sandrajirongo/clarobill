@@ -35,10 +35,10 @@ export default function SignInPage(): JSX.Element {
         {/* Logo */}
         <div className={s.logoRow}>
           <div className={s.logoMark}>C</div>
-          <span className={s.logoText}>Clarobill</span>
+          <span className={s.logoText}>Claro<em style={{ fontStyle: 'italic' }}>Bill</em></span>
         </div>
 
-        <h1 className={s.heading}>Sign in to Clarobill</h1>
+        <h1 className={s.heading}>Sign in to Claro<em style={{ fontStyle: 'italic' }}>Bill</em></h1>
         <p className={s.sub}>Catch errors on your medical bills in minutes.</p>
 
         <form onSubmit={handleMagicLink} className={s.form}>
