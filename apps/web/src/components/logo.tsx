@@ -3,49 +3,27 @@ interface LogoProps {
   variant?: 'light' | 'dark';
 }
 
-const sizes = {
-  sm: { boxPx: 28, radius: 8,  fontSize: 15, wordmark: 'text-xl'  },
-  md: { boxPx: 36, radius: 10, fontSize: 19, wordmark: 'text-2xl' },
-  lg: { boxPx: 48, radius: 13, fontSize: 25, wordmark: 'text-3xl' },
+const fontSizes = {
+  sm: '1.2rem',
+  md: '1.35rem',
+  lg: '1.65rem',
 };
 
 export function Logo({ size = 'md', variant = 'light' }: LogoProps): JSX.Element {
-  const s = sizes[size];
-  const wordmarkColor = variant === 'dark' ? '#fff' : 'var(--txt, #1a2e18)';
+  const color = variant === 'dark' ? '#fff' : 'var(--txt, #1a2e18)';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-      <div
-        style={{
-          width: s.boxPx,
-          height: s.boxPx,
-          borderRadius: s.radius,
-          background: '#2D4A2A',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            color: '#C8F060',
-            fontSize: s.fontSize,
-            fontWeight: 700,
-            fontStyle: 'italic',
-            fontFamily: 'Georgia, serif',
-            lineHeight: 1,
-          }}
-        >
-          C
-        </span>
-      </div>
-      <span
-        className={`font-bold ${s.wordmark}`}
-        style={{ color: wordmarkColor, letterSpacing: '-.02em', fontFamily: 'var(--fd, Georgia, serif)' }}
-      >
-        Claro<em style={{ fontStyle: 'italic' }}>Bill</em>
-      </span>
-    </div>
+    <span
+      style={{
+        fontFamily: 'var(--fd, Georgia, serif)',
+        fontSize: fontSizes[size],
+        fontWeight: 700,
+        letterSpacing: '-.02em',
+        color,
+        textDecoration: 'none',
+      }}
+    >
+      Claro<em style={{ fontStyle: 'italic', fontWeight: 700 }}>Bill</em>.
+    </span>
   );
 }
