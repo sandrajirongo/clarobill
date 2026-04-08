@@ -83,6 +83,7 @@ async def _run_analysis_pipeline(bill_id: str, file_path: str, supabase: Client)
 
         # 3. Parse line items
         supabase.table("bills").update({"status": "analyzing"}).eq("id", bill_id).execute()
+        logger.info("OCR raw text for bill %s:\n%s", bill_id, raw_text)
         parser = BillParser()
         parsed_items = parser.parse(raw_text, bill_date=date.today())
 
