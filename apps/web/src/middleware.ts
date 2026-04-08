@@ -35,6 +35,15 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // If Supabase redirected a ?code= to a non-callback route (e.g. homepage),
+  // forward it to /auth/callback so the session can be established.
+  const code = request.nextUrl.searchParams.get('code');
+  if (code && pathname !== '/auth/callback') {
+    const callbackUrl = request.nextUrl.clone();
+    callbackUrl.pathname = '/auth/callback';
+    return NextResponse.redirect(callbackUrl);
+  }
   const isPublicRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith('/auth/') || pathname.startsWith('/legal/')
   ) || pathname === '/icon' || pathname === '/apple-icon' || pathname.startsWith('/blog');
