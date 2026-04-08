@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import s from './blog.module.css';
 
 export const metadata: Metadata = {
   title: 'Medical Billing Resources — Clarobill',
@@ -23,7 +24,7 @@ const articles = [
   },
   {
     slug: 'what-are-cpt-codes',
-    title: 'What Are CPT Codes? A Patient\'s Guide',
+    title: "What Are CPT Codes? A Patient's Guide",
     description: 'The five-digit numbers on your bill determine what you pay. Here is how they work, why they get abused, and how to check whether yours are right.',
     date: 'April 7, 2026',
     readTime: '6 min read',
@@ -33,27 +34,23 @@ const articles = [
 export default function BlogIndexPage(): JSX.Element {
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-900 mb-2">Medical Billing Resources</h1>
-      <p className="text-gray-500 mb-12">
-        Plain-English guides to understanding and disputing your medical bills.
-      </p>
-      <div className="space-y-10">
+      <h1 className={s.indexH1}>Medical Billing Resources</h1>
+      <p className={s.indexSub}>Plain-English guides to understanding and disputing your medical bills.</p>
+      <div className={s.articleGrid}>
         {articles.map((article) => (
-          <article key={article.slug} className="border-b border-gray-100 pb-10 last:border-0">
-            <Link href={`/blog/${article.slug}`} className="group">
-              <h2 className="text-xl font-semibold text-gray-900 group-hover:text-teal-600 transition-colors mb-2">
-                {article.title}
-              </h2>
+          <div key={article.slug} className={s.articleCard}>
+            <Link href={`/blog/${article.slug}`} className={s.articleCardTitle}>
+              {article.title}
             </Link>
-            <p className="text-gray-500 mb-3 leading-relaxed">{article.description}</p>
-            <div className="flex items-center gap-3 text-sm text-gray-400">
+            <p className={s.articleCardDesc}>{article.description}</p>
+            <div className={s.byline}>
               <span>{article.date}</span>
               <span>·</span>
               <span>{article.readTime}</span>
               <span>·</span>
               <span>Clarobill Team</span>
             </div>
-          </article>
+          </div>
         ))}
       </div>
     </div>
