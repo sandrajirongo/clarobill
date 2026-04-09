@@ -1,6 +1,6 @@
 """Load CMS county-to-locality mapping into the database.
 
-Source file: "26LOCCO.csv" — Counties Included in CY 2026 Localities
+Source files: "<YY>LOCCO.csv" — Counties Included in CY YYYY Localities
 Download from: https://www.cms.gov/medicare/payment/fee-schedules/physician
 
 The file maps US counties → CMS MAC locality codes. Each locality code is a
@@ -16,9 +16,12 @@ County patterns handled:
   - "ALL OTHER COUNTIES"                        → is_rest_of_state = true
   - Everything else                             → one row per county, comma/slash/semicolon-split
 
+Note: the 2020 file uses "Carrier Number" instead of
+"Medicare Adminstrative Contractor" for the first column — handled automatically.
+
 Usage:
-  python scripts/load_county_locality.py \\
-    --file 26LOCCO.csv
+  python scripts/load_county_locality.py --file data/cms/county-locality/2026/26LOCCO.csv --year 2026
+  python scripts/load_county_locality.py --file data/cms/county-locality/2025/25LOCCO.csv --year 2025
 """
 
 import argparse
@@ -32,6 +35,9 @@ from pathlib import Path
 from supabase import create_client
 
 BATCH_SIZE = 500
+
+# Both column name variants used by CMS across years
+_CONTRACTOR_COLUMNS = {"medicare adminstrative contractor", "carrier number"}
 
 
 def _clean_county_name(raw: str) -> str:
@@ -47,45 +53,38 @@ def _clean_county_name(raw: str) -> str:
 
 
 def _parse_counties(raw_counties: str) -> tuple[list[str], bool, bool]:
-    """Parse the counties column into (county_names, is_statewide, is_rest_of_state).
-
-    Returns:
-        county_names:    Individual county names (empty for statewide/rest-of-state rows).
-        is_statewide:    True when the row represents ALL COUNTIES in the state.
-        is_rest_of_state: True when the row represents ALL OTHER COUNTIES (fallback).
-    """
+    """Parse the counties column into (county_names, is_statewide, is_rest_of_state)."""
     normalised = raw_counties.strip().upper()
 
     if normalised in ("ALL COUNTIES", "ALL COUNTY EQUIVALENTS"):
         return [], True, False
 
-    if "ALL OTHER COUNTIES" in normalised or normalised == "ALL COUNTY EQUIVALENTS":
+    if "ALL OTHER COUNTIES" in normalised:
         return [], False, True
 
     # Replace " AND " with comma so it splits cleanly (handles "...X AND Y" at end of lists)
     text = re.sub(r"\bAND\b", ",", normalised)
 
-    # Split on comma, slash, or semicolon
     parts = re.split(r"[,;/]", text)
     county_names = [_clean_county_name(p) for p in parts if p.strip()]
     return county_names, False, False
 
 
-def load_from_file(path: Path) -> list[dict]:
-    """Parse 26LOCCO.csv into rows ready for upsert into cms_county_locality.
+def load_from_file(path: Path, year: int) -> list[dict]:
+    """Parse a LOCCO CSV into rows ready for insert into cms_county_locality.
 
-    The CSV has:
-      - 3 header/metadata rows before the data header on row 4 (0-indexed: row 3)
-      - Data rows with fill-forward for contractor, locality_number, and state
-      - Blank separator rows between state groups (all 6 columns empty)
+    Handles both column name variants:
+      - "Medicare Adminstrative Contractor" (2021+)
+      - "Carrier Number" (2020 and earlier)
     """
     with path.open(newline="", encoding="utf-8-sig") as f:
         lines = f.readlines()
 
-    # Find the actual header row — it starts with "Medicare"
+    # Find the header row — starts with "Medicare" (2021+) or "Carrier" (2020)
     header_idx = None
     for i, line in enumerate(lines):
-        if line.strip().lower().startswith("medicare"):
+        stripped = line.strip().lower()
+        if stripped.startswith("medicare") or stripped.startswith("carrier"):
             header_idx = i
             break
 
@@ -95,6 +94,19 @@ def load_from_file(path: Path) -> list[dict]:
 
     reader = csv.DictReader(lines[header_idx:])
 
+    # Identify the contractor column name used in this file
+    fieldnames_lower = {f.strip().lower(): f for f in (reader.fieldnames or [])}
+    contractor_col = next(
+        (fieldnames_lower[k] for k in _CONTRACTOR_COLUMNS if k in fieldnames_lower),
+        None,
+    )
+    if contractor_col is None:
+        print(
+            f"Error: could not find contractor column. Columns: {list(fieldnames_lower.keys())}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     rows: list[dict] = []
     current_contractor = ""
     current_locality_number = ""
@@ -102,7 +114,7 @@ def load_from_file(path: Path) -> list[dict]:
     current_locality_name = ""
 
     for row in reader:
-        contractor = row.get("Medicare Adminstrative Contractor", "").strip()
+        contractor = row.get(contractor_col, "").strip()
         locality_number = row.get("Locality Number", "").strip()
         state = row.get("State ", "").strip()
         locality_name = row.get("Fee Schedule Area ", "").strip()
@@ -112,7 +124,7 @@ def load_from_file(path: Path) -> list[dict]:
         if not contractor and not locality_number and not state and not counties_raw:
             continue
 
-        # Fill-forward: carry contractor/locality/state from the previous data row
+        # Fill-forward: carry values from the previous data row
         if contractor:
             current_contractor = contractor
         if locality_number:
@@ -122,21 +134,19 @@ def load_from_file(path: Path) -> list[dict]:
         if locality_name:
             current_locality_name = locality_name
 
-        # Skip rows that still lack a resolved locality (shouldn't happen in clean data)
         if not current_contractor or not current_locality_number or not current_state:
             continue
 
         if not counties_raw:
             continue
 
-        # Locality code = contractor (5-char) + locality_number (2-char), zero-padded
         locality_code = current_contractor + current_locality_number.zfill(2)
-
         county_names, is_statewide, is_rest_of_state = _parse_counties(counties_raw)
 
         if is_statewide or is_rest_of_state:
             rows.append({
                 "id": str(uuid.uuid4()),
+                "year": year,
                 "state": current_state,
                 "locality_code": locality_code,
                 "locality_name": current_locality_name,
@@ -150,6 +160,7 @@ def load_from_file(path: Path) -> list[dict]:
                     continue
                 rows.append({
                     "id": str(uuid.uuid4()),
+                    "year": year,
                     "state": current_state,
                     "locality_code": locality_code,
                     "locality_name": current_locality_name,
@@ -166,12 +177,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Load CMS county-to-locality mapping into the MedScan database."
     )
-    parser.add_argument(
-        "--file",
-        type=Path,
-        required=True,
-        help="Path to 26LOCCO.csv",
-    )
+    parser.add_argument("--file", type=Path, required=True, help="Path to the LOCCO CSV file")
+    parser.add_argument("--year", type=int, required=True, help="Calendar year (e.g. 2026)")
     args = parser.parse_args()
 
     if not args.file.exists():
@@ -186,12 +193,12 @@ def main() -> None:
 
     client = create_client(supabase_url, supabase_key)
 
-    print(f"Loading county-locality mapping from {args.file.name}...")
-    rows = load_from_file(args.file)
+    print(f"Loading county-locality mapping from {args.file.name} (year={args.year})...")
+    rows = load_from_file(args.file, args.year)
 
-    # Clear existing rows before reload (idempotent full replacement)
-    client.table("cms_county_locality").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-    print("  Cleared existing rows.")
+    # Clear only this year's rows before reload (safe to re-run)
+    client.table("cms_county_locality").delete().eq("year", args.year).execute()
+    print(f"  Cleared existing year={args.year} rows.")
 
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
@@ -200,7 +207,7 @@ def main() -> None:
         inserted += len(batch)
         print(f"  Inserted {inserted}/{len(rows)} rows...")
 
-    print(f"Done. {inserted} county-locality rows loaded.")
+    print(f"Done. {inserted} county-locality rows loaded for year={args.year}.")
 
 
 if __name__ == "__main__":

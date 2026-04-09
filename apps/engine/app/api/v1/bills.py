@@ -118,7 +118,7 @@ async def _run_analysis_pipeline(
         # 4. Load reference data and run rules engine
         cpt_codes = [item.cpt_code for item in parsed_items]
         rate_year = _derive_rate_year(parsed_items)
-        locality_code = _resolve_locality(supabase, state, county)
+        locality_code = _resolve_locality(supabase, state, county, rate_year)
         logger.info(
             "Using rate_year=%d locality_code=%s for bill %s (state=%s county=%s)",
             rate_year, locality_code, bill_id, state, county,
@@ -371,8 +371,16 @@ def _load_anesthesia_base_units(
     return result
 
 
-def _resolve_locality(supabase: Client, state: str | None, county: str | None) -> str:
-    """Resolve a CMS 7-digit locality code from the patient's state and county.
+def _resolve_locality(
+    supabase: Client,
+    state: str | None,
+    county: str | None,
+    rate_year: int = 2026,
+) -> str:
+    """Resolve a CMS 7-digit locality code from the patient's state, county, and bill year.
+
+    Uses year <= rate_year so the closest available vintage is used automatically
+    when the exact year isn't loaded (e.g. a 2019 bill uses the 2020 table).
 
     Lookup order:
       1. Exact county match (most specific)
@@ -399,6 +407,8 @@ def _resolve_locality(supabase: Client, state: str | None, county: str | None) -
             .select("locality_code")
             .eq("state", state_upper)
             .eq("county_name", county_upper)
+            .lte("year", rate_year)
+            .order("year", desc=True)
             .limit(1)
             .execute()
         )
@@ -411,6 +421,8 @@ def _resolve_locality(supabase: Client, state: str | None, county: str | None) -
         .select("locality_code")
         .eq("state", state_upper)
         .eq("is_rest_of_state", True)
+        .lte("year", rate_year)
+        .order("year", desc=True)
         .limit(1)
         .execute()
     )
@@ -423,6 +435,8 @@ def _resolve_locality(supabase: Client, state: str | None, county: str | None) -
         .select("locality_code")
         .eq("state", state_upper)
         .eq("is_statewide", True)
+        .lte("year", rate_year)
+        .order("year", desc=True)
         .limit(1)
         .execute()
     )
@@ -431,9 +445,10 @@ def _resolve_locality(supabase: Client, state: str | None, county: str | None) -
 
     # 4. National default
     logger.warning(
-        "Could not resolve locality for state=%s county=%s — using national default.",
+        "Could not resolve locality for state=%s county=%s year<=%d — using national default.",
         state,
         county,
+        rate_year,
     )
     return "0000000"
 
