@@ -45,6 +45,7 @@ class RulesEngine:
         non_payable_codes: dict[str, str] | None = None,
         anesthesia_cf: Decimal | None = None,
         anesthesia_base_units: dict[str, int] | None = None,
+        opps_rates: dict[str, Decimal] | None = None,
     ) -> None:
         """
         Args:
@@ -59,6 +60,9 @@ class RulesEngine:
             anesthesia_base_units:  Map of cpt_code → published base units from CMS tables.
                                     When provided, enables exact base unit validation instead of
                                     the generic plausibility ceiling.
+            opps_rates:             Map of hcpc → OPPS facility payment cap for the resolved
+                                    locality. When provided, enables facility charge outlier
+                                    detection for hospital outpatient bills.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -66,6 +70,7 @@ class RulesEngine:
         self._non_payable_codes = non_payable_codes or {}
         self._anesthesia_cf = anesthesia_cf
         self._anesthesia_base_units = anesthesia_base_units or {}
+        self._opps_rates = opps_rates or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -82,6 +87,7 @@ class RulesEngine:
         errors.extend(self._detect_ncci_unbundling(line_items))
         errors.extend(self._detect_non_payable_codes(line_items))
         errors.extend(self._detect_anesthesia_outliers(line_items))
+        errors.extend(self._detect_facility_outliers(line_items))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -363,5 +369,44 @@ class RulesEngine:
                         estimated_overcharge=overcharge,
                         medicare_benchmark_rate=None,
                     ))
+
+        return errors
+
+    def _detect_facility_outliers(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag facility charges that exceed the CMS OPPS payment cap for the locality.
+
+        The OPPS cap is the amount Medicare pays for a procedure in a hospital outpatient
+        setting. Charges significantly above this cap warrant review — the patient's
+        cost-sharing is based on the billed charge, not just the Medicare payment amount.
+        Uses the same outlier_threshold multiplier as price outlier detection.
+        """
+        if not self._opps_rates:
+            return []
+
+        errors: list[DetectedError] = []
+
+        for index, item in enumerate(line_items):
+            opps_cap = self._opps_rates.get(item.cpt_code)
+            if opps_cap is None or opps_cap <= 0:
+                continue
+
+            charge = Decimal(str(item.total_charge))
+            if charge > opps_cap * Decimal(str(self._outlier_threshold)):
+                overcharge = charge - opps_cap
+                label = f" ({item.description})" if item.description else ""
+                errors.append(DetectedError(
+                    code="FACILITY_CHARGE_OUTLIER",
+                    severity="warning",
+                    affected_indices=[index],
+                    description=(
+                        f"Your facility charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"{label}. The Medicare OPPS payment cap for this procedure "
+                        f"in your area is ${opps_cap:.2f} — your charge is "
+                        f"{charge / opps_cap:.1f}x that amount. Consider requesting "
+                        f"an itemised bill and asking the facility to review the charge."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=opps_cap,
+                ))
 
         return errors

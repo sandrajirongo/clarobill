@@ -128,12 +128,14 @@ async def _run_analysis_pipeline(
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_year)
         anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_year)
         anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_year)
+        opps_rates = _load_opps_rates(supabase, cpt_codes, locality_code, rate_year)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
             non_payable_codes=non_payable_codes,
             anesthesia_cf=anesthesia_cf,
             anesthesia_base_units=anesthesia_base_units,
+            opps_rates=opps_rates,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -369,6 +371,49 @@ def _load_anesthesia_base_units(
         if row["cpt_code"] not in result:
             result[row["cpt_code"]] = int(row["base_units"])
     return result
+
+
+def _load_opps_rates(
+    supabase: Client,
+    cpt_codes: list[str],
+    locality_code: str = "0000000",
+    rate_year: int = 2026,
+) -> dict[str, Decimal]:
+    """Load OPPS facility payment caps for the given CPT codes and locality.
+
+    Returns a map of hcpc → facility_price using the no-modifier (modifier='') rows,
+    which represent the standard outpatient facility payment cap. Uses the closest
+    available vintage ≤ the bill year. Returns an empty dict if the table has no
+    data for this locality, which disables the facility outlier rule gracefully.
+
+    Args:
+        supabase: Authenticated Supabase client.
+        cpt_codes: List of CPT/HCPC codes from the parsed bill.
+        locality_code: 7-char CMS MAC locality code from _resolve_locality().
+        rate_year: Fee schedule year derived from the bill's service dates.
+    """
+    if not cpt_codes:
+        return {}
+
+    response = (
+        supabase.table("cms_opps_cap")
+        .select("hcpc,facility_price")
+        .in_("hcpc", list(set(cpt_codes)))
+        .eq("modifier", "")
+        .eq("locality_code", locality_code)
+        .lte("year", rate_year)
+        .order("year", desc=True)
+        .execute()
+    )
+
+    # Take the most recent available entry per code (≤ bill year)
+    rates: dict[str, Decimal] = {}
+    for row in response.data:
+        hcpc = row["hcpc"]
+        if hcpc not in rates and row["facility_price"] is not None:
+            rates[hcpc] = Decimal(str(row["facility_price"]))
+
+    return rates
 
 
 def _resolve_locality(

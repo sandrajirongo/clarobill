@@ -312,3 +312,56 @@ class TestAnesthesiaExactBaseUnits:
         errors = anes_engine.run(items)
         anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
         assert len(anes_errors) == 1
+
+
+class TestFacilityChargeOutlier:
+    # 27447 (total knee replacement) OPPS cap of $900.00 for this locality
+    OPPS_RATES = {
+        "27447": Decimal("900.00"),
+        "27370": Decimal("150.00"),
+    }
+
+    @pytest.fixture()
+    def opps_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            opps_rates=self.OPPS_RATES,
+        )
+
+    def test_flags_charge_above_threshold(self, opps_engine: RulesEngine) -> None:
+        # $900 cap × 2x threshold = $1,800. $2,500 should be flagged.
+        items = [make_line_item("27447", 2500.00)]
+        errors = opps_engine.run(items)
+        facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
+        assert len(facility_errors) == 1
+        assert facility_errors[0].medicare_benchmark_rate == Decimal("900.00")
+        assert facility_errors[0].estimated_overcharge == Decimal("1600.00")
+
+    def test_does_not_flag_charge_below_threshold(self, opps_engine: RulesEngine) -> None:
+        # $1,500 is 1.67x the $900 cap — below the 2x threshold
+        items = [make_line_item("27447", 1500.00)]
+        errors = opps_engine.run(items)
+        facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
+        assert len(facility_errors) == 0
+
+    def test_no_flag_for_unknown_code(self, opps_engine: RulesEngine) -> None:
+        # 99214 is not in the OPPS rates — no facility rule applies
+        items = [make_line_item("99214", 9999.00)]
+        errors = opps_engine.run(items)
+        facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
+        assert len(facility_errors) == 0
+
+    def test_no_flag_when_opps_rates_not_loaded(self) -> None:
+        # Engine without opps_rates should not run the rule
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("27447", 9999.00)]
+        errors = engine.run(items)
+        facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
+        assert len(facility_errors) == 0
+
+    def test_severity_is_warning(self, opps_engine: RulesEngine) -> None:
+        items = [make_line_item("27447", 2500.00)]
+        errors = opps_engine.run(items)
+        facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
+        assert facility_errors[0].severity == "warning"
