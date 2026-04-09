@@ -429,6 +429,7 @@ def _load_anesthesia_cf(
         .eq("locality_number", locality_number)
         .lte("year", rate_year)
         .order("year", desc=True)
+        .order("effective_from", desc=True)   # picks latest period within the year (e.g. 2024 Mar 9+)
         .limit(1)
         .execute()
     )
