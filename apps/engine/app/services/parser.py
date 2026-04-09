@@ -22,8 +22,29 @@ _MODIFIER_PATTERN = re.compile(r"\b\d{5}\s+([A-Z0-9]{2})\b")
 _AMOUNT_PATTERN = re.compile(r"\$?([\d,]+\.\d{2})\b")
 _DATE_PATTERN = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
 
+# Anesthesia time patterns — searched near anesthesia CPT codes (00100–01999)
+# "45 min" / "45 minutes" / "120 MIN"
+_ANES_MINUTES_PATTERN = re.compile(r"\b(\d{1,3})\s*min(?:utes?)?\b", re.IGNORECASE)
+# Duration in H:MM format where hours <= 6 (distinguishes "1:30" duration from "08:15" clock time)
+_ANES_DURATION_HM_PATTERN = re.compile(r"\b([0-6]):([0-5]\d)\b")
+# Start/end time pair — "Start: 08:15  End: 09:00" or "IN: 08:15  OUT: 09:30"
+_ANES_START_END_PATTERN = re.compile(
+    r"(?:start|begin|in|incision)[:\s]+(\d{1,2}):(\d{2})"
+    r".{0,40}"
+    r"(?:end|stop|out|close)[:\s]+(\d{1,2}):(\d{2})",
+    re.IGNORECASE,
+)
+
 # How many lines after the CPT code line to search for a charge amount
 _LOOKAHEAD_LINES = 3
+
+
+def _is_anesthesia_code(cpt_code: str) -> bool:
+    """Return True for CPT codes in the anesthesia range 00100–01999."""
+    try:
+        return 100 <= int(cpt_code) <= 1999
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -38,6 +59,9 @@ class ParsedLineItem:
     total_charge: float
     modifier: str | None
     diagnosis_pointers: list[str]
+    # Anesthesia time in minutes — populated only for codes in the 00100–01999 range.
+    # None means time was not found in the OCR text, not that the procedure had no time.
+    anesthesia_minutes: int | None = None
 
 
 class BillParser:
@@ -94,6 +118,11 @@ class BillParser:
             # amounts, and date patterns so we're left with readable text)
             description = self._extract_description(line, cpt_match.end())
 
+            # Extract anesthesia time for codes in the 00100–01999 range
+            anesthesia_minutes: int | None = None
+            if _is_anesthesia_code(cpt_code):
+                anesthesia_minutes = self._find_anesthesia_minutes(lines, i)
+
             processed_line_indices.add(i)
             line_items.append(ParsedLineItem(
                 cpt_code=cpt_code,
@@ -104,6 +133,7 @@ class BillParser:
                 total_charge=charge,
                 modifier=modifier,
                 diagnosis_pointers=[],
+                anesthesia_minutes=anesthesia_minutes,
             ))
 
         logger.info("Parser extracted %d line items from %d lines", len(line_items), len(lines))
@@ -129,6 +159,45 @@ class BillParser:
             parsed = self._extract_date(lines[j])
             if parsed is not None:
                 return parsed
+        return None
+
+    def _find_anesthesia_minutes(self, lines: list[str], start: int) -> int | None:
+        """Extract anesthesia duration in minutes from the text around an anesthesia CPT code.
+
+        Tries three formats in order of reliability:
+          1. Start/end clock times  — "Start: 08:15  End: 09:45" → 90 min
+          2. Explicit minutes       — "45 min" / "120 minutes"
+          3. H:MM duration          — "1:30" → 90 min (only H <= 6 to avoid clock times)
+
+        Searches the CPT line and up to LOOKAHEAD_LINES below it.
+        """
+        window = "\n".join(lines[start : min(start + _LOOKAHEAD_LINES + 1, len(lines))])
+
+        # 1. Start/end clock pair — most reliable when present
+        se_match = _ANES_START_END_PATTERN.search(window)
+        if se_match:
+            start_h, start_m, end_h, end_m = (int(x) for x in se_match.groups())
+            total_start = start_h * 60 + start_m
+            total_end = end_h * 60 + end_m
+            duration = total_end - total_start
+            if duration > 0:
+                return duration
+
+        # 2. Explicit minute value
+        min_match = _ANES_MINUTES_PATTERN.search(window)
+        if min_match:
+            minutes = int(min_match.group(1))
+            if 1 <= minutes <= 600:  # 1 min – 10 hours: sane range
+                return minutes
+
+        # 3. H:MM duration format (hours capped at 6 to avoid clock-time false positives)
+        hm_match = _ANES_DURATION_HM_PATTERN.search(window)
+        if hm_match:
+            hours, mins = int(hm_match.group(1)), int(hm_match.group(2))
+            total = hours * 60 + mins
+            if total > 0:
+                return total
+
         return None
 
     @staticmethod

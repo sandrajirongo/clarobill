@@ -18,6 +18,7 @@ def make_line_item(
     charge: float,
     service_date: date = date(2026, 3, 15),
     modifier: str | None = None,
+    anesthesia_minutes: int | None = None,
 ) -> ParsedLineItem:
     """Factory for test line items with realistic CPT codes."""
     return ParsedLineItem(
@@ -29,6 +30,7 @@ def make_line_item(
         total_charge=charge,
         modifier=modifier,
         diagnosis_pointers=[],
+        anesthesia_minutes=anesthesia_minutes,
     )
 
 
@@ -130,3 +132,119 @@ class TestNcciUnbundling:
         errors = engine_with_data.run(items)
         ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
         assert len(ncci_errors) == 0
+
+
+class TestNonPayableCodeDetection:
+    @pytest.fixture()
+    def engine_with_non_payable(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            non_payable_codes={
+                "97799": "I",   # Inactive unlisted physical medicine code
+                "99499": "B",   # Bundled unlisted E&M code
+                "S9999": "N",   # Non-covered HCPCS S code
+            },
+        )
+
+    def test_flags_inactive_code_as_critical(self, engine_with_non_payable: RulesEngine) -> None:
+        items = [make_line_item("97799", 150.00)]
+        errors = engine_with_non_payable.run(items)
+        non_payable = [e for e in errors if e.code == "NON_PAYABLE_CODE"]
+        assert len(non_payable) == 1
+        assert non_payable[0].severity == "critical"
+        assert non_payable[0].estimated_overcharge == Decimal("150.00")
+
+    def test_flags_bundled_code_as_critical(self, engine_with_non_payable: RulesEngine) -> None:
+        items = [make_line_item("99499", 200.00)]
+        errors = engine_with_non_payable.run(items)
+        non_payable = [e for e in errors if e.code == "NON_PAYABLE_CODE"]
+        assert len(non_payable) == 1
+        assert non_payable[0].severity == "critical"
+
+    def test_flags_non_covered_code_as_warning(self, engine_with_non_payable: RulesEngine) -> None:
+        items = [make_line_item("S9999", 75.00)]
+        errors = engine_with_non_payable.run(items)
+        non_payable = [e for e in errors if e.code == "NON_PAYABLE_CODE"]
+        assert len(non_payable) == 1
+        assert non_payable[0].severity == "warning"
+
+    def test_does_not_flag_unknown_code(self, engine_with_non_payable: RulesEngine) -> None:
+        # 99214 is not in the non_payable_codes dict — should not be flagged
+        items = [make_line_item("99214", 350.00)]
+        errors = engine_with_non_payable.run(items)
+        non_payable = [e for e in errors if e.code == "NON_PAYABLE_CODE"]
+        assert len(non_payable) == 0
+
+    def test_flags_multiple_non_payable_codes(self, engine_with_non_payable: RulesEngine) -> None:
+        items = [
+            make_line_item("97799", 150.00),
+            make_line_item("99499", 200.00),
+        ]
+        errors = engine_with_non_payable.run(items)
+        non_payable = [e for e in errors if e.code == "NON_PAYABLE_CODE"]
+        assert len(non_payable) == 2
+
+
+class TestAnesthesiaOutlierDetection:
+    # 2026 national non-qualifying anesthesia CF = $20.4975
+    ANES_CF = Decimal("20.4975")
+
+    @pytest.fixture()
+    def anes_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            anesthesia_cf=self.ANES_CF,
+        )
+
+    def test_flags_inflated_base_units(self, anes_engine: RulesEngine) -> None:
+        # 60 min = 4 time units. Charge of $1,500 implies:
+        # implied_total = 1500 / 20.4975 ≈ 73.2 units
+        # implied_base  = 73.2 - 4 = 69.2 → well above 25 ceiling
+        items = [make_line_item("00840", 1500.00, anesthesia_minutes=60)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 1
+        assert anes_errors[0].severity == "critical"
+
+    def test_flags_charge_less_than_time_alone(self, anes_engine: RulesEngine) -> None:
+        # 120 min = 8 time units × $20.4975 = $163.98 minimum
+        # Charge of $50 is less than the time cost alone — impossible
+        items = [make_line_item("00840", 50.00, anesthesia_minutes=120)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 1
+        assert anes_errors[0].severity == "critical"
+
+    def test_flags_ceiling_violation_without_time(self, anes_engine: RulesEngine) -> None:
+        # No OCR time. $5,000 implies 5000/20.4975 ≈ 244 units — far above 80 ceiling
+        items = [make_line_item("00840", 5000.00, anesthesia_minutes=None)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 1
+        assert anes_errors[0].severity == "warning"
+
+    def test_does_not_flag_reasonable_charge_with_time(self, anes_engine: RulesEngine) -> None:
+        # 90 min = 6 time units. Reasonable anesthesia code has 7 base units.
+        # Expected: (7 + 6) × 20.4975 = $266.47
+        # Charge of $280 implies base = 280/20.4975 - 6 = 7.66 → well within range
+        items = [make_line_item("00840", 280.00, anesthesia_minutes=90)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 0
+
+    def test_non_anesthesia_code_not_checked(self, anes_engine: RulesEngine) -> None:
+        # 99214 is not in the 00100–01999 range — anesthesia rule should ignore it
+        items = [make_line_item("99214", 5000.00, anesthesia_minutes=None)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 0
+
+    def test_no_anesthesia_check_when_cf_not_loaded(self) -> None:
+        # Engine without anesthesia_cf should not run the rule at all
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={}, anesthesia_cf=None)
+        items = [make_line_item("00840", 9999.00, anesthesia_minutes=10)]
+        errors = engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 0

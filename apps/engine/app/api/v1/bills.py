@@ -107,9 +107,17 @@ async def _run_analysis_pipeline(bill_id: str, file_path: str, supabase: Client)
             supabase.table("line_items").insert(line_item_rows).execute()
 
         # 4. Load reference data and run rules engine
+        cpt_codes = [item.cpt_code for item in parsed_items]
         ncci_pairs = _load_ncci_pairs(supabase)
-        medicare_rates = _load_medicare_rates(supabase, [item.cpt_code for item in parsed_items])
-        engine = RulesEngine(ncci_edit_pairs=ncci_pairs, medicare_rates=medicare_rates)
+        medicare_rates = _load_medicare_rates(supabase, cpt_codes)
+        non_payable_codes = _load_non_payable_codes(supabase, cpt_codes)
+        anesthesia_cf = _load_anesthesia_cf(supabase)
+        engine = RulesEngine(
+            ncci_edit_pairs=ncci_pairs,
+            medicare_rates=medicare_rates,
+            non_payable_codes=non_payable_codes,
+            anesthesia_cf=anesthesia_cf,
+        )
         detected_errors = engine.run(parsed_items)
 
         # Map detected errors to line item IDs
@@ -164,23 +172,150 @@ def _load_ncci_pairs(supabase: Client) -> dict[str, set[str]]:
     return pairs
 
 
-def _load_medicare_rates(supabase: Client, cpt_codes: list[str]) -> dict[str, Decimal]:
-    """Load Medicare non-facility rates for the given CPT codes."""
+def _load_medicare_rates(
+    supabase: Client,
+    cpt_codes: list[str],
+    locality_code: str = "0000000",
+) -> dict[str, Decimal]:
+    """Compute Medicare non-facility rates for the given CPT codes.
+
+    Rates are derived from the CMS PFS indicators (RVU components + conversion
+    factor) adjusted by the GPCI values for the given locality.
+
+    For the national rate (locality '0000000'), all GPCIs are 1.0, so:
+        national_rate = nfac_total_rvu * conv_fact
+
+    For a locality-adjusted rate:
+        rate = (rvu_work * gpci_work + nfac_pe_rvu * gpci_pe + rvu_mp * gpci_mp) * conv_fact
+
+    Only codes with proc_stat='A' (actively priced via RVU formula) are returned.
+    Codes without a rate entry — or with zero total RVU — are excluded so the
+    rules engine skips them rather than emitting false outlier flags.
+
+    Args:
+        supabase: Authenticated Supabase client.
+        cpt_codes: List of CPT/HCPC codes from the parsed bill.
+        locality_code: CMS MAC locality code for GPCI adjustment.
+                       Defaults to '0000000' (national, all GPCIs = 1.0).
+    """
     if not cpt_codes:
         return {}
-    response = (
-        supabase.table("medicare_fee_schedule")
-        .select("cpt_code,non_facility_rate")
-        .in_("cpt_code", list(set(cpt_codes)))
+
+    unique_codes = list(set(cpt_codes))
+
+    # Fetch RVU components for the requested codes (base codes only, no modifier)
+    indicators_resp = (
+        supabase.table("cms_pfs_indicators")
+        .select("hcpc,rvu_work,nfac_pe_rvu,rvu_mp,nfac_total_rvu,conv_fact,proc_stat")
+        .in_("hcpc", unique_codes)
+        .eq("modifier", "")
+        .eq("proc_stat", "A")
         .order("year", desc=True)
         .execute()
     )
-    # Take the most recent rate per CPT code (ordered by year desc)
+
+    # Take the most recent entry per HCPC code
+    indicators: dict[str, dict] = {}
+    for row in indicators_resp.data:
+        if row["hcpc"] not in indicators:
+            indicators[row["hcpc"]] = row
+
+    if not indicators:
+        return {}
+
+    # Fetch GPCI values for the requested locality
+    locality_resp = (
+        supabase.table("cms_localities")
+        .select("gpci_work,gpci_pe,gpci_mp")
+        .eq("locality_code", locality_code)
+        .order("year", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    if locality_resp.data:
+        gpci = locality_resp.data[0]
+        gpci_work = Decimal(str(gpci["gpci_work"]))
+        gpci_pe   = Decimal(str(gpci["gpci_pe"]))
+        gpci_mp   = Decimal(str(gpci["gpci_mp"]))
+    else:
+        # Fall back to national (1.0) if locality not found
+        gpci_work = gpci_pe = gpci_mp = Decimal("1.0")
+        logger.warning("Locality %s not found — using national GPCIs (1.0)", locality_code)
+
     rates: dict[str, Decimal] = {}
-    for row in response.data:
-        if row["cpt_code"] not in rates:
-            rates[row["cpt_code"]] = Decimal(str(row["non_facility_rate"]))
+    for hcpc, row in indicators.items():
+        cf = Decimal(str(row["conv_fact"]))
+        if cf == 0:
+            continue
+        if gpci_work == gpci_pe == gpci_mp == Decimal("1.0"):
+            # Shortcut: use the pre-summed national total
+            rate = Decimal(str(row["nfac_total_rvu"])) * cf
+        else:
+            rate = (
+                Decimal(str(row["rvu_work"])) * gpci_work
+                + Decimal(str(row["nfac_pe_rvu"])) * gpci_pe
+                + Decimal(str(row["rvu_mp"])) * gpci_mp
+            ) * cf
+        if rate > 0:
+            rates[hcpc] = rate.quantize(Decimal("0.01"))
+
     return rates
+
+
+def _load_non_payable_codes(supabase: Client, cpt_codes: list[str]) -> dict[str, str]:
+    """Return a map of cpt_code → proc_stat for any non-payable codes on the bill.
+
+    Only codes with proc_stat in ('I', 'B', 'N') are returned:
+      I = Inactive, B = Bundled (not separately payable), N = Non-covered.
+    Codes not present in cms_pfs_indicators are ignored — we only flag what we
+    can confirm, not codes we simply don't recognise.
+    """
+    if not cpt_codes:
+        return {}
+    response = (
+        supabase.table("cms_pfs_indicators")
+        .select("hcpc,proc_stat")
+        .in_("hcpc", list(set(cpt_codes)))
+        .in_("proc_stat", ["I", "B", "N"])
+        .eq("modifier", "")
+        .order("year", desc=True)
+        .execute()
+    )
+    result: dict[str, str] = {}
+    for row in response.data:
+        if row["hcpc"] not in result:
+            result[row["hcpc"]] = row["proc_stat"]
+    return result
+
+
+def _load_anesthesia_cf(supabase: Client, contractor: str = "NATL", locality_number: str = "NATL") -> Decimal | None:
+    """Load the locality-adjusted anesthesia conversion factor.
+
+    Defaults to the synthetic NATIONAL row (contractor='NATL', locality_number='NATL')
+    which represents the national non-qualifying APM CF (~$20.50 for 2026).
+
+    Returns None if the table has not been loaded yet, which disables the
+    anesthesia outlier rule rather than using a hardcoded fallback.
+    """
+    response = (
+        supabase.table("cms_anesthesia_cf")
+        .select("non_qualifying_cf")
+        .eq("contractor", contractor)
+        .eq("locality_number", locality_number)
+        .order("year", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        logger.warning(
+            "Anesthesia CF not found for contractor=%s locality=%s — "
+            "anesthesia outlier detection disabled.",
+            contractor,
+            locality_number,
+        )
+        return None
+    return Decimal(str(response.data[0]["non_qualifying_cf"]))
 
 
 def _map_errors_to_line_items(
