@@ -41,3 +41,8 @@ npm-debug.log*
 # Supabase
 supabase/.branches/
 supabase/.temp/
+
+# CMS reference data — large files, loaded into DB via scripts/, gitignored for local use only
+data/
+*.csv
+*.html
