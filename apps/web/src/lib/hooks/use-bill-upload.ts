@@ -15,7 +15,7 @@ export type UploadState =
 export function useBillUpload() {
   const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle' });
 
-  async function upload(file: File): Promise<void> {
+  async function upload(file: File, state: string | null, county: string | null): Promise<void> {
     setUploadState({ status: 'validating' });
 
     // 1. Validate file on the client (magic bytes + size)
@@ -66,9 +66,7 @@ export function useBillUpload() {
     setUploadState({ status: 'analyzing' });
 
     // 4. Trigger analysis and track to completion
-    // TODO: Implement triggerAnalysis — this is where your input shapes the feature.
-    // Consider: polling vs Realtime subscription, error handling, timeout behavior.
-    await triggerAnalysis(billId, setUploadState);
+    await triggerAnalysis(billId, state, county, setUploadState);
   }
 
   function reset(): void {
@@ -83,10 +81,16 @@ const MAX_POLLS = 90; // 3 minutes max (90 × 2s)
 
 async function triggerAnalysis(
   billId: string,
+  state: string | null,
+  county: string | null,
   setState: (state: UploadState) => void
 ): Promise<void> {
   // Kick off the engine — 202 Accepted means it's running in the background
-  const analyzeResponse = await fetch(`/api/bills/${billId}/analyze`, { method: 'POST' });
+  const analyzeResponse = await fetch(`/api/bills/${billId}/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state, county }),
+  });
   if (!analyzeResponse.ok) {
     const { error } = await analyzeResponse.json();
     setState({ status: 'error', error });

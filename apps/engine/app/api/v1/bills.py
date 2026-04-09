@@ -52,12 +52,20 @@ async def analyze_bill(
     # Mark the bill as in OCR processing so the frontend shows progress
     supabase.table("bills").update({"status": "ocr_processing"}).eq("id", bill_id).execute()
 
-    background_tasks.add_task(_run_analysis_pipeline, bill_id, body.file_path, supabase)
+    background_tasks.add_task(
+        _run_analysis_pipeline, bill_id, body.file_path, body.state, body.county, supabase
+    )
 
     return AnalyzeAccepted()
 
 
-async def _run_analysis_pipeline(bill_id: str, file_path: str, supabase: Client) -> None:
+async def _run_analysis_pipeline(
+    bill_id: str,
+    file_path: str,
+    state: str | None,
+    county: str | None,
+    supabase: Client,
+) -> None:
     """Full analysis pipeline — runs in the background after accepting the request.
 
     Steps:
@@ -108,10 +116,12 @@ async def _run_analysis_pipeline(bill_id: str, file_path: str, supabase: Client)
 
         # 4. Load reference data and run rules engine
         cpt_codes = [item.cpt_code for item in parsed_items]
+        locality_code = _resolve_locality(supabase, state, county)
+        logger.info("Using locality_code=%s for bill %s (state=%s county=%s)", locality_code, bill_id, state, county)
         ncci_pairs = _load_ncci_pairs(supabase)
-        medicare_rates = _load_medicare_rates(supabase, cpt_codes)
+        medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes)
-        anesthesia_cf = _load_anesthesia_cf(supabase)
+        anesthesia_cf = _load_anesthesia_cf(supabase, locality_code)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -289,15 +299,89 @@ def _load_non_payable_codes(supabase: Client, cpt_codes: list[str]) -> dict[str,
     return result
 
 
-def _load_anesthesia_cf(supabase: Client, contractor: str = "NATL", locality_number: str = "NATL") -> Decimal | None:
+def _resolve_locality(supabase: Client, state: str | None, county: str | None) -> str:
+    """Resolve a CMS 7-digit locality code from the patient's state and county.
+
+    Lookup order:
+      1. Exact county match (most specific)
+      2. REST OF STATE fallback for the state
+      3. STATEWIDE entry for the state
+      4. National default '0000000' (all GPCIs = 1.0)
+
+    Returns '0000000' if state is not provided or no match is found at any level.
+    """
+    if not state:
+        return "0000000"
+
+    state_upper = state.strip().upper()
+
+    # 1. Exact county match
+    if county:
+        county_upper = county.strip().upper()
+        for suffix in (" COUNTY", " CNTY"):
+            if county_upper.endswith(suffix):
+                county_upper = county_upper[: -len(suffix)].strip()
+
+        response = (
+            supabase.table("cms_county_locality")
+            .select("locality_code")
+            .eq("state", state_upper)
+            .eq("county_name", county_upper)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            return str(response.data[0]["locality_code"])
+
+    # 2. REST OF STATE fallback
+    response = (
+        supabase.table("cms_county_locality")
+        .select("locality_code")
+        .eq("state", state_upper)
+        .eq("is_rest_of_state", True)
+        .limit(1)
+        .execute()
+    )
+    if response.data:
+        return str(response.data[0]["locality_code"])
+
+    # 3. STATEWIDE entry
+    response = (
+        supabase.table("cms_county_locality")
+        .select("locality_code")
+        .eq("state", state_upper)
+        .eq("is_statewide", True)
+        .limit(1)
+        .execute()
+    )
+    if response.data:
+        return str(response.data[0]["locality_code"])
+
+    # 4. National default
+    logger.warning(
+        "Could not resolve locality for state=%s county=%s — using national default.",
+        state,
+        county,
+    )
+    return "0000000"
+
+
+def _load_anesthesia_cf(supabase: Client, locality_code: str = "0000000") -> Decimal | None:
     """Load the locality-adjusted anesthesia conversion factor.
 
-    Defaults to the synthetic NATIONAL row (contractor='NATL', locality_number='NATL')
-    which represents the national non-qualifying APM CF (~$20.50 for 2026).
+    Derives contractor and locality_number from the 7-char locality_code.
+    Falls back to the synthetic NATIONAL row when locality_code is '0000000'.
 
     Returns None if the table has not been loaded yet, which disables the
     anesthesia outlier rule rather than using a hardcoded fallback.
     """
+    if locality_code == "0000000":
+        contractor, locality_number = "NATL", "NATL"
+    else:
+        # locality_code = contractor (5 chars) + locality_number (2 chars)
+        contractor = locality_code[:5]
+        locality_number = locality_code[5:]
+
     response = (
         supabase.table("cms_anesthesia_cf")
         .select("non_qualifying_cf")
@@ -308,6 +392,9 @@ def _load_anesthesia_cf(supabase: Client, contractor: str = "NATL", locality_num
         .execute()
     )
     if not response.data:
+        # Try national fallback if the specific locality doesn't have an anesthesia CF
+        if contractor != "NATL":
+            return _load_anesthesia_cf(supabase, "0000000")
         logger.warning(
             "Anesthesia CF not found for contractor=%s locality=%s — "
             "anesthesia outlier detection disabled.",

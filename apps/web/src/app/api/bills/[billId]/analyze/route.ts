@@ -6,7 +6,7 @@ import type { ApiErrorResponse } from '@clarobill/shared';
 // Forwards the analysis request to the FastAPI engine.
 // The engine handles OCR, parsing, rules engine, and Claude AI analysis.
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ billId: string }> }
 ): Promise<NextResponse<{ accepted: true } | ApiErrorResponse>> {
   const user = await getAuthenticatedUser();
@@ -19,6 +19,17 @@ export async function POST(
 
   const { billId } = await params;
   const supabase = await createSupabaseServerClient();
+
+  // Optional geography for GPCI-adjusted rate benchmarking
+  let state: string | null = null;
+  let county: string | null = null;
+  try {
+    const body = await request.json() as { state?: string; county?: string };
+    state = body.state ?? null;
+    county = body.county ?? null;
+  } catch {
+    // No body or non-JSON body — geography defaults to national rates
+  }
 
   // Confirm bill ownership before forwarding to engine
   const { data: bill, error } = await supabase
@@ -44,7 +55,7 @@ export async function POST(
   const engineResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bill_id: billId, file_path: bill.file_path, user_id: user.id }),
+    body: JSON.stringify({ bill_id: billId, file_path: bill.file_path, user_id: user.id, state, county }),
   });
 
   if (!engineResponse.ok) {

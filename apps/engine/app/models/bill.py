@@ -90,6 +90,11 @@ class AnalyzeRequest(BaseModel):
     bill_id: str
     file_path: str
     user_id: str
+    # Optional geography for GPCI-adjusted rate benchmarking.
+    # state: uppercase CMS state name (e.g. "CALIFORNIA")
+    # county: county name without "County" suffix (e.g. "LOS ANGELES")
+    state: str | None = None
+    county: str | None = None
 
 
 class AnalyzeAccepted(BaseModel):
