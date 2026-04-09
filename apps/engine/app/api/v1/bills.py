@@ -127,11 +127,13 @@ async def _run_analysis_pipeline(
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_year)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_year)
         anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_year)
+        anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_year)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
             non_payable_codes=non_payable_codes,
             anesthesia_cf=anesthesia_cf,
+            anesthesia_base_units=anesthesia_base_units,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -331,6 +333,41 @@ def _load_non_payable_codes(
     for row in response.data:
         if row["hcpc"] not in result:
             result[row["hcpc"]] = row["proc_stat"]
+    return result
+
+
+def _load_anesthesia_base_units(
+    supabase: Client,
+    cpt_codes: list[str],
+    rate_year: int = 2026,
+) -> dict[str, int]:
+    """Return published CMS base units for any anesthesia codes on the bill.
+
+    Uses the closest available vintage ≤ the bill year (CMS released tables in
+    2018 and 2022; a 2020 bill uses the 2018 table, a 2023 bill uses 2022).
+
+    Only anesthesia codes (00100–01999) are returned — other codes are ignored.
+    Returns an empty dict if the table has not been loaded, which causes the
+    rules engine to fall back to the heuristic base unit ceiling.
+    """
+    anes_codes = [c for c in set(cpt_codes) if c.isdigit() and 100 <= int(c) <= 1999]
+    if not anes_codes:
+        return {}
+
+    response = (
+        supabase.table("cms_anesthesia_base_units")
+        .select("cpt_code,base_units,effective_year")
+        .in_("cpt_code", anes_codes)
+        .lte("effective_year", rate_year)
+        .order("effective_year", desc=True)
+        .execute()
+    )
+
+    # Take the most recent available entry per code (≤ bill year)
+    result: dict[str, int] = {}
+    for row in response.data:
+        if row["cpt_code"] not in result:
+            result[row["cpt_code"]] = int(row["base_units"])
     return result
 
 

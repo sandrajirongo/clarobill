@@ -248,3 +248,67 @@ class TestAnesthesiaOutlierDetection:
         errors = engine.run(items)
         anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
         assert len(anes_errors) == 0
+
+
+class TestAnesthesiaExactBaseUnits:
+    """Exact base unit validation using published CMS tables."""
+
+    # 2026 national non-qualifying anesthesia CF = $20.4975
+    ANES_CF = Decimal("20.4975")
+
+    # CPT 00840 (intraperitoneal procedures) = 7 published base units
+    BASE_UNITS = {"00840": 7}
+
+    @pytest.fixture()
+    def anes_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            anesthesia_cf=self.ANES_CF,
+            anesthesia_base_units=self.BASE_UNITS,
+        )
+
+    def test_flags_excess_base_units_vs_published_value(self, anes_engine: RulesEngine) -> None:
+        # 7 published base units + 6 time units (90 min) → expected $266.47
+        # Charge of $400 implies (400/20.4975) - 6 = 13.5 base units → 6.5 over published 7
+        items = [make_line_item("00840", 400.00, anesthesia_minutes=90)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 1
+        assert anes_errors[0].severity == "critical"
+        # Overcharge = (13.5 - 7) × 20.4975 ≈ $133.23
+        assert anes_errors[0].estimated_overcharge > Decimal("100")
+
+    def test_does_not_flag_charge_matching_published_base_units(self, anes_engine: RulesEngine) -> None:
+        # (7 base + 6 time) × 20.4975 = $266.47 — exactly correct
+        items = [make_line_item("00840", 266.47, anesthesia_minutes=90)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 0
+
+    def test_allows_half_unit_rounding_tolerance(self, anes_engine: RulesEngine) -> None:
+        # Slightly over but within 0.5 unit tolerance — should not flag
+        # 7.4 implied base units (published = 7, tolerance = 0.5)
+        # charge = (7.4 + 6) × 20.4975 = $274.67
+        items = [make_line_item("00840", 274.67, anesthesia_minutes=90)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 0
+
+    def test_overcharge_amount_reflects_published_base_units(self, anes_engine: RulesEngine) -> None:
+        # 10 implied base units vs 7 published → overcharge = 3 × CF
+        # charge = (10 + 6) × 20.4975 = $327.96
+        expected_overcharge = Decimal("3") * self.ANES_CF
+        items = [make_line_item("00840", 327.96, anesthesia_minutes=90)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 1
+        assert abs(anes_errors[0].estimated_overcharge - expected_overcharge) < Decimal("0.10")
+
+    def test_falls_back_to_heuristic_for_unknown_code(self, anes_engine: RulesEngine) -> None:
+        # 00100 is not in the base_units fixture — should fall back to the >25 heuristic
+        # charge implies 69 base units (well above 25 ceiling) → should still flag
+        items = [make_line_item("00100", 1500.00, anesthesia_minutes=60)]
+        errors = anes_engine.run(items)
+        anes_errors = [e for e in errors if e.code == "ANESTHESIA_OUTLIER"]
+        assert len(anes_errors) == 1

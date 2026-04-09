@@ -44,23 +44,28 @@ class RulesEngine:
         outlier_threshold: float = 2.0,
         non_payable_codes: dict[str, str] | None = None,
         anesthesia_cf: Decimal | None = None,
+        anesthesia_base_units: dict[str, int] | None = None,
     ) -> None:
         """
         Args:
-            ncci_edit_pairs:   Map of column_one_code → set of column_two_codes.
-            medicare_rates:    Map of cpt_code → non_facility_rate.
-            outlier_threshold: Flag charge when it exceeds Medicare rate by this multiplier.
-            non_payable_codes: Map of cpt_code → proc_stat for non-payable codes found on
-                               the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
-                               are critical; 'N' (non-covered) is a warning.
-            anesthesia_cf:     Locality-adjusted anesthesia conversion factor. When provided,
-                               anesthesia outlier detection is enabled.
+            ncci_edit_pairs:        Map of column_one_code → set of column_two_codes.
+            medicare_rates:         Map of cpt_code → non_facility_rate.
+            outlier_threshold:      Flag charge when it exceeds Medicare rate by this multiplier.
+            non_payable_codes:      Map of cpt_code → proc_stat for non-payable codes found on
+                                    the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
+                                    are critical; 'N' (non-covered) is a warning.
+            anesthesia_cf:          Locality-adjusted anesthesia conversion factor. When provided,
+                                    anesthesia outlier detection is enabled.
+            anesthesia_base_units:  Map of cpt_code → published base units from CMS tables.
+                                    When provided, enables exact base unit validation instead of
+                                    the generic plausibility ceiling.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
         self._outlier_threshold = outlier_threshold
         self._non_payable_codes = non_payable_codes or {}
         self._anesthesia_cf = anesthesia_cf
+        self._anesthesia_base_units = anesthesia_base_units or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -279,12 +284,14 @@ class RulesEngine:
                 continue
 
             implied_total = charge / self._anesthesia_cf
+            published_base = self._anesthesia_base_units.get(item.cpt_code)
 
             if item.anesthesia_minutes is not None:
                 time_units = Decimal(str(item.anesthesia_minutes)) / Decimal("15")
                 implied_base = implied_total - time_units
 
                 if implied_base < 0:
+                    # Charge is less than the documented time alone — always flag regardless of base unit data
                     errors.append(DetectedError(
                         code="ANESTHESIA_OUTLIER",
                         severity="critical",
@@ -300,7 +307,29 @@ class RulesEngine:
                         estimated_overcharge=Decimal("0"),
                         medicare_benchmark_rate=None,
                     ))
+                elif published_base is not None:
+                    # Exact check: CMS publishes the base units for this code
+                    # Allow up to 0.5 units of rounding — flag anything meaningfully above published value
+                    if implied_base > Decimal(str(published_base)) + Decimal("0.5"):
+                        overcharge = (implied_base - Decimal(str(published_base))) * self._anesthesia_cf
+                        expected_charge = (Decimal(str(published_base)) + time_units) * self._anesthesia_cf
+                        errors.append(DetectedError(
+                            code="ANESTHESIA_OUTLIER",
+                            severity="critical",
+                            affected_indices=[index],
+                            description=(
+                                f"CPT {item.cpt_code}: the billed charge of ${charge:.2f} implies "
+                                f"{float(implied_base):.1f} base units, but CMS publishes "
+                                f"{published_base} base units for this procedure. "
+                                f"With {item.anesthesia_minutes} minutes of documented time, "
+                                f"the expected charge is ${float(expected_charge):.2f}. "
+                                f"Potential overcharge: ${float(overcharge):.2f}."
+                            ),
+                            estimated_overcharge=overcharge,
+                            medicare_benchmark_rate=None,
+                        ))
                 elif implied_base > _MAX_PLAUSIBLE_BASE_UNITS:
+                    # No published base units for this code — fall back to heuristic ceiling
                     overcharge = (implied_base - Decimal(str(_MAX_PLAUSIBLE_BASE_UNITS))) * self._anesthesia_cf
                     errors.append(DetectedError(
                         code="ANESTHESIA_OUTLIER",
@@ -317,7 +346,7 @@ class RulesEngine:
                         medicare_benchmark_rate=None,
                     ))
             else:
-                # No OCR time — apply ceiling-only check
+                # No OCR time — ceiling-only check (can't do exact base unit check without time)
                 if implied_total > _MAX_PLAUSIBLE_TOTAL_UNITS:
                     overcharge = (implied_total - Decimal(str(_MAX_PLAUSIBLE_TOTAL_UNITS))) * self._anesthesia_cf
                     errors.append(DetectedError(
