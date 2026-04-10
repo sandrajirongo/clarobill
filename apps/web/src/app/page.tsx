@@ -62,7 +62,7 @@ export default function LandingPage(): JSX.Element {
       {/* PARTNERS CAROUSEL */}
       <div className={s.partnersStrip}>
         <div className={s.partnersTop}>
-          <span className={s.psLabel}>Connects with</span>
+          <span className={s.psLabel}>Works with</span>
           <span className={s.hipaaPill}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
               <rect x="3" y="11" width="18" height="11" rx="2" />
