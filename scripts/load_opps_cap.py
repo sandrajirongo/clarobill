@@ -7,13 +7,21 @@ Each row contains the Medicare payment cap for a HCPC code in a specific MAC loc
 The locality_code is constructed as CARRIER (5 chars) + LOCALITY (2 chars), matching
 the format used by cms_county_locality and cms_localities.
 
-PROCSTAT values in the source data:
-  A = active (APC-priced)
-  C = capped (OPPS payment is capped at this amount)
+OPPSCAP files are published quarterly: Jan (01-01), Apr (04-01), Jul (07-01), Oct (10-01).
+OPPS facility prices can change between quarters (e.g. 2024 had a Congressional CF
+correction in JANR that revised 3,901 of 3,902 prices by ~1.66%). Use --effective-from
+to tag each release with its correct date so the engine picks the right vintage.
+
+The script is re-runnable — it upserts on (effective_from, hcpc, modifier, locality_code).
 
 Usage:
-  python scripts/load_opps_cap.py --file data/cms/opps/2026/OPPSCAP_Apr.csv --year 2026
-  python scripts/load_opps_cap.py --file data/cms/opps/2025/OPPSCAP_APR.csv --year 2025
+  python scripts/load_opps_cap.py \\
+    --file data/cms/opps/2026/OPPSCAP_Apr.csv \\
+    --effective-from 2026-04-01
+
+  python scripts/load_opps_cap.py \\
+    --file data/cms/opps/2024/OPPSCAP_JANR.csv \\
+    --effective-from 2024-01-01
 """
 
 import argparse
@@ -21,6 +29,7 @@ import csv
 import os
 import sys
 import uuid
+from datetime import date
 from pathlib import Path
 
 from supabase import create_client
@@ -28,16 +37,19 @@ from supabase import create_client
 BATCH_SIZE = 500
 
 
-def load_from_file(path: Path, year: int) -> list[dict]:
+def load_from_file(path: Path, effective_from: date) -> list[dict]:
     """Parse an OPPSCAP CSV into rows ready for upsert into cms_opps_cap.
 
     Args:
         path: Path to the OPPSCAP CSV file.
-        year: Calendar year to tag each row with.
+        effective_from: The date this release became effective (e.g. date(2026, 4, 1)).
 
     Returns:
         List of dicts ready for upsert.
     """
+    effective_from_str = effective_from.isoformat()
+    year = effective_from.year
+
     rows: list[dict] = []
     with path.open(newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -58,6 +70,7 @@ def load_from_file(path: Path, year: int) -> list[dict]:
             rows.append({
                 "id": str(uuid.uuid4()),
                 "year": year,
+                "effective_from": effective_from_str,
                 "hcpc": hcpc,
                 "modifier": row["MOD"].strip(),
                 "proc_stat": row["PROCSTAT"].strip() or None,
@@ -66,7 +79,7 @@ def load_from_file(path: Path, year: int) -> list[dict]:
                 "non_facility_price": float(non_facility_raw) if non_facility_raw else None,
             })
 
-    print(f"  Parsed {len(rows)} OPPS cap rows.")
+    print(f"  Parsed {len(rows)} OPPS cap rows (effective_from={effective_from_str}).")
     return rows
 
 
@@ -75,7 +88,13 @@ def main() -> None:
         description="Load CMS OPPS cap rates into the ClaroBill database."
     )
     parser.add_argument("--file", type=Path, required=True, help="Path to the OPPSCAP CSV file")
-    parser.add_argument("--year", type=int, required=True, help="Calendar year (e.g. 2026)")
+    parser.add_argument(
+        "--effective-from",
+        type=date.fromisoformat,
+        required=True,
+        dest="effective_from",
+        help="Release effective date in YYYY-MM-DD format (e.g. 2026-04-01)",
+    )
     args = parser.parse_args()
 
     if not args.file.exists():
@@ -90,21 +109,18 @@ def main() -> None:
 
     client = create_client(supabase_url, supabase_key)
 
-    print(f"Loading OPPS cap rates from {args.file.name} (year={args.year})...")
-    rows = load_from_file(args.file, args.year)
-
-    # Clear only this year's rows before reload (safe to re-run)
-    client.table("cms_opps_cap").delete().eq("year", args.year).execute()
-    print(f"  Cleared existing year={args.year} rows.")
-
-    inserted = 0
+    print(f"Loading OPPS cap rates from {args.file.name} (effective_from={args.effective_from})...")
+    rows = load_from_file(args.file, args.effective_from)
+    upserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i : i + BATCH_SIZE]
-        client.table("cms_opps_cap").insert(batch).execute()
-        inserted += len(batch)
-        print(f"  Inserted {inserted}/{len(rows)} rows...")
+        client.table("cms_opps_cap").upsert(
+            batch, on_conflict="effective_from,hcpc,modifier,locality_code"
+        ).execute()
+        upserted += len(batch)
+        print(f"  Upserted {upserted}/{len(rows)} rows...")
 
-    print(f"Done. {inserted} OPPS cap rows loaded for year={args.year}.")
+    print(f"Done. {upserted} OPPS cap rows loaded for effective_from={args.effective_from}.")
 
 
 if __name__ == "__main__":

@@ -117,18 +117,18 @@ async def _run_analysis_pipeline(
 
         # 4. Load reference data and run rules engine
         cpt_codes = [item.cpt_code for item in parsed_items]
-        rate_year = _derive_rate_year(parsed_items)
-        locality_code = _resolve_locality(supabase, state, county, rate_year)
+        rate_date = _derive_rate_date(parsed_items)
+        locality_code = _resolve_locality(supabase, state, county, rate_date.year)
         logger.info(
-            "Using rate_year=%d locality_code=%s for bill %s (state=%s county=%s)",
-            rate_year, locality_code, bill_id, state, county,
+            "Using rate_date=%s locality_code=%s for bill %s (state=%s county=%s)",
+            rate_date, locality_code, bill_id, state, county,
         )
         ncci_pairs = _load_ncci_pairs(supabase)
-        medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_year)
-        non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_year)
-        anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_year)
-        anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_year)
-        opps_rates = _load_opps_rates(supabase, cpt_codes, locality_code, rate_year)
+        medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
+        non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
+        anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_date)
+        anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_date.year)
+        opps_rates = _load_opps_rates(supabase, cpt_codes, locality_code, rate_date)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -182,23 +182,25 @@ def _mime_type_from_path(file_path: str) -> str:
     )
 
 
-def _derive_rate_year(parsed_items: list[ParsedLineItem]) -> int:
-    """Determine the CMS fee schedule year to use for benchmarking.
+def _derive_rate_date(parsed_items: list[ParsedLineItem]) -> date:
+    """Determine the CMS fee schedule release date to use for benchmarking.
 
-    Uses the most common service date year across all line items. If years are
-    tied, the most recent wins. Falls back to the current year if no dates were
-    parsed (e.g. OCR failed to extract dates).
+    Uses the most common service date across all line items. If dates are tied,
+    the most recent wins. Falls back to today if no dates were parsed (e.g. OCR
+    failed to extract dates).
 
-    This ensures a 2023 bill is benchmarked against 2023 rates, not 2026 rates.
-    If the exact year isn't loaded in the DB, the loader functions fall back to
-    the closest available year that is ≤ the bill year.
+    The engine queries cms_pfs_indicators and cms_opps_cap with
+    effective_from <= rate_date, so this date is used to pick the most recent
+    quarterly release that was in effect when the service was rendered. For
+    example, a service date of 2024-02-15 picks the 2024-01-01 (JANR) release,
+    while 2024-05-10 picks the 2024-04-01 release.
     """
-    years = [item.service_date.year for item in parsed_items if item.service_date is not None]
-    if not years:
-        return date.today().year
-    counts: Counter[int] = Counter(years)
-    # Most frequent year; break ties by preferring the most recent
-    return max(counts, key=lambda y: (counts[y], y))
+    dates = [item.service_date for item in parsed_items if item.service_date is not None]
+    if not dates:
+        return date.today()
+    counts: Counter[date] = Counter(dates)
+    # Most frequent date; break ties by preferring the most recent
+    return max(counts, key=lambda d: (counts[d], d))
 
 
 def _load_ncci_pairs(supabase: Client) -> dict[str, set[str]]:
@@ -214,7 +216,7 @@ def _load_medicare_rates(
     supabase: Client,
     cpt_codes: list[str],
     locality_code: str = "0000000",
-    rate_year: int = 2026,
+    rate_date: date = date(2026, 1, 1),
 ) -> dict[str, Decimal]:
     """Compute Medicare non-facility rates for the given CPT codes.
 
@@ -236,28 +238,29 @@ def _load_medicare_rates(
         cpt_codes: List of CPT/HCPC codes from the parsed bill.
         locality_code: CMS MAC locality code for GPCI adjustment.
                        Defaults to '0000000' (national, all GPCIs = 1.0).
-        rate_year: The fee schedule year derived from the bill's service dates.
-                   Queries use year <= rate_year so the closest available vintage
-                   is used automatically if the exact year isn't loaded.
+        rate_date: The representative service date derived from the bill's line items.
+                   Queries use effective_from <= rate_date so the most recent quarterly
+                   release in effect on that date is used automatically.
     """
     if not cpt_codes:
         return {}
 
     unique_codes = list(set(cpt_codes))
+    rate_date_str = rate_date.isoformat()
 
-    # Fetch RVU components — use closest year ≤ bill year (handles gaps in historical data)
+    # Fetch RVU components — pick the most recent quarterly release ≤ service date
     indicators_resp = (
         supabase.table("cms_pfs_indicators")
         .select("hcpc,rvu_work,nfac_pe_rvu,rvu_mp,nfac_total_rvu,conv_fact,proc_stat")
         .in_("hcpc", unique_codes)
         .eq("modifier", "")
         .eq("proc_stat", "A")
-        .lte("year", rate_year)
-        .order("year", desc=True)
+        .lte("effective_from", rate_date_str)
+        .order("effective_from", desc=True)
         .execute()
     )
 
-    # Take the most recent available entry per HCPC code (≤ bill year)
+    # Take the most recent available entry per HCPC code (≤ service date)
     indicators: dict[str, dict] = {}
     for row in indicators_resp.data:
         if row["hcpc"] not in indicators:
@@ -266,12 +269,12 @@ def _load_medicare_rates(
     if not indicators:
         return {}
 
-    # Fetch GPCI values — same closest-year logic
+    # Fetch GPCI values — year-based (GPCI values do not change mid-year)
     locality_resp = (
         supabase.table("cms_localities")
         .select("gpci_work,gpci_pe,gpci_mp")
         .eq("locality_code", locality_code)
-        .lte("year", rate_year)
+        .lte("year", rate_date.year)
         .order("year", desc=True)
         .limit(1)
         .execute()
@@ -310,7 +313,7 @@ def _load_medicare_rates(
 def _load_non_payable_codes(
     supabase: Client,
     cpt_codes: list[str],
-    rate_year: int = 2026,
+    rate_date: date = date(2026, 1, 1),
 ) -> dict[str, str]:
     """Return a map of cpt_code → proc_stat for any non-payable codes on the bill.
 
@@ -327,8 +330,8 @@ def _load_non_payable_codes(
         .in_("hcpc", list(set(cpt_codes)))
         .in_("proc_stat", ["I", "B", "N"])
         .eq("modifier", "")
-        .lte("year", rate_year)
-        .order("year", desc=True)
+        .lte("effective_from", rate_date.isoformat())
+        .order("effective_from", desc=True)
         .execute()
     )
     result: dict[str, str] = {}
@@ -377,20 +380,20 @@ def _load_opps_rates(
     supabase: Client,
     cpt_codes: list[str],
     locality_code: str = "0000000",
-    rate_year: int = 2026,
+    rate_date: date = date(2026, 1, 1),
 ) -> dict[str, Decimal]:
     """Load OPPS facility payment caps for the given CPT codes and locality.
 
     Returns a map of hcpc → facility_price using the no-modifier (modifier='') rows,
-    which represent the standard outpatient facility payment cap. Uses the closest
-    available vintage ≤ the bill year. Returns an empty dict if the table has no
-    data for this locality, which disables the facility outlier rule gracefully.
+    which represent the standard outpatient facility payment cap. Uses the most recent
+    quarterly release with effective_from <= service date. Returns an empty dict if
+    the table has no data for this locality, which disables the facility outlier rule.
 
     Args:
         supabase: Authenticated Supabase client.
         cpt_codes: List of CPT/HCPC codes from the parsed bill.
         locality_code: 7-char CMS MAC locality code from _resolve_locality().
-        rate_year: Fee schedule year derived from the bill's service dates.
+        rate_date: Representative service date derived from the bill's line items.
     """
     if not cpt_codes:
         return {}
@@ -401,12 +404,12 @@ def _load_opps_rates(
         .in_("hcpc", list(set(cpt_codes)))
         .eq("modifier", "")
         .eq("locality_code", locality_code)
-        .lte("year", rate_year)
-        .order("year", desc=True)
+        .lte("effective_from", rate_date.isoformat())
+        .order("effective_from", desc=True)
         .execute()
     )
 
-    # Take the most recent available entry per code (≤ bill year)
+    # Take the most recent available entry per code (≤ service date)
     rates: dict[str, Decimal] = {}
     for row in response.data:
         hcpc = row["hcpc"]
@@ -501,13 +504,14 @@ def _resolve_locality(
 def _load_anesthesia_cf(
     supabase: Client,
     locality_code: str = "0000000",
-    rate_year: int = 2026,
+    rate_date: date = date(2026, 1, 1),
 ) -> Decimal | None:
     """Load the locality-adjusted anesthesia conversion factor.
 
     Derives contractor and locality_number from the 7-char locality_code.
     Falls back to the synthetic NATIONAL row when locality_code is '0000000'.
-    Uses year <= rate_year so the closest available vintage is used automatically.
+    Uses effective_from <= rate_date so the most recent quarterly release in
+    effect on the service date is used, including mid-year corrections.
 
     Returns None if the table has not been loaded yet, which disables the
     anesthesia outlier rule rather than using a hardcoded fallback.
@@ -524,22 +528,21 @@ def _load_anesthesia_cf(
         .select("non_qualifying_cf")
         .eq("contractor", contractor)
         .eq("locality_number", locality_number)
-        .lte("year", rate_year)
-        .order("year", desc=True)
-        .order("effective_from", desc=True)   # picks latest period within the year (e.g. 2024 Mar 9+)
+        .lte("effective_from", rate_date.isoformat())
+        .order("effective_from", desc=True)
         .limit(1)
         .execute()
     )
     if not response.data:
         # Try national fallback if the specific locality doesn't have an anesthesia CF
         if contractor != "NATL":
-            return _load_anesthesia_cf(supabase, "0000000", rate_year)
+            return _load_anesthesia_cf(supabase, "0000000", rate_date)
         logger.warning(
-            "Anesthesia CF not found for contractor=%s locality=%s year<=%d — "
+            "Anesthesia CF not found for contractor=%s locality=%s effective_from<=%s — "
             "anesthesia outlier detection disabled.",
             contractor,
             locality_number,
-            rate_year,
+            rate_date,
         )
         return None
     return Decimal(str(response.data[0]["non_qualifying_cf"]))
