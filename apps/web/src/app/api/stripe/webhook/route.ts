@@ -2,7 +2,7 @@ import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
-import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
+import { createSupabaseServiceClient } from '@/lib/supabase/server';
 
 // Stripe requires the raw body for signature verification — don't parse as JSON first
 export const runtime = 'nodejs';
@@ -50,7 +50,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     return;
   }
 
-  const supabase = await createSupabaseServerClient();
+  // Stripe calls this endpoint directly — no user session exists, so we must use
+  // the service client. The anon client would have auth.uid() = null and all
+  // payments queries would be silently blocked by RLS.
+  const supabase = createSupabaseServiceClient();
 
   // Idempotency check — don't process the same session twice
   const { data: existing } = await supabase
