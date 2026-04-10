@@ -184,7 +184,7 @@ def load_from_file(path: Path, year: int, effective_from: date) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Load CMS anesthesia conversion factors into the MedScan database."
+        description="Load CMS anesthesia conversion factors into the ClaroBill database."
     )
     parser.add_argument("--file", type=Path, required=True, help="Path to the CF file")
     parser.add_argument("--year", type=int, required=True, help="Calendar year (e.g. 2025)")

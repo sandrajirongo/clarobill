@@ -82,7 +82,7 @@ def load_from_file(path: Path, effective_year: int) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Load CMS anesthesia base units into the MedScan database."
+        description="Load CMS anesthesia base units into the ClaroBill database."
     )
     parser.add_argument("--file", type=Path, required=True, help="Path to the base units file")
     parser.add_argument(

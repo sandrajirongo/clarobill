@@ -1,5 +1,5 @@
 -- Migration: 20260406000001_initial_schema
--- Creates core tables for MedScan: bills, line_items, analysis_results, payments
+-- Creates core tables for ClaroBill: bills, line_items, analysis_results, payments
 
 -- Enable UUID generation
 create extension if not exists "pgcrypto";

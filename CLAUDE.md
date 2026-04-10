@@ -1,10 +1,10 @@
-# CLAUDE.md — MedScan: AI Medical Bill Error Finder
+# CLAUDE.md — ClaroBill: AI Medical Bill Error Finder
 
 ---
 
 ## PROJECT IDENTITY
 
-**Product:** MedScan — an AI-powered web app that analyzes medical bills for errors, overcharges, and coding mistakes, then generates plain-English reports and dispute letters.
+**Product:** ClaroBill — an AI-powered web app that analyzes medical bills for errors, overcharges, and coding mistakes, then generates plain-English reports and dispute letters.
 
 **Tech Stack:**
 - Frontend: Next.js 14+ (TypeScript, Tailwind CSS)
@@ -18,7 +18,7 @@
 
 **Monorepo Structure:**
 ```
-medscan/
+clarobill/
 ├── apps/
 │   ├── web/                 # Next.js frontend
 │   │   ├── src/
@@ -167,9 +167,9 @@ const data = BillAnalysisSchema.parse(raw);  // Zod validates at runtime
 
 **Design the error handling system intentionally, not reactively:**
 
-1. **Define error types explicitly.** MedScan has specific, known failure modes. Each one gets a typed error:
+1. **Define error types explicitly.** ClaroBill has specific, known failure modes. Each one gets a typed error:
    ```typescript
-   type MedScanError =
+   type ClaroBillError =
      | { code: 'OCR_FAILED'; detail: string; billId: string }
      | { code: 'INVALID_CPT_CODE'; detail: string; code: string }
      | { code: 'PAYMENT_FAILED'; detail: string; stripeError: string }

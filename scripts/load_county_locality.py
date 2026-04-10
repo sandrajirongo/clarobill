@@ -175,7 +175,7 @@ def load_from_file(path: Path, year: int) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Load CMS county-to-locality mapping into the MedScan database."
+        description="Load CMS county-to-locality mapping into the ClaroBill database."
     )
     parser.add_argument("--file", type=Path, required=True, help="Path to the LOCCO CSV file")
     parser.add_argument("--year", type=int, required=True, help="Calendar year (e.g. 2026)")
