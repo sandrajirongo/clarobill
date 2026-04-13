@@ -497,3 +497,70 @@ class TestAmbulanceChargeOutlier:
         errors = engine.run([item])
         amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
         assert len(amb_errors) == 0
+
+
+class TestTerminatedCodeDetection:
+    # A0080: non-emergency transport, terminated 2003-01-01 (replaced by other codes)
+    # E0190: positioning cushion, terminated 2021-12-31 (example of DME code retirement)
+    TERM_DATES = {
+        "A0080": date(2003, 1, 1),
+        "E0190": date(2021, 12, 31),
+    }
+
+    @pytest.fixture()
+    def term_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            hcpcs_termination_dates=self.TERM_DATES,
+        )
+
+    def test_flags_service_after_termination_date(self, term_engine: RulesEngine) -> None:
+        # E0190 terminated 2021-12-31; a 2026 bill using it should be flagged.
+        items = [make_line_item("E0190", 85.00, service_date=date(2026, 3, 15))]
+        errors = term_engine.run(items)
+        term_errors = [e for e in errors if e.code == "TERMINATED_CODE_BILLED"]
+        assert len(term_errors) == 1
+        assert term_errors[0].severity == "critical"
+        assert term_errors[0].estimated_overcharge == Decimal("85.00")
+        assert "E0190" in term_errors[0].description
+
+    def test_does_not_flag_service_on_termination_date(self, term_engine: RulesEngine) -> None:
+        # Service on the exact termination date is still valid (terminated = last valid date).
+        items = [make_line_item("E0190", 85.00, service_date=date(2021, 12, 31))]
+        errors = term_engine.run(items)
+        term_errors = [e for e in errors if e.code == "TERMINATED_CODE_BILLED"]
+        assert len(term_errors) == 0
+
+    def test_does_not_flag_service_before_termination_date(self, term_engine: RulesEngine) -> None:
+        # A0080 terminated 2003-01-01; a 2002 service using it is valid.
+        items = [make_line_item("A0080", 45.00, service_date=date(2002, 6, 1))]
+        errors = term_engine.run(items)
+        term_errors = [e for e in errors if e.code == "TERMINATED_CODE_BILLED"]
+        assert len(term_errors) == 0
+
+    def test_does_not_flag_code_without_termination_date(self, term_engine: RulesEngine) -> None:
+        # A0425 (ground mileage) is an active code not in the termination dict.
+        items = [make_line_item("A0425", 200.00)]
+        errors = term_engine.run(items)
+        term_errors = [e for e in errors if e.code == "TERMINATED_CODE_BILLED"]
+        assert len(term_errors) == 0
+
+    def test_no_flag_when_termination_dates_not_loaded(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("E0190", 85.00)]
+        errors = engine.run(items)
+        term_errors = [e for e in errors if e.code == "TERMINATED_CODE_BILLED"]
+        assert len(term_errors) == 0
+
+    def test_flags_multiple_terminated_codes(self, term_engine: RulesEngine) -> None:
+        items = [
+            make_line_item("A0080", 45.00, service_date=date(2026, 1, 1)),
+            make_line_item("E0190", 85.00, service_date=date(2026, 1, 1)),
+            make_line_item("A0425", 200.00, service_date=date(2026, 1, 1)),  # active
+        ]
+        errors = term_engine.run(items)
+        term_errors = [e for e in errors if e.code == "TERMINATED_CODE_BILLED"]
+        assert len(term_errors) == 2
+        flagged_codes = {e.description.split()[1] for e in term_errors}
+        assert flagged_codes == {"A0080", "E0190"}

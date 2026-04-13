@@ -128,6 +128,10 @@ async def _run_analysis_pipeline(
         ncci_pairs = _load_ncci_pairs(supabase)
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
+        hcpcs_non_payable, hcpcs_termination_dates = _load_hcpcs_code_data(
+            supabase, cpt_codes, rate_date
+        )
+        non_payable_codes.update(hcpcs_non_payable)
         anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_date)
         anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_date.year)
         opps_rates = _load_opps_rates(supabase, cpt_codes, locality_code, rate_date)
@@ -142,6 +146,7 @@ async def _run_analysis_pipeline(
             anesthesia_base_units=anesthesia_base_units,
             opps_rates=opps_rates,
             ambulance_rates=ambulance_rates,
+            hcpcs_termination_dates=hcpcs_termination_dates,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -345,6 +350,74 @@ def _load_non_payable_codes(
         if row["hcpc"] not in result:
             result[row["hcpc"]] = row["proc_stat"]
     return result
+
+
+def _load_hcpcs_code_data(
+    supabase: Client,
+    cpt_codes: list[str],
+    rate_date: date = date(2026, 1, 1),
+) -> tuple[dict[str, str], dict[str, date]]:
+    """Return non-payable status and termination dates for HCPCS Level II codes on the bill.
+
+    Queries cms_hcpcs_codes for any alpha-prefixed codes (A-Z followed by 4 digits)
+    and returns two mappings:
+
+    non_payable: hcpc → proc_stat-equivalent key for merging into non_payable_codes:
+        'I'  ← coverage_code 'I' (not payable by Medicare) — critical
+        'N'  ← coverage_code 'M' or 'S' (non-covered / non-covered by statute) — warning
+        'B'  ← pricing_indicator '00' with no explicit coverage code (not separately
+                priced by Part B — bundled or Part A only) — critical
+
+    termination_dates: hcpc → last valid date. Only codes whose termination_date is
+        not null are included. The rules engine uses this to flag service dates that
+        fall after the termination date.
+
+    Uses the most recent quarterly release with effective_from ≤ rate_date.
+    """
+    hcpcs_level2 = [c for c in set(cpt_codes) if c and not c[0].isdigit()]
+    if not hcpcs_level2:
+        return {}, {}
+
+    response = (
+        supabase.table("cms_hcpcs_codes")
+        .select("hcpc,pricing_indicator,coverage_code,termination_date")
+        .in_("hcpc", hcpcs_level2)
+        .lte("effective_from", rate_date.isoformat())
+        .order("effective_from", desc=True)
+        .execute()
+    )
+
+    # One row per hcpc: take the most recent (first due to desc ordering)
+    seen: set[str] = set()
+    non_payable: dict[str, str] = {}
+    termination_dates: dict[str, date] = {}
+
+    for row in response.data:
+        hcpc = row["hcpc"]
+        if hcpc in seen:
+            continue
+        seen.add(hcpc)
+
+        coverage = (row.get("coverage_code") or "").strip()
+        pricing = (row.get("pricing_indicator") or "").strip()
+        term_raw = row.get("termination_date")
+
+        # Map HCPCS coverage codes to the proc_stat keys the rules engine understands
+        if coverage == "I":
+            non_payable[hcpc] = "I"
+        elif coverage in ("M", "S"):
+            non_payable[hcpc] = "N"
+        elif pricing == "00":
+            # Not separately priced by Part B (bundled, Part A only, etc.)
+            non_payable[hcpc] = "B"
+
+        if term_raw:
+            try:
+                termination_dates[hcpc] = date.fromisoformat(term_raw)
+            except ValueError:
+                pass
+
+    return non_payable, termination_dates
 
 
 def _load_anesthesia_base_units(

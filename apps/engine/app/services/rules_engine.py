@@ -6,6 +6,7 @@ Rules are run independently and combined — no rule depends on another's output
 
 import logging
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from app.services.parser import ParsedLineItem
@@ -47,26 +48,30 @@ class RulesEngine:
         anesthesia_base_units: dict[str, int] | None = None,
         opps_rates: dict[str, Decimal] | None = None,
         ambulance_rates: dict[str, Decimal] | None = None,
+        hcpcs_termination_dates: dict[str, date] | None = None,
     ) -> None:
         """
         Args:
-            ncci_edit_pairs:        Map of column_one_code → set of column_two_codes.
-            medicare_rates:         Map of cpt_code → non_facility_rate.
-            outlier_threshold:      Flag charge when it exceeds Medicare rate by this multiplier.
-            non_payable_codes:      Map of cpt_code → proc_stat for non-payable codes found on
-                                    the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
-                                    are critical; 'N' (non-covered) is a warning.
-            anesthesia_cf:          Locality-adjusted anesthesia conversion factor. When provided,
-                                    anesthesia outlier detection is enabled.
-            anesthesia_base_units:  Map of cpt_code → published base units from CMS tables.
-                                    When provided, enables exact base unit validation instead of
-                                    the generic plausibility ceiling.
-            opps_rates:             Map of hcpc → OPPS facility payment cap for the resolved
-                                    locality. When provided, enables facility charge outlier
-                                    detection for hospital outpatient bills.
-            ambulance_rates:        Map of hcpc → applicable Medicare ambulance rate (urban,
-                                    rural, or super-rural) for the patient's ZIP code. When
-                                    provided, enables ambulance charge outlier detection.
+            ncci_edit_pairs:           Map of column_one_code → set of column_two_codes.
+            medicare_rates:            Map of cpt_code → non_facility_rate.
+            outlier_threshold:         Flag charge when it exceeds Medicare rate by this multiplier.
+            non_payable_codes:         Map of cpt_code → proc_stat for non-payable codes found on
+                                       the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
+                                       are critical; 'N' (non-covered) is a warning.
+            anesthesia_cf:             Locality-adjusted anesthesia conversion factor. When provided,
+                                       anesthesia outlier detection is enabled.
+            anesthesia_base_units:     Map of cpt_code → published base units from CMS tables.
+                                       When provided, enables exact base unit validation instead of
+                                       the generic plausibility ceiling.
+            opps_rates:                Map of hcpc → OPPS facility payment cap for the resolved
+                                       locality. When provided, enables facility charge outlier
+                                       detection for hospital outpatient bills.
+            ambulance_rates:           Map of hcpc → applicable Medicare ambulance rate (urban,
+                                       rural, or super-rural) for the patient's ZIP code. When
+                                       provided, enables ambulance charge outlier detection.
+            hcpcs_termination_dates:   Map of hcpc → last valid date from cms_hcpcs_codes.
+                                       When provided, enables detection of terminated HCPCS
+                                       Level II codes billed after their termination date.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -76,6 +81,7 @@ class RulesEngine:
         self._anesthesia_base_units = anesthesia_base_units or {}
         self._opps_rates = opps_rates or {}
         self._ambulance_rates = ambulance_rates or {}
+        self._hcpcs_termination_dates = hcpcs_termination_dates or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -94,6 +100,7 @@ class RulesEngine:
         errors.extend(self._detect_anesthesia_outliers(line_items))
         errors.extend(self._detect_facility_outliers(line_items))
         errors.extend(self._detect_ambulance_outliers(line_items))
+        errors.extend(self._detect_terminated_codes(line_items))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -250,11 +257,13 @@ class RulesEngine:
                 continue
 
             severity, reason = _stat_meta[proc_stat]
+            # Level II HCPCS codes start with a letter; CPT codes are all digits.
+            code_label = "CPT" if item.cpt_code and item.cpt_code[0].isdigit() else "HCPCS"
             errors.append(DetectedError(
                 code="NON_PAYABLE_CODE",
                 severity=severity,
                 affected_indices=[index],
-                description=f"CPT {item.cpt_code} {reason}",
+                description=f"{code_label} {item.cpt_code} {reason}",
                 estimated_overcharge=Decimal(str(item.total_charge)),
                 medicare_benchmark_rate=None,
             ))
@@ -450,6 +459,46 @@ class RulesEngine:
                     estimated_overcharge=overcharge,
                     medicare_benchmark_rate=benchmark,
                 ))
+
+        return errors
+
+    def _detect_terminated_codes(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag HCPCS Level II codes billed after their CMS termination date.
+
+        CMS terminates codes when they are replaced, consolidated, or withdrawn.
+        Billing a terminated code for a service that occurred after the termination
+        date means the provider used an invalid code — the claim will typically be
+        denied by Medicare and most commercial payers.  The correct current code
+        should have been used instead.
+
+        Only HCPCS Level II codes are checked (alpha-prefix, e.g. A0425, J1234).
+        CPT codes are covered by the proc_stat field in cms_pfs_indicators.
+        """
+        if not self._hcpcs_termination_dates:
+            return []
+
+        errors: list[DetectedError] = []
+
+        for index, item in enumerate(line_items):
+            term_date = self._hcpcs_termination_dates.get(item.cpt_code)
+            if term_date is None:
+                continue
+            if item.service_date <= term_date:
+                continue
+            errors.append(DetectedError(
+                code="TERMINATED_CODE_BILLED",
+                severity="critical",
+                affected_indices=[index],
+                description=(
+                    f"HCPCS {item.cpt_code} was terminated by CMS effective {term_date} "
+                    f"and is no longer a valid billing code. The service date on this claim "
+                    f"is {item.service_date}, which is after the termination date. This claim "
+                    f"line will likely be denied — ask your provider which current code should "
+                    f"have been used."
+                ),
+                estimated_overcharge=Decimal(str(item.total_charge)),
+                medicare_benchmark_rate=None,
+            ))
 
         return errors
 
