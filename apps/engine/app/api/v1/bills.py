@@ -92,11 +92,18 @@ async def _run_analysis_pipeline(
         ocr_service = OcrService()
         raw_text = await ocr_service.extract_text(file_bytes, mime_type)
 
-        # 3. Parse line items
+        # 3. Parse line items and attempt NPI extraction
         supabase.table("bills").update({"status": "analyzing"}).eq("id", bill_id).execute()
         logger.info("OCR raw text for bill %s:\n%s", bill_id, raw_text)
         parser = BillParser()
         parsed_items = parser.parse(raw_text, bill_date=date.today())
+
+        # Best-effort NPI extraction — Luhn-validated, stored for hospital charge lookup.
+        # None when no valid NPI is found; the pipeline continues without it.
+        hospital_npi = parser.extract_npi(raw_text)
+        if hospital_npi:
+            logger.info("Extracted NPI %s from bill %s", hospital_npi, bill_id)
+            supabase.table("bills").update({"hospital_npi": hospital_npi}).eq("id", bill_id).execute()
 
         # Persist line items to the database
         line_item_rows = [

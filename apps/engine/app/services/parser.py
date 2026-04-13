@@ -40,6 +40,37 @@ _ANES_START_END_PATTERN = re.compile(
 # How many lines after the CPT code line to search for a charge amount
 _LOOKAHEAD_LINES = 3
 
+# NPI patterns — used by extract_npi(), separate from the line-item parse flow.
+# Primary: explicit "NPI:" / "NPI #" label immediately preceding the 10-digit number.
+_NPI_LABEL_PATTERN = re.compile(r"\bNPI[:\s#]+(\d{10})\b", re.IGNORECASE)
+# Fallback: 10-digit number within 60 characters of a provider-identifying keyword.
+# Covers formats like "Billing Provider  1234567893" where the label is absent.
+_NPI_CONTEXT_PATTERN = re.compile(
+    r"(?:billing|provider|facility|physician)\b.{0,60}\b(\d{10})\b",
+    re.IGNORECASE,
+)
+
+
+def _validate_npi_luhn(npi: str) -> bool:
+    """Validate a 10-digit NPI using the CMS Luhn check.
+
+    CMS prepends "80840" to the 10-digit NPI to form a 15-digit string,
+    then applies the standard Luhn algorithm. A checksum divisible by 10
+    indicates a valid NPI.
+
+    Known valid NPI for testing: 1234567893 (checksum = 70).
+    """
+    digits = "80840" + npi
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        n = int(ch)
+        if i % 2 == 1:
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+    return total % 10 == 0
+
 
 def _is_anesthesia_code(cpt_code: str) -> bool:
     """Return True for CPT codes in the anesthesia range 00100–01999."""
@@ -235,6 +266,35 @@ class BillParser:
         # Sanity bounds: 1–999 statute miles covers all realistic ambulance transports
         if 1 <= miles <= 999:
             return miles
+        return None
+
+    def extract_npi(self, raw_text: str) -> str | None:
+        """Extract and validate the billing provider NPI from OCR text.
+
+        Tries two strategies in order:
+          1. Explicit label  — "NPI: 1234567893", "NPI# 1234567893"
+          2. Context keyword — 10-digit number within 60 chars of "billing",
+             "provider", "facility", or "physician"
+
+        Both require the candidate to pass the CMS Luhn check before returning.
+        This filters out phone numbers and other 10-digit OCR noise.
+
+        Args:
+            raw_text: Full text from OCR extraction.
+
+        Returns:
+            First Luhn-valid 10-digit NPI found, or None.
+        """
+        for match in _NPI_LABEL_PATTERN.finditer(raw_text):
+            candidate = match.group(1)
+            if _validate_npi_luhn(candidate):
+                return candidate
+
+        for match in _NPI_CONTEXT_PATTERN.finditer(raw_text):
+            candidate = match.group(1)
+            if _validate_npi_luhn(candidate):
+                return candidate
+
         return None
 
     @staticmethod

@@ -8,7 +8,7 @@ from datetime import date
 
 import pytest
 
-from app.services.parser import BillParser, ParsedLineItem
+from app.services.parser import BillParser, ParsedLineItem, _validate_npi_luhn
 
 
 @pytest.fixture()
@@ -200,3 +200,61 @@ class TestAmbulanceMileageParsing:
         assert items[0].cpt_code == "A0435"
         assert items[0].quantity == 150
         assert items[0].total_charge == 4500.00
+
+
+class TestNpiExtraction:
+    # NPI 1234567893 is a known Luhn-valid NPI used throughout CMS documentation.
+    # NPI 1234567890 differs only in the last digit and fails the Luhn check.
+    _VALID_NPI = "1234567893"
+    _INVALID_NPI = "1234567890"
+
+    def test_extracts_npi_from_explicit_colon_label(self, parser: BillParser) -> None:
+        text = f"Billing Provider\nNPI: {self._VALID_NPI}\n99214  Office Visit  $350.00"
+        assert parser.extract_npi(text) == self._VALID_NPI
+
+    def test_extracts_npi_from_hash_label(self, parser: BillParser) -> None:
+        text = f"Provider NPI# {self._VALID_NPI}\n99214  Office Visit  $350.00"
+        assert parser.extract_npi(text) == self._VALID_NPI
+
+    def test_npi_label_match_is_case_insensitive(self, parser: BillParser) -> None:
+        text = f"npi: {self._VALID_NPI}"
+        assert parser.extract_npi(text) == self._VALID_NPI
+
+    def test_falls_back_to_context_pattern_when_label_absent(self, parser: BillParser) -> None:
+        # "Billing Provider" keyword + valid NPI with no "NPI:" label
+        text = f"Billing Provider  {self._VALID_NPI}\n99214  Office Visit  $350.00"
+        assert parser.extract_npi(text) == self._VALID_NPI
+
+    def test_returns_none_when_no_npi_in_text(self, parser: BillParser) -> None:
+        text = "99214  Office Visit  $350.00\nTotal: $350.00"
+        assert parser.extract_npi(text) is None
+
+    def test_rejects_ten_digit_number_that_fails_luhn(self, parser: BillParser) -> None:
+        text = f"NPI: {self._INVALID_NPI}"
+        assert parser.extract_npi(text) is None
+
+    def test_returns_first_valid_npi_when_multiple_present(self, parser: BillParser) -> None:
+        # Referring provider NPI appears after billing provider NPI
+        text = (
+            f"Billing Provider NPI: {self._VALID_NPI}\n"
+            "Referring Provider NPI: 1487491573\n"
+        )
+        assert parser.extract_npi(text) == self._VALID_NPI
+
+    def test_ignores_ten_digit_number_not_near_provider_keyword(self, parser: BillParser) -> None:
+        # A 10-digit account number far from any provider keyword should not match
+        text = f"Account Number: {self._INVALID_NPI}\n99214  Office Visit  $350.00"
+        assert parser.extract_npi(text) is None
+
+
+class TestNpiLuhnValidation:
+    def test_known_valid_npi_passes(self) -> None:
+        # CMS-documented valid NPI: 1234567893, checksum = 70
+        assert _validate_npi_luhn("1234567893") is True
+
+    def test_altered_last_digit_fails(self) -> None:
+        assert _validate_npi_luhn("1234567890") is False
+
+    def test_all_zeros_fails(self) -> None:
+        # Not a realistic NPI — confirms the algorithm rejects trivial inputs
+        assert _validate_npi_luhn("0000000000") is False
