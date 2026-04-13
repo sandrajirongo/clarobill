@@ -46,6 +46,7 @@ class RulesEngine:
         anesthesia_cf: Decimal | None = None,
         anesthesia_base_units: dict[str, int] | None = None,
         opps_rates: dict[str, Decimal] | None = None,
+        ambulance_rates: dict[str, Decimal] | None = None,
     ) -> None:
         """
         Args:
@@ -63,6 +64,9 @@ class RulesEngine:
             opps_rates:             Map of hcpc → OPPS facility payment cap for the resolved
                                     locality. When provided, enables facility charge outlier
                                     detection for hospital outpatient bills.
+            ambulance_rates:        Map of hcpc → applicable Medicare ambulance rate (urban,
+                                    rural, or super-rural) for the patient's ZIP code. When
+                                    provided, enables ambulance charge outlier detection.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -71,6 +75,7 @@ class RulesEngine:
         self._anesthesia_cf = anesthesia_cf
         self._anesthesia_base_units = anesthesia_base_units or {}
         self._opps_rates = opps_rates or {}
+        self._ambulance_rates = ambulance_rates or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -88,6 +93,7 @@ class RulesEngine:
         errors.extend(self._detect_non_payable_codes(line_items))
         errors.extend(self._detect_anesthesia_outliers(line_items))
         errors.extend(self._detect_facility_outliers(line_items))
+        errors.extend(self._detect_ambulance_outliers(line_items))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -369,6 +375,81 @@ class RulesEngine:
                         estimated_overcharge=overcharge,
                         medicare_benchmark_rate=None,
                     ))
+
+        return errors
+
+    # Ambulance HCPCS codes covered by the CMS Ambulance Fee Schedule.
+    # All are A-prefix HCPCS Level II codes (not matched by the 5-digit CPT pattern).
+    _AMBULANCE_CODES: frozenset[str] = frozenset({
+        "A0425",  # Ground mileage, per statute mile
+        "A0426",  # ALS non-emergency, level 1
+        "A0427",  # ALS emergency, level 1
+        "A0428",  # BLS non-emergency
+        "A0429",  # BLS emergency
+        "A0430",  # Fixed-wing air transport
+        "A0431",  # Rotary-wing (helicopter) transport
+        "A0432",  # ALS non-emergency, level 2
+        "A0433",  # Advanced ALS (specialty)
+        "A0434",  # Specialty care transport
+        "A0435",  # Fixed-wing air mileage, per statute mile
+        "A0436",  # Rotary-wing air mileage, per statute mile
+    })
+
+    def _detect_ambulance_outliers(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag ambulance charges that exceed the CMS Ambulance Fee Schedule rate.
+
+        The AFS publishes locality-adjusted rates with three tiers:
+          urban, rural, and super-rural.
+        The applicable rate is pre-selected by _load_ambulance_rates() in bills.py
+        based on the patient's ZIP code. When ZIP is unknown, the urban (lowest)
+        rate is used as a conservative benchmark.
+
+        Uses the same outlier_threshold multiplier as price outlier detection.
+        Disabled when ambulance_rates is not loaded (no AFS data for the locality).
+        """
+        if not self._ambulance_rates:
+            return []
+
+        errors: list[DetectedError] = []
+
+        for index, item in enumerate(line_items):
+            if item.cpt_code not in self._AMBULANCE_CODES:
+                continue
+
+            benchmark = self._ambulance_rates.get(item.cpt_code)
+            if benchmark is None or benchmark <= 0:
+                continue
+
+            # For per-mile codes (A0425, A0435, A0436): when mileage was parsed,
+            # compare the per-mile unit_charge against the AFS per-mile benchmark.
+            # When mileage is unknown (quantity=1), compare total_charge — only
+            # a wildly inflated total will trigger, which is intentionally conservative.
+            is_mileage_code = item.cpt_code in {"A0425", "A0435", "A0436"}
+            if is_mileage_code and item.quantity > 1:
+                billed = Decimal(str(item.unit_charge))
+                charge_label = f"${billed:.2f}/mile ({item.quantity} miles billed)"
+            else:
+                billed = Decimal(str(item.total_charge))
+                charge_label = f"${billed:.2f}"
+
+            if billed > benchmark * Decimal(str(self._outlier_threshold)):
+                overcharge = (billed - benchmark) * Decimal(str(item.quantity))
+                label = f" ({item.description})" if item.description else ""
+                errors.append(DetectedError(
+                    code="AMBULANCE_CHARGE_OUTLIER",
+                    severity="warning",
+                    affected_indices=[index],
+                    description=(
+                        f"Your provider charged {charge_label} for ambulance service "
+                        f"{item.cpt_code}{label}. The Medicare Ambulance Fee Schedule "
+                        f"benchmark for your area is ${benchmark:.2f} — your charge is "
+                        f"{billed / benchmark:.1f}x that amount. Ambulance billing errors "
+                        f"are among the most common in healthcare. Consider requesting an "
+                        f"itemized bill and contacting the provider to review the charge."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=benchmark,
+                ))
 
         return errors
 

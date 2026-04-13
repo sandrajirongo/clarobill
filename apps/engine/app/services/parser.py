@@ -13,10 +13,12 @@ from datetime import date
 
 logger = logging.getLogger(__name__)
 
-# CPT code: exactly 5 digits at a word boundary
-_CPT_CODE_PATTERN = re.compile(r"\b(\d{5})\b")
-# Optional modifier: 2-char alphanumeric code immediately after CPT code
-_MODIFIER_PATTERN = re.compile(r"\b\d{5}\s+([A-Z0-9]{2})\b")
+# Procedure code: 5-digit CPT codes or HCPCS Level II codes (letter + 4 digits, e.g. A0425)
+_PROCEDURE_CODE_PATTERN = re.compile(r"\b(\d{5}|[A-Z]\d{4})\b")
+# Optional modifier: 2-char alphanumeric code immediately after the procedure code
+_MODIFIER_PATTERN = re.compile(r"\b(?:\d{5}|[A-Z]\d{4})\s+([A-Z0-9]{2})\b")
+# Mileage quantity — "12 miles", "12.0 mi", "8 MI" — searched near ambulance mileage codes
+_MILEAGE_PATTERN = re.compile(r"\b(\d{1,4}(?:\.\d)?)\s*(?:miles?|mi)\b", re.IGNORECASE)
 # Dollar amount: requires exactly 2 decimal places to avoid matching date fragments
 # (e.g. 11/14/25 would only match 11 without the decimal requirement)
 _AMOUNT_PATTERN = re.compile(r"\$?([\d,]+\.\d{2})\b")
@@ -45,6 +47,11 @@ def _is_anesthesia_code(cpt_code: str) -> bool:
         return 100 <= int(cpt_code) <= 1999
     except ValueError:
         return False
+
+
+# Ambulance HCPCS codes for which mileage quantity should be extracted.
+# A0425 = ground mileage; A0435 = fixed-wing air mileage; A0436 = rotary-wing air mileage.
+_AMBULANCE_MILEAGE_CODES: frozenset[str] = frozenset({"A0425", "A0435", "A0436"})
 
 
 @dataclass(frozen=True)
@@ -93,13 +100,13 @@ class BillParser:
             if i in processed_line_indices:
                 continue
 
-            cpt_match = _CPT_CODE_PATTERN.search(line)
-            if not cpt_match:
+            code_match = _PROCEDURE_CODE_PATTERN.search(line)
+            if not code_match:
                 continue
 
-            cpt_code = cpt_match.group(1)
+            cpt_code = code_match.group(1)
 
-            # Extract optional modifier from the CPT code line
+            # Extract optional modifier from the procedure code line
             modifier: str | None = None
             mod_match = _MODIFIER_PATTERN.search(line)
             if mod_match:
@@ -108,28 +115,40 @@ class BillParser:
             # Try to find a charge on the same line first, then look ahead
             charge = self._find_charge_in_window(lines, i)
             if charge is None:
-                logger.debug("No charge found for CPT %s at line %d — skipping", cpt_code, i)
+                logger.debug("No charge found for code %s at line %d — skipping", cpt_code, i)
                 continue
 
-            # Extract service date from CPT line or the surrounding window
+            # Extract service date from the code line or the surrounding window
             service_date = self._find_date_in_window(lines, i) or fallback_date
 
-            # Build description from the CPT code line (strip CPT code, modifier,
+            # Build description from the code line (strip code, modifier,
             # amounts, and date patterns so we're left with readable text)
-            description = self._extract_description(line, cpt_match.end())
+            description = self._extract_description(line, code_match.end())
 
             # Extract anesthesia time for codes in the 00100–01999 range
             anesthesia_minutes: int | None = None
             if _is_anesthesia_code(cpt_code):
                 anesthesia_minutes = self._find_anesthesia_minutes(lines, i)
 
+            # Extract mileage for ambulance per-mile codes.
+            # Sets quantity to the number of miles and unit_charge to the per-mile rate,
+            # enabling the rules engine to compare unit_charge directly against the AFS
+            # per-mile benchmark rather than the total transport charge.
+            quantity = 1
+            unit_charge = charge
+            if cpt_code in _AMBULANCE_MILEAGE_CODES:
+                miles = self._find_mileage_quantity(lines, i)
+                if miles is not None and miles > 1:
+                    quantity = miles
+                    unit_charge = round(charge / miles, 2)
+
             processed_line_indices.add(i)
             line_items.append(ParsedLineItem(
                 cpt_code=cpt_code,
                 description=description,
                 service_date=service_date,
-                quantity=1,
-                unit_charge=charge,
+                quantity=quantity,
+                unit_charge=unit_charge,
                 total_charge=charge,
                 modifier=modifier,
                 diagnosis_pointers=[],
@@ -198,6 +217,24 @@ class BillParser:
             if total > 0:
                 return total
 
+        return None
+
+    def _find_mileage_quantity(self, lines: list[str], start: int) -> int | None:
+        """Extract statute miles from the text around an ambulance mileage code.
+
+        Matches patterns like "12 miles", "12.0 mi", "8 MI". Rounds fractional
+        values to the nearest whole mile. Returns None when no mileage is found,
+        which causes the caller to leave quantity=1 and use total_charge for
+        the outlier comparison instead of unit_charge.
+        """
+        window = "\n".join(lines[start : min(start + _LOOKAHEAD_LINES + 1, len(lines))])
+        match = _MILEAGE_PATTERN.search(window)
+        if not match:
+            return None
+        miles = round(float(match.group(1)))
+        # Sanity bounds: 1–999 statute miles covers all realistic ambulance transports
+        if 1 <= miles <= 999:
+            return miles
         return None
 
     @staticmethod

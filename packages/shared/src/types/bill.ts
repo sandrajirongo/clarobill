@@ -43,7 +43,11 @@ export type BillingErrorCode =
   | 'INVALID_CPT_CODE'
   | 'UPCODING'
   | 'MISSING_MODIFIER'
-  | 'DATE_INCONSISTENCY';
+  | 'DATE_INCONSISTENCY'
+  | 'NON_PAYABLE_CODE'
+  | 'ANESTHESIA_OUTLIER'
+  | 'FACILITY_CHARGE_OUTLIER'
+  | 'AMBULANCE_CHARGE_OUTLIER';
 
 export interface BillingError {
   code: BillingErrorCode;

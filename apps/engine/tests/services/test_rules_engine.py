@@ -365,3 +365,135 @@ class TestFacilityChargeOutlier:
         errors = opps_engine.run(items)
         facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
         assert facility_errors[0].severity == "warning"
+
+
+class TestAmbulanceChargeOutlier:
+    # 2026 ALS emergency (A0427) urban rate for a mid-range locality: ~$710
+    # 2026 ground mileage (A0425) urban per-mile rate: ~$9.33
+    AMBULANCE_RATES = {
+        "A0427": Decimal("710.00"),   # ALS emergency ground transport
+        "A0428": Decimal("374.00"),   # BLS non-emergency ground transport
+        "A0431": Decimal("4650.00"),  # Helicopter (rotary-wing)
+        "A0425": Decimal("9.33"),     # Ground mileage, per statute mile
+    }
+
+    @pytest.fixture()
+    def amb_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            ambulance_rates=self.AMBULANCE_RATES,
+        )
+
+    def test_flags_inflated_transport_charge(self, amb_engine: RulesEngine) -> None:
+        # $710 benchmark × 2 = $1,420 threshold. $2,800 should be flagged.
+        items = [make_line_item("A0427", 2800.00)]
+        errors = amb_engine.run(items)
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 1
+        assert amb_errors[0].severity == "warning"
+        assert amb_errors[0].medicare_benchmark_rate == Decimal("710.00")
+
+    def test_does_not_flag_charge_below_threshold(self, amb_engine: RulesEngine) -> None:
+        # $1,200 is 1.69x the $710 benchmark — below the 2x threshold
+        items = [make_line_item("A0427", 1200.00)]
+        errors = amb_engine.run(items)
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 0
+
+    def test_flags_helicopter_charge(self, amb_engine: RulesEngine) -> None:
+        # $4,650 benchmark × 2 = $9,300 threshold. $25,000 is a common air ambulance overcharge.
+        items = [make_line_item("A0431", 25000.00)]
+        errors = amb_engine.run(items)
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 1
+        assert amb_errors[0].estimated_overcharge == Decimal("25000.00") - Decimal("4650.00")
+
+    def test_no_flag_for_unknown_ambulance_code(self, amb_engine: RulesEngine) -> None:
+        # A0430 (fixed-wing) is not in the fixture rates — should not be flagged
+        items = [make_line_item("A0430", 50000.00)]
+        errors = amb_engine.run(items)
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 0
+
+    def test_no_flag_for_non_ambulance_code(self, amb_engine: RulesEngine) -> None:
+        # Standard CPT code — ambulance rule should ignore it entirely
+        items = [make_line_item("99214", 9999.00)]
+        errors = amb_engine.run(items)
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 0
+
+    def test_no_flag_when_ambulance_rates_not_loaded(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("A0427", 99999.00)]
+        errors = engine.run(items)
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 0
+
+    def test_mileage_code_uses_unit_charge_when_quantity_known(self) -> None:
+        # A0425 at $9.33/mile benchmark. 20 miles billed at $30/mile = $600 total.
+        # $30/mile is 3.2x the $9.33 benchmark — should be flagged using unit_charge.
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            ambulance_rates={"A0425": Decimal("9.33")},
+        )
+        item = ParsedLineItem(
+            cpt_code="A0425",
+            description="Ground mileage",
+            service_date=date(2026, 3, 15),
+            quantity=20,
+            unit_charge=30.00,   # per-mile charge billed
+            total_charge=600.00, # 20 × $30
+            modifier=None,
+            diagnosis_pointers=[],
+        )
+        errors = engine.run([item])
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 1
+        # Overcharge = (30 - 9.33) × 20 miles = $413.40
+        assert abs(amb_errors[0].estimated_overcharge - Decimal("413.40")) < Decimal("0.01")
+
+    def test_mileage_code_falls_back_to_total_when_quantity_one(self) -> None:
+        # When quantity=1 (miles unknown), only flag wildly inflated totals.
+        # $9.33 benchmark × 2 = $18.66. A total of $500 with unknown mileage is flagged.
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            ambulance_rates={"A0425": Decimal("9.33")},
+        )
+        item = ParsedLineItem(
+            cpt_code="A0425",
+            description="Ground mileage",
+            service_date=date(2026, 3, 15),
+            quantity=1,
+            unit_charge=500.00,
+            total_charge=500.00,
+            modifier=None,
+            diagnosis_pointers=[],
+        )
+        errors = engine.run([item])
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 1
+
+    def test_reasonable_mileage_charge_not_flagged(self) -> None:
+        # 15 miles × $9.33/mile = $139.95 total. $12.00/mile = $180 total.
+        # $12.00/mile is 1.29x the $9.33 benchmark — below 2x threshold.
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            ambulance_rates={"A0425": Decimal("9.33")},
+        )
+        item = ParsedLineItem(
+            cpt_code="A0425",
+            description="Ground mileage",
+            service_date=date(2026, 3, 15),
+            quantity=15,
+            unit_charge=12.00,
+            total_charge=180.00,
+            modifier=None,
+            diagnosis_pointers=[],
+        )
+        errors = engine.run([item])
+        amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
+        assert len(amb_errors) == 0

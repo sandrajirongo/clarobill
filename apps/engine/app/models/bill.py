@@ -37,6 +37,7 @@ class BillingErrorCode(StrEnum):
     NON_PAYABLE_CODE = "NON_PAYABLE_CODE"
     ANESTHESIA_OUTLIER = "ANESTHESIA_OUTLIER"
     FACILITY_CHARGE_OUTLIER = "FACILITY_CHARGE_OUTLIER"
+    AMBULANCE_CHARGE_OUTLIER = "AMBULANCE_CHARGE_OUTLIER"
 
 
 class LineItem(BaseModel):
@@ -94,8 +95,10 @@ class AnalyzeRequest(BaseModel):
     # Optional geography for GPCI-adjusted rate benchmarking.
     # state: uppercase CMS state name (e.g. "CALIFORNIA")
     # county: county name without "County" suffix (e.g. "LOS ANGELES")
+    # zip_code: 5-digit ZIP code used for ambulance rural/urban indicator lookup
     state: str | None = None
     county: str | None = None
+    zip_code: str | None = None
 
 
 class AnalyzeAccepted(BaseModel):

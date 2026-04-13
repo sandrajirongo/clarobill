@@ -54,7 +54,8 @@ async def analyze_bill(
     supabase.table("bills").update({"status": "ocr_processing"}).eq("id", bill_id).execute()
 
     background_tasks.add_task(
-        _run_analysis_pipeline, bill_id, body.file_path, body.state, body.county, supabase
+        _run_analysis_pipeline,
+        bill_id, body.file_path, body.state, body.county, body.zip_code, supabase,
     )
 
     return AnalyzeAccepted()
@@ -65,6 +66,7 @@ async def _run_analysis_pipeline(
     file_path: str,
     state: str | None,
     county: str | None,
+    zip_code: str | None,
     supabase: Client,
 ) -> None:
     """Full analysis pipeline — runs in the background after accepting the request.
@@ -129,6 +131,9 @@ async def _run_analysis_pipeline(
         anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_date)
         anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_date.year)
         opps_rates = _load_opps_rates(supabase, cpt_codes, locality_code, rate_date)
+        ambulance_rates = _load_ambulance_rates(
+            supabase, cpt_codes, locality_code, zip_code, rate_date
+        )
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -136,6 +141,7 @@ async def _run_analysis_pipeline(
             anesthesia_cf=anesthesia_cf,
             anesthesia_base_units=anesthesia_base_units,
             opps_rates=opps_rates,
+            ambulance_rates=ambulance_rates,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -415,6 +421,128 @@ def _load_opps_rates(
         hcpc = row["hcpc"]
         if hcpc not in rates and row["facility_price"] is not None:
             rates[hcpc] = Decimal(str(row["facility_price"]))
+
+    return rates
+
+
+def _resolve_ambulance_rural_indicator(
+    supabase: Client,
+    zip_code: str | None,
+    rate_date: date,
+) -> str:
+    """Resolve the rural/urban designation for a ZIP code from the AFS ZIP5 table.
+
+    Returns:
+        ''  = urban    (default when ZIP is unknown or not found)
+        'R' = rural
+        'B' = super rural
+
+    Uses the most recent ZIP5 release with effective_from <= rate_date.
+    Falls back to '' (urban) on any lookup failure so the engine still runs.
+    """
+    if not zip_code:
+        return ""
+
+    zip5 = zip_code.strip()[:5]
+    if len(zip5) < 5 or not zip5.isdigit():
+        return ""
+
+    response = (
+        supabase.table("cms_ambulance_zip_locality")
+        .select("rural_indicator")
+        .eq("zip5", zip5)
+        .lte("effective_from", rate_date.isoformat())
+        .order("effective_from", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        logger.warning(
+            "ZIP %s not found in ambulance ZIP table (effective_from<=%s) — using urban rate.",
+            zip5,
+            rate_date,
+        )
+        return ""
+    return response.data[0]["rural_indicator"] or ""
+
+
+def _load_ambulance_rates(
+    supabase: Client,
+    cpt_codes: list[str],
+    locality_code: str,
+    zip_code: str | None,
+    rate_date: date,
+) -> dict[str, Decimal]:
+    """Load CMS Ambulance Fee Schedule benchmarks for any ambulance codes on the bill.
+
+    Resolves the applicable rate tier (urban / rural / super-rural) using the
+    patient's ZIP code. Falls back to the urban rate when ZIP is unavailable.
+
+    locality_code is the 7-char code from _resolve_locality():
+      carrier = locality_code[:5]   (e.g. '01112')
+      locality = locality_code[5:]  (e.g. '05')
+
+    Returns an empty dict if no A04xx codes are on the bill or the table has no
+    data for this carrier/locality — this disables the ambulance outlier rule
+    rather than emitting false flags.
+
+    Args:
+        supabase: Authenticated Supabase client.
+        cpt_codes: List of CPT/HCPC codes from the parsed bill.
+        locality_code: 7-char CMS MAC locality code from _resolve_locality().
+        zip_code: Patient's 5-digit ZIP code for rural indicator resolution.
+        rate_date: Representative service date from the bill's line items.
+    """
+    # Ambulance HCPCS codes are A04xx — filter out all standard CPT codes
+    ambulance_codes = [c for c in set(cpt_codes) if c.startswith("A04")]
+    if not ambulance_codes:
+        return {}
+
+    # Use national default when locality couldn't be resolved
+    if locality_code == "0000000":
+        logger.warning(
+            "Ambulance rate lookup: locality unknown — no benchmark available for this bill."
+        )
+        return {}
+
+    carrier = locality_code[:5]
+    locality = locality_code[5:]
+    rate_date_str = rate_date.isoformat()
+
+    response = (
+        supabase.table("cms_ambulance_rates")
+        .select("hcpc,urban_rate,rural_rate,super_rural_rate")
+        .in_("hcpc", ambulance_codes)
+        .eq("carrier", carrier)
+        .eq("locality", locality)
+        .lte("effective_from", rate_date_str)
+        .order("effective_from", desc=True)
+        .execute()
+    )
+
+    if not response.data:
+        return {}
+
+    # Take the most recent available entry per HCPC code (≤ service date)
+    latest: dict[str, dict] = {}
+    for row in response.data:
+        if row["hcpc"] not in latest:
+            latest[row["hcpc"]] = row
+
+    rural_indicator = _resolve_ambulance_rural_indicator(supabase, zip_code, rate_date)
+
+    rates: dict[str, Decimal] = {}
+    for hcpc, row in latest.items():
+        if rural_indicator == "B" and row["super_rural_rate"] is not None:
+            rate_value = row["super_rural_rate"]
+        elif rural_indicator == "R" and row["rural_rate"] is not None:
+            rate_value = row["rural_rate"]
+        else:
+            # Urban default (also used when rural/super-rural rate is null for this code)
+            rate_value = row["urban_rate"]
+
+        if rate_value is not None and float(rate_value) > 0:
+            rates[hcpc] = Decimal(str(rate_value)).quantize(Decimal("0.01"))
 
     return rates
 
