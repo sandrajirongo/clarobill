@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createSupabaseServiceClient } from '@/lib/supabase/server';
+import { getCloudRunIdToken } from '@/lib/gcp-auth';
 
 // Stripe requires the raw body for signature verification — don't parse as JSON first
 export const runtime = 'nodejs';
@@ -76,10 +77,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
 
   // Trigger PDF report generation and email delivery via the engine
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
+  const idToken = await getCloudRunIdToken(engineUrl);
   const reportResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
       ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
     },
     body: JSON.stringify({ user_email: session.customer_email, user_id: userId }),

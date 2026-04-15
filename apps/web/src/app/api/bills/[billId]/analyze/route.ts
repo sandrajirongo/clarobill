@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { getCloudRunIdToken } from '@/lib/gcp-auth';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 // POST /api/bills/[billId]/analyze
@@ -52,10 +53,12 @@ export async function POST(
 
   // Forward to Python engine — fire and forget (engine updates bill status async)
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
+  const idToken = await getCloudRunIdToken(engineUrl);
   const engineResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/analyze`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
       ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
     },
     body: JSON.stringify({ bill_id: billId, file_path: bill.file_path, user_id: user.id, state, county }),
