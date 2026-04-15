@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     sendgrid_api_key: str
     sendgrid_from_email: str
 
+    # Shared secret that Vercel must pass as X-Engine-Api-Key on every request.
+    # Empty in local dev — key check is skipped when not set.
+    engine_api_key: str = ""
+
     sentry_dsn: str = ""  # Optional — errors silently dropped if not set
 
     environment: str = "development"

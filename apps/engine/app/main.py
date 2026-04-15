@@ -3,7 +3,7 @@
 import logging
 
 import sentry_sdk
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -15,6 +15,7 @@ from slowapi.util import get_remote_address
 
 from app.api.v1.bills import router as bills_router
 from app.core.config import settings
+from app.core.security import verify_engine_api_key
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -58,7 +59,11 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-app.include_router(bills_router, prefix="/api/v1")
+app.include_router(
+    bills_router,
+    prefix="/api/v1",
+    dependencies=[Depends(verify_engine_api_key)],
+)
 
 
 @app.get("/health")

@@ -78,7 +78,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
   const reportResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
+    },
     body: JSON.stringify({ user_email: session.customer_email, user_id: userId }),
   });
 
