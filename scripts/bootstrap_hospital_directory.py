@@ -41,7 +41,7 @@ Simplest option: any CSV with columns npi, name, state, city, mrf_url.
 
 Uses Application Default Credentials. Before running locally:
   gcloud auth application-default login
-The authenticated account needs BigQuery Data Editor on clarobill_hospital_prices.
+The authenticated account needs BigQuery Data Editor on hospital_prices.
 """
 
 import argparse
@@ -142,7 +142,7 @@ def upsert_hospitals(
     Args:
         client: Authenticated BigQuery client.
         project: GCP project ID (e.g. "clarobill-prd").
-        dataset: BigQuery dataset name (e.g. "clarobill_hospital_prices").
+        dataset: BigQuery dataset name (e.g. "hospital_prices").
         hospitals: List of hospital dicts from parse_csv().
     """
     staging_table_id = f"{project}.{dataset}.hospital_directory_bootstrap_staging"
@@ -193,7 +193,7 @@ def main() -> None:
     )
     parser.add_argument("--file", type=Path, required=True, help="Path to the hospital CSV file")
     parser.add_argument("--project", default="clarobill-prd", help="GCP project ID")
-    parser.add_argument("--dataset", default="clarobill_hospital_prices", help="BigQuery dataset")
+    parser.add_argument("--dataset", default="hospital_prices", help="BigQuery dataset")
     parser.add_argument("--npi-col", default="npi", help="CSV column for NPI")
     parser.add_argument("--name-col", default="name", help="CSV column for hospital name")
     parser.add_argument("--state-col", default="state", help="CSV column for state")

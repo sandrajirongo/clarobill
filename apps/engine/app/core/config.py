@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     # bq_reader_credentials_json: full JSON content of clarobill-bq-reader-sa key.
     # Leave empty in local dev if using GOOGLE_APPLICATION_CREDENTIALS as fallback.
     gcp_project_id: str = ""
-    bigquery_dataset: str = "clarobill_hospital_prices"
-    gcs_mrf_staging_bucket: str = "clarobill-mrf-staging"
+    bigquery_dataset: str = "hospital_prices"
+    gcs_mrf_staging_bucket: str = "mrf-staging"
     bq_reader_credentials_json: str = ""
 
     sendgrid_api_key: str

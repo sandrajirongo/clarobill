@@ -2,7 +2,7 @@
 
 Cloud Run Job — triggered by Cloud Scheduler weekly, after the scraper job.
 
-Reads all files under gs://clarobill-mrf-staging/raw/, parses each MRF
+Reads all files under gs://mrf-staging/raw/, parses each MRF
 according to CMS JSON schema v2.0.0, and loads the normalised charge rows
 into BigQuery hospital_charges.
 
@@ -52,8 +52,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "clarobill-prd")
-BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "clarobill_hospital_prices")
-GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "clarobill-mrf-staging")
+BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "hospital_prices")
+GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 
 RAW_PREFIX = "raw/"          # where scraper writes MRF files
 STAGING_PREFIX = "staging/"  # temp NDJSON files during BigQuery load

@@ -10,7 +10,7 @@ After the scrape run, batches all updates to hospital_directory.last_modified
 via a BigQuery MERGE so the next run knows which files to skip.
 
 GCS layout:
-  clarobill-mrf-staging/
+  mrf-staging/
     raw/{npi}/{scraped_at_utc_iso}{.ext}
     e.g. raw/1234567890/2025-01-15T00:00:00Z.json.gz
 
@@ -48,8 +48,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "clarobill-prd")
-BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "clarobill_hospital_prices")
-GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "clarobill-mrf-staging")
+BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "hospital_prices")
+GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 
 # Concurrent download workers — stay polite to hospital web servers.
 # Each hospital is a different origin so parallel downloads are fine.
