@@ -1,43 +1,43 @@
 """Scrape the Payerset hospital MRF directory and output a bootstrap-ready CSV.
 
-Fetches https://docs.payerset.com/hospital-transparency/mrf-links-by-state,
-parses the per-state tables (System Name, Hospital Name, File URL, Record Count),
-and optionally resolves NPIs via the public NPPES registry API.
+Fetches the GitBook Markdown endpoint for:
+  https://docs.payerset.com/hospital-transparency/mrf-links-by-state
+
+The page is Next.js client-rendered so requests cannot parse the HTML directly.
+GitBook exposes a raw Markdown alternate at the same URL + ".md", which is
+server-rendered and contains all the table data.
 
 The output CSV has columns:
   npi, name, system_name, state, mrf_url, record_count, is_direct_download
 
 Feed the output straight into bootstrap_hospital_directory.py:
-  python scripts/scrape_payerset_directory.py --out hospitals.csv
-  python scripts/bootstrap_hospital_directory.py --file hospitals.csv
+  python3 scripts/scrape_payerset_directory.py --out hospitals.csv
+  python3 scripts/bootstrap_hospital_directory.py --file hospitals.csv
 
 --- NPI resolution ---
 
-The Payerset page does not include NPIs. The filename prefix in direct-download
-URLs is typically a 9-digit EIN or 6-digit CCN — not a 10-digit NPI.
+The Payerset page does not include NPIs. Filename prefixes are 9-digit EINs
+or 6-digit CCNs — not 10-digit NPIs. The --resolve-npis flag queries the
+free NPPES registry API (name + state lookup) to fill them in.
 
-With --resolve-npis the script queries the NPPES registry API:
-  https://npiregistry.cms.hhs.gov/api/?organization_name=...&state=...
+This takes ~1-2 seconds per hospital. For ~5,000 hospitals expect 2-3 hours
+total. Use --npi-cache to save results so re-runs skip already-resolved NPIs.
 
-This adds ~1-2 seconds per hospital (rate-limited to 5 req/s). For ~5,000
-hospitals expect 15-20 minutes total. Results are cached in --npi-cache so
-you only pay this cost once.
-
-Without --resolve-npis, npi is left blank for EIN/CCN entries and you can
-resolve them later. Direct-download URLs with a 10-digit NPI prefix are
-populated immediately — no API call needed.
+Without --resolve-npis, npi is left blank and can be resolved later.
 
 --- Usage ---
 
-  # Quick scrape, no NPI resolution:
-  python scripts/scrape_payerset_directory.py --out data/cms/hospitals/hospitals_raw.csv
+  # Quick scrape, no NPI resolution (seconds):
+  python3 scripts/scrape_payerset_directory.py --out data/cms/hospitals/hospitals_raw.csv
 
-  # Full scrape with NPI resolution (slow but complete):
-  python scripts/scrape_payerset_directory.py --out data/cms/hospitals/hospitals.csv \\
-    --resolve-npis --npi-cache data/cms/hospitals/npi_cache.json
+  # Full scrape with NPI resolution (slow, cached):
+  python3 scripts/scrape_payerset_directory.py \\
+    --out data/cms/hospitals/hospitals.csv \\
+    --resolve-npis \\
+    --npi-cache data/cms/hospitals/npi_cache.json
 
   # Single state for testing:
-  python scripts/scrape_payerset_directory.py --out test.csv --state TX
+  python3 scripts/scrape_payerset_directory.py --out /tmp/test.csv --state AL
 """
 
 import argparse
@@ -47,7 +47,6 @@ import logging
 import re
 import sys
 import time
-from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 
@@ -56,7 +55,9 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-PAYERSET_URL = "https://docs.payerset.com/hospital-transparency/mrf-links-by-state"
+# GitBook exposes raw Markdown at the .md alternate URL — use this instead of
+# the HTML page, which requires JavaScript to render.
+PAYERSET_MD_URL = "https://docs.payerset.com/hospital-transparency/mrf-links-by-state.md"
 NPPES_API = "https://npiregistry.cms.hhs.gov/api/"
 NPPES_RATE_LIMIT = 0.2  # seconds between requests (5 req/s max)
 
@@ -66,103 +67,15 @@ REQUEST_HEADERS = {
 
 OUTPUT_COLUMNS = ["npi", "name", "system_name", "state", "mrf_url", "record_count", "is_direct_download"]
 
+# Matches a Markdown link: [any text](url)
+_MD_LINK_RE = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
 
-# ---------------------------------------------------------------------------
-# HTML parser — extracts state tables from the Payerset docs page
-# ---------------------------------------------------------------------------
+# Matches a Markdown table data row (not a header or separator line).
+# Separator lines look like: | --- | --- | ... |
+_TABLE_ROW_RE = re.compile(r'^\|(.+)\|$')
+_TABLE_SEP_RE = re.compile(r'^\|[\s\-|]+\|$')
 
-class PayersetPageParser(HTMLParser):
-    """Stateful HTML parser that walks the Payerset MRF links page.
-
-    The page structure is:
-      <h2>State Name</h2>
-      <table>
-        <thead><tr><th>System Name</th><th>Hospital Name</th><th>File URL</th><th>Record Count</th></tr></thead>
-        <tbody>
-          <tr><td>...</td><td>...</td><td><a href="...">Link</a></td><td>...</td></tr>
-        </tbody>
-      </table>
-
-    State name is tracked from H2 headings. Each table row under a state
-    heading is emitted as a dict.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.rows: list[dict] = []
-        self._current_state: str = ""
-        self._in_table: bool = False
-        self._in_thead: bool = False
-        self._in_row: bool = False
-        self._cell_index: int = 0
-        self._current_cells: list[str] = []
-        self._current_link: str = ""
-        self._collecting: bool = False
-        self._buffer: str = ""
-
-    def handle_starttag(self, tag: str, attrs: list) -> None:
-        attrs_dict = dict(attrs)
-        if tag == "h2":
-            self._collecting = True
-            self._buffer = ""
-        elif tag == "table":
-            self._in_table = True
-        elif tag == "thead":
-            self._in_thead = True
-        elif tag == "tr" and self._in_table and not self._in_thead:
-            self._in_row = True
-            self._current_cells = []
-            self._current_link = ""
-            self._cell_index = 0
-        elif tag == "td" and self._in_row:
-            self._collecting = True
-            self._buffer = ""
-        elif tag == "a" and self._in_row:
-            self._current_link = attrs_dict.get("href", "")
-        elif tag == "th":
-            self._in_thead = True  # stay in header mode
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "h2":
-            self._current_state = self._buffer.strip()
-            self._collecting = False
-        elif tag == "table":
-            self._in_table = False
-            self._in_thead = False
-        elif tag == "thead":
-            self._in_thead = False
-        elif tag == "td" and self._in_row:
-            self._current_cells.append(self._buffer.strip())
-            self._cell_index += 1
-            self._collecting = False
-            self._buffer = ""
-        elif tag == "tr" and self._in_row:
-            self._in_row = False
-            if len(self._current_cells) >= 3:
-                # Columns: System Name (0), Hospital Name (1), File URL (2), Record Count (3)
-                system_name = self._current_cells[0]
-                hospital_name = self._current_cells[1]
-                mrf_url = self._current_link or self._current_cells[2]
-                record_count = self._current_cells[3] if len(self._current_cells) > 3 else ""
-                if hospital_name and mrf_url:
-                    self.rows.append({
-                        "system_name": system_name,
-                        "name": hospital_name,
-                        "state": _abbreviate_state(self._current_state),
-                        "mrf_url": mrf_url,
-                        "record_count": record_count.replace(",", ""),
-                    })
-
-    def handle_data(self, data: str) -> None:
-        if self._collecting:
-            self._buffer += data
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# US state name → abbreviation mapping (covers all 50 states + DC)
+# US state name → 2-letter abbreviation
 _STATE_ABBR: dict[str, str] = {
     "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
     "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
@@ -183,93 +96,143 @@ _STATE_ABBR: dict[str, str] = {
 
 def _abbreviate_state(name: str) -> str:
     """Convert a full state name to its 2-letter abbreviation, or return as-is."""
-    return _STATE_ABBR.get(name.lower(), name.upper()[:2])
+    return _STATE_ABBR.get(name.strip().lower(), name.strip().upper()[:2])
 
 
-def _extract_provider_id(mrf_url: str) -> tuple[str | None, bool]:
-    """Try to extract NPI from a direct-download MRF filename.
+def parse_markdown(md_text: str) -> list[dict]:
+    """Parse the Payerset Markdown page into a list of hospital dicts.
 
-    CMS requires hospitals to prefix their filename with NPI, CCN, or EIN:
-      {NPI|CCN|EIN}_{hospital-name}_standardcharges.{ext}
+    The Markdown structure is:
+      ## State Name
+      | System Name | Hospital Name | File URL | Record Count |
+      | --- | --- | --- | --- |
+      | Ascension | St Vincents | [Link](https://...) | 420,150 |
 
-    NPI is exactly 10 digits — if the prefix is 10 digits, use it directly.
-    CCN is 6 digits, EIN is 9 digits — these are NOT NPIs.
+    Walks line by line, tracking the current state from ## headings and
+    extracting data rows from pipe-delimited tables.
+
+    Args:
+        md_text: Raw Markdown content of the Payerset page.
+
+    Returns:
+        List of dicts with keys: system_name, name, state, mrf_url, record_count.
+    """
+    rows: list[dict] = []
+    current_state = ""
+
+    for line in md_text.splitlines():
+        line = line.strip()
+
+        # ## Heading → new state section
+        if line.startswith("## "):
+            current_state = _abbreviate_state(line[3:].strip())
+            continue
+
+        # Skip non-table lines and separator rows (| --- | --- |)
+        if not _TABLE_ROW_RE.match(line):
+            continue
+        if _TABLE_SEP_RE.match(line):
+            continue
+
+        # Split pipe-delimited columns, strip whitespace from each
+        cols = [c.strip() for c in line.strip("|").split("|")]
+        if len(cols) < 3:
+            continue
+
+        # Skip the header row (first column is "System Name")
+        if cols[0].lower() in ("system name", "system"):
+            continue
+
+        system_name = cols[0]
+        hospital_name = cols[1]
+        url_cell = cols[2]
+        record_count = cols[3].replace(",", "").strip() if len(cols) > 3 else ""
+
+        # Extract URL from Markdown link [Link](url) or use raw text if it's a plain URL
+        link_match = _MD_LINK_RE.search(url_cell)
+        mrf_url = link_match.group(2) if link_match else url_cell.strip()
+
+        # Remove escaped backslashes GitBook inserts before & and = in query strings
+        mrf_url = mrf_url.replace("\\&", "&").replace("\\=", "=")
+
+        if hospital_name and mrf_url and current_state:
+            rows.append({
+                "system_name": system_name,
+                "name": hospital_name,
+                "state": current_state,
+                "mrf_url": mrf_url,
+                "record_count": record_count,
+            })
+
+    return rows
+
+
+def scrape_payerset(session: requests.Session) -> list[dict]:
+    """Fetch and parse the Payerset MRF directory Markdown page.
+
+    Returns list of dicts with keys: system_name, name, state, mrf_url, record_count.
+    """
+    logger.info("Fetching %s", PAYERSET_MD_URL)
+    resp = session.get(PAYERSET_MD_URL, timeout=30)
+    resp.raise_for_status()
+    rows = parse_markdown(resp.text)
+    logger.info("Parsed %d hospital entries", len(rows))
+    return rows
+
+
+def _extract_npi_from_url(mrf_url: str) -> tuple[str | None, bool]:
+    """Try to extract an NPI from a direct-download MRF filename.
+
+    CMS naming convention: {NPI|EIN|CCN}_{hospital-name}_standardcharges.{ext}
+      NPI = 10 digits
+      EIN = 9 digits, sometimes formatted as XX-XXXXXXX
+      CCN = 6 digits
+
+    Only 10-digit prefixes are returned as NPIs. EINs and CCNs are ignored
+    since they cannot be used directly as NPI keys.
 
     Returns (npi_or_none, is_direct_download).
     """
     path = unquote(urlparse(mrf_url).path)
-    filename = path.split("/")[-1]
+    filename = path.split("/")[-1].lower()
 
-    # Check if it's a direct file download (has a known extension)
-    is_direct = any(
-        filename.lower().endswith(ext)
-        for ext in (".json", ".json.gz", ".csv", ".csv.gz", ".zip")
-    )
+    is_direct = any(filename.endswith(ext) for ext in (".json", ".json.gz", ".csv", ".csv.gz", ".zip"))
 
     if not is_direct:
         return None, False
 
-    # CMS naming convention: leading digits before first underscore or dot
-    match = re.match(r"^(\d+)[_\-]", filename)
-    if match:
-        digits = match.group(1)
+    # Extract prefix before the first underscore (handles EIN with dashes: 83-1651180_...)
+    prefix_match = re.match(r'^([0-9\-]+)_', filename)
+    if prefix_match:
+        digits = prefix_match.group(1).replace("-", "")
         if len(digits) == 10:
-            return digits, True  # 10-digit prefix = NPI
+            return digits, True
 
     return None, is_direct
 
 
 def _lookup_npi(hospital_name: str, state: str, session: requests.Session) -> str | None:
-    """Query the NPPES registry API to resolve an NPI from hospital name + state.
+    """Query the NPPES registry API to resolve an NPI by hospital name + state.
 
     Uses the public NPI Registry API (no auth required). Returns the first
-    matching NPI for an organizational provider in the given state, or None.
-
-    Args:
-        hospital_name: Hospital name as listed on the Payerset page.
-        state: 2-letter state abbreviation.
-        session: Requests session (shared to reuse TCP connections).
-
-    Returns:
-        10-digit NPI string, or None if not found.
+    matching NPI for an organizational provider, or None if not found.
     """
     params = {
         "organization_name": hospital_name,
         "state": state,
-        "enumeration_type": "NBO",  # NBO = organizational providers
+        "enumeration_type": "NBO",
         "version": "2.1",
         "limit": 5,
     }
     try:
         resp = session.get(NPPES_API, params=params, timeout=10)
         resp.raise_for_status()
-        data = resp.json()
-        results = data.get("results") or []
+        results = resp.json().get("results") or []
         if results:
             return results[0].get("number")
     except Exception as exc:
         logger.debug("NPPES lookup failed for %r (%s): %s", hospital_name, state, exc)
     return None
-
-
-# ---------------------------------------------------------------------------
-# Main scrape logic
-# ---------------------------------------------------------------------------
-
-def scrape_payerset(session: requests.Session) -> list[dict]:
-    """Fetch and parse the Payerset MRF directory page.
-
-    Returns list of dicts with keys: system_name, name, state, mrf_url, record_count.
-    """
-    logger.info("Fetching %s", PAYERSET_URL)
-    resp = session.get(PAYERSET_URL, timeout=30)
-    resp.raise_for_status()
-
-    parser = PayersetPageParser()
-    parser.feed(resp.text)
-
-    logger.info("Parsed %d hospital entries", len(parser.rows))
-    return parser.rows
 
 
 def enrich_with_npis(
@@ -279,22 +242,11 @@ def enrich_with_npis(
     filter_state: str | None,
     session: requests.Session,
 ) -> list[dict]:
-    """Add NPI and is_direct_download fields to each row.
+    """Add npi and is_direct_download fields to each row.
 
-    First tries to extract NPI from the filename (free, immediate).
-    Then optionally queries NPPES for rows without an NPI (slow, one API call each).
-
-    Args:
-        rows: Hospital rows from scrape_payerset().
-        resolve_npis: If True, call NPPES API for hospitals without a filename NPI.
-        npi_cache_path: Optional path to a JSON cache file to avoid re-querying NPPES.
-        filter_state: If set, only process hospitals in this state abbreviation.
-        session: Shared requests session.
-
-    Returns:
-        Enriched rows with npi (str|None) and is_direct_download (bool) added.
+    First tries to extract NPI from the filename (free, instant).
+    Then optionally queries NPPES for rows still missing an NPI.
     """
-    # Load NPI cache if available
     npi_cache: dict[str, str] = {}
     if npi_cache_path and npi_cache_path.exists():
         with npi_cache_path.open() as f:
@@ -302,26 +254,29 @@ def enrich_with_npis(
         logger.info("Loaded %d cached NPIs", len(npi_cache))
 
     enriched = []
-    npis_resolved = 0
+    npis_from_filename = 0
+    npis_from_api = 0
     npis_missing = 0
 
     for row in rows:
         if filter_state and row["state"] != filter_state.upper():
             continue
 
-        npi, is_direct = _extract_provider_id(row["mrf_url"])
+        npi, is_direct = _extract_npi_from_url(row["mrf_url"])
 
-        if npi is None and resolve_npis:
+        if npi:
+            npis_from_filename += 1
+        elif resolve_npis:
             cache_key = f"{row['name']}|{row['state']}"
             if cache_key in npi_cache:
-                npi = npi_cache[cache_key]
+                npi = npi_cache[cache_key] or None
             else:
                 npi = _lookup_npi(row["name"], row["state"], session)
                 npi_cache[cache_key] = npi or ""
-                npis_resolved += 1
+                npis_from_api += 1
                 time.sleep(NPPES_RATE_LIMIT)
 
-        if npi is None:
+        if not npi:
             npis_missing += 1
 
         enriched.append({
@@ -341,10 +296,8 @@ def enrich_with_npis(
         logger.info("Saved NPI cache to %s", npi_cache_path)
 
     logger.info(
-        "NPI summary: %d from filename, %d from NPPES, %d unresolved",
-        sum(1 for r in enriched if r["npi"] and r["is_direct_download"] == "true"),
-        npis_resolved,
-        npis_missing,
+        "NPI summary: %d from filename, %d from NPPES API, %d unresolved",
+        npis_from_filename, npis_from_api, npis_missing,
     )
     return enriched
 
@@ -367,29 +320,31 @@ def main() -> None:
     parser.add_argument(
         "--resolve-npis",
         action="store_true",
-        help="Query NPPES API for hospitals without a filename NPI (slow)",
+        help="Query NPPES API for hospitals without a filename NPI (slow — use --npi-cache)",
     )
     parser.add_argument(
         "--npi-cache",
         type=Path,
         default=None,
-        help="JSON file to cache NPPES results (avoids re-querying on re-runs)",
+        help="JSON file to cache NPPES results across runs",
     )
     parser.add_argument(
         "--state",
         default=None,
-        help="Filter to a single state abbreviation (e.g. TX) — useful for testing",
+        help="Filter to a single state (e.g. AL) — useful for testing",
     )
     args = parser.parse_args()
 
     with requests.Session() as session:
         session.headers.update(REQUEST_HEADERS)
-
         rows = scrape_payerset(session)
-        if not rows:
-            print("Error: no rows parsed from Payerset page.", file=sys.stderr)
-            sys.exit(1)
 
+    if not rows:
+        print("Error: no rows parsed from Payerset page.", file=sys.stderr)
+        sys.exit(1)
+
+    with requests.Session() as session:
+        session.headers.update(REQUEST_HEADERS)
         enriched = enrich_with_npis(
             rows,
             resolve_npis=args.resolve_npis,
@@ -398,9 +353,12 @@ def main() -> None:
             session=session,
         )
 
+    if not enriched:
+        print("Error: no rows after filtering.", file=sys.stderr)
+        sys.exit(1)
+
     write_csv(enriched, args.out)
 
-    # Summary
     total = len(enriched)
     with_npi = sum(1 for r in enriched if r["npi"])
     direct = sum(1 for r in enriched if r["is_direct_download"] == "true")
@@ -409,7 +367,7 @@ def main() -> None:
     print(f"  With NPI        : {with_npi} ({with_npi * 100 // total}%)")
     print(f"  Missing NPI     : {total - with_npi}")
     if total - with_npi > 0:
-        print("  → Re-run with --resolve-npis to fill missing NPIs via NPPES API")
+        print("  → Re-run with --resolve-npis --npi-cache npi_cache.json to fill missing NPIs")
 
 
 if __name__ == "__main__":
