@@ -1,31 +1,29 @@
 /**
  * GCP Workload Identity Federation — Vercel → Cloud Run authentication.
  *
- * Vercel injects an OIDC token (VERCEL_OIDC_TOKEN) into every serverless
- * function. This module exchanges it for a Google identity token that Cloud
- * Run accepts as a Bearer token, with no JSON key files involved.
+ * Uses @vercel/oidc to get the Vercel OIDC token, then exchanges it for a
+ * GCP federated access token via STS, then generates a Cloud Run identity
+ * token for the Authorization: Bearer header.
  *
- * Flow:
- *   1. Exchange VERCEL_OIDC_TOKEN at GCP STS → short-lived federated access token
- *   2. Use federated token to impersonate clarobill-vercel-sa → Cloud Run identity token
- *   3. Caller attaches identity token as Authorization: Bearer header
- *
- * Returns null in local development (VERCEL_OIDC_TOKEN absent) so the engine
- * can be called without auth during development.
+ * Returns null when not running on Vercel (local dev) so the engine can be
+ * called without auth during development.
  */
+
+import { getVercelOidcToken } from '@vercel/oidc';
 
 const WIF_AUDIENCE =
   `//iam.googleapis.com/projects/${process.env.GCP_PROJECT_NUMBER}/locations/global` +
-  `/workloadIdentityPools/clarobill-vercel-pool/providers/vercel-provider`;
+  `/workloadIdentityPools/${process.env.GCP_WORKLOAD_IDENTITY_POOL_ID ?? 'clarobill-vercel-pool'}` +
+  `/providers/${process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID ?? 'vercel-provider'}`;
 
-const VERCEL_SA_EMAIL = 'clarobill-vercel-sa@clarobill-prd.iam.gserviceaccount.com';
+const SA_EMAIL =
+  process.env.GCP_SERVICE_ACCOUNT_EMAIL ?? 'clarobill-vercel-sa@clarobill-prd.iam.gserviceaccount.com';
 
 export async function getCloudRunIdToken(cloudRunUrl: string): Promise<string | null> {
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
-  if (!oidcToken) {
-    // Local dev — Cloud Run auth not needed, engine accepts unauthenticated calls
-    return null;
-  }
+  // Not running on Vercel — local dev, skip auth
+  if (!process.env.VERCEL) return null;
+
+  const oidcToken = await getVercelOidcToken();
 
   // Step 1: Exchange Vercel OIDC token for a GCP federated access token
   const stsParams = new URLSearchParams({
@@ -44,29 +42,26 @@ export async function getCloudRunIdToken(cloudRunUrl: string): Promise<string | 
   });
 
   if (!stsRes.ok) {
-    throw new Error(`GCP STS token exchange failed: ${stsRes.status} ${await stsRes.text()}`);
+    throw new Error(`GCP STS exchange failed: ${stsRes.status} ${await stsRes.text()}`);
   }
 
   const { access_token: federatedToken } = await stsRes.json() as { access_token: string };
 
-  // Step 2: Impersonate clarobill-vercel-sa to get a Cloud Run identity token
+  // Step 2: Impersonate the SA to get a Cloud Run identity token
   const idTokenRes = await fetch(
-    `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${VERCEL_SA_EMAIL}:generateIdToken`,
+    `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${SA_EMAIL}:generateIdToken`,
     {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${federatedToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        audience: cloudRunUrl,
-        includeEmail: true,
-      }),
+      body: JSON.stringify({ audience: cloudRunUrl, includeEmail: true }),
     }
   );
 
   if (!idTokenRes.ok) {
-    throw new Error(`GCP ID token generation failed: ${idTokenRes.status} ${await idTokenRes.text()}`);
+    throw new Error(`GCP generateIdToken failed: ${idTokenRes.status} ${await idTokenRes.text()}`);
   }
 
   const { token } = await idTokenRes.json() as { token: string };

@@ -17,6 +17,8 @@
     "@stripe/stripe-js": "4.9.0",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.102.1",
+    "@vercel/oidc": "^3.2.0",
+    "google-auth-library": "^10.6.2",
     "next": "14.2.35",
     "posthog-js": "1.240.4",
     "react": "^18",
