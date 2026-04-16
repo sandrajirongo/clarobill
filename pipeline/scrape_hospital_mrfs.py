@@ -277,6 +277,7 @@ def scrape_hospital(
 def update_last_modified(
     bq: bigquery.Client,
     updates: list[dict[str, Any]],
+    task_index: int = 0,
 ) -> None:
     """Batch-update hospital_directory.last_modified for all scraped hospitals.
 
@@ -286,9 +287,13 @@ def update_last_modified(
     Updates only the last_modified column — last_scraped is set by the parser
     after it successfully loads the charges.
 
+    task_index is appended to the staging table name so parallel task instances
+    don't clobber each other's staging data during concurrent MERGE operations.
+
     Args:
         bq: Authenticated BigQuery client.
         updates: List of {mrf_url, last_modified} dicts.
+        task_index: Cloud Run task index (0 for single-task runs).
     """
     if not updates:
         logger.info("No hospitals to update.")
@@ -305,7 +310,7 @@ def update_last_modified(
             len(deduped),
         )
 
-    staging_id = f"{GCP_PROJECT}.{BQ_DATASET}.scraper_lm_staging"
+    staging_id = f"{GCP_PROJECT}.{BQ_DATASET}.scraper_lm_staging_{task_index}"
     ndjson = "\n".join(
         json.dumps({"mrf_url": url, "last_modified": lm})
         for url, lm in deduped.items()
@@ -334,14 +339,37 @@ def update_last_modified(
     logger.info("Updated last_modified for %d unique mrf_urls", len(deduped))
 
 
+def _task_shard(items: list, task_index: int, task_count: int) -> list:
+    """Return the slice of items assigned to this Cloud Run task instance.
+
+    Cloud Run Jobs injects CLOUD_RUN_TASK_INDEX (0-based) and
+    CLOUD_RUN_TASK_COUNT when --tasks > 1. Slice pattern items[i::n] gives
+    each task a roughly equal share with no gaps or overlaps.
+
+    Example — 6 tasks, 7,200 hospitals: each task gets exactly 1,200.
+    Callers pass task_index=0, task_count=1 for single-task runs (default).
+    """
+    return items[task_index::task_count]
+
+
 def main() -> None:
+    task_index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
+    task_count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
+
     bq, gcs = build_clients()
     bucket = gcs.bucket(GCS_BUCKET)
-    hospitals = load_hospitals(bq)
+    all_hospitals = load_hospitals(bq)
 
-    if not hospitals:
+    if not all_hospitals:
         logger.info("No hospitals to scrape — exiting.")
         sys.exit(0)
+
+    hospitals = _task_shard(all_hospitals, task_index, task_count)
+    if task_count > 1:
+        logger.info(
+            "Task %d/%d — processing %d/%d hospitals",
+            task_index, task_count, len(hospitals), len(all_hospitals),
+        )
 
     scraped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     updates: list[dict[str, Any]] = []
@@ -367,7 +395,7 @@ def main() -> None:
         len(updates),
         len(hospitals),
     )
-    update_last_modified(bq, updates)
+    update_last_modified(bq, updates, task_index=task_index)
 
 
 if __name__ == "__main__":

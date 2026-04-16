@@ -362,14 +362,34 @@ def _read_mrf_npi(blob: storage.Blob) -> str | None:
     return None
 
 
+def _task_shard(items: list, task_index: int, task_count: int) -> list:
+    """Return the slice of items assigned to this Cloud Run task instance.
+
+    Cloud Run Jobs injects CLOUD_RUN_TASK_INDEX (0-based) and
+    CLOUD_RUN_TASK_COUNT when --tasks > 1. Slice pattern items[i::n] gives
+    each task a roughly equal share with no gaps or overlaps.
+    """
+    return items[task_index::task_count]
+
+
 def main() -> None:
+    task_index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
+    task_count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
+
     bq, gcs = build_clients()
     bucket = gcs.bucket(GCS_BUCKET)
-    blobs = list_raw_blobs(bucket)
+    all_blobs = list_raw_blobs(bucket)
 
-    if not blobs:
+    if not all_blobs:
         logger.info("No MRF files to parse — exiting.")
         sys.exit(0)
+
+    blobs = _task_shard(all_blobs, task_index, task_count)
+    if task_count > 1:
+        logger.info(
+            "Task %d/%d — processing %d/%d blobs",
+            task_index, task_count, len(blobs), len(all_blobs),
+        )
 
     succeeded = 0
     failed = 0
