@@ -32,9 +32,9 @@ gcloud run jobs create clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 3600 \
-  --memory 1Gi \
-  --cpu 1 \
+  --task-timeout 7200 \
+  --memory 4Gi \
+  --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
   --project "${PROJECT}" \
   2>/dev/null || \
@@ -42,9 +42,9 @@ gcloud run jobs update clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 3600 \
-  --memory 1Gi \
-  --cpu 1 \
+  --task-timeout 7200 \
+  --memory 4Gi \
+  --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
   --project "${PROJECT}"
 
@@ -55,7 +55,7 @@ gcloud run jobs create clarobill-mrf-parser \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 7200 \
-  --memory 2Gi \
+  --memory 4Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
   --project "${PROJECT}" \
@@ -66,7 +66,7 @@ gcloud run jobs update clarobill-mrf-parser \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 7200 \
-  --memory 2Gi \
+  --memory 4Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
   --project "${PROJECT}"

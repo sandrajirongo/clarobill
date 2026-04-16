@@ -53,14 +53,14 @@ GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "clarobill-prd")
 BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "hospital_prices")
 GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 
-# Concurrent download workers — stay polite to hospital web servers.
-# Each hospital is a different origin so parallel downloads are fine.
-# 8 workers × 8MB GCS chunk size ≈ 64MB peak upload buffer, safe within 1Gi.
-MAX_WORKERS = 8
+# Concurrent download workers. Each worker owns its own requests.Session so
+# connection pools are fully isolated. 20 workers × 16MB GCS chunks ≈ 320MB
+# peak upload buffer, well within the 4Gi container limit.
+MAX_WORKERS = 20
 
-# GCS resumable upload chunk size (bytes). Default is 100MB per worker which
-# causes OOM at high concurrency. 8MB gives good throughput with low memory.
-GCS_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
+# GCS resumable upload chunk size (bytes). 16MB is a good balance — large
+# enough for throughput, small enough to keep per-worker memory bounded.
+GCS_UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
 
 # HEAD/GET timeout in seconds — hospitals have slow web servers.
 REQUEST_TIMEOUT = 30
@@ -189,6 +189,11 @@ def _download_to_gcs(
     at scrape time — the NPI is extracted from inside the MRF during parsing).
     Hospital context (name, mrf_url, state) is stored in GCS blob metadata so
     the parser can link rows back to hospital_directory.
+
+    The response is always explicitly closed in a finally block so the
+    underlying socket and its kernel receive buffer are released immediately
+    after upload, regardless of success or failure.  Without this, failed
+    uploads leave open sockets that accumulate and cause OOM.
     """
     name = hospital.get("hospital_name") or ""
     url = hospital["mrf_url"]
@@ -225,31 +230,39 @@ def _download_to_gcs(
     except Exception as exc:
         logger.error("[%s] GCS upload failed: %s", label, exc)
         return None
+    finally:
+        # Always release the socket — prevents kernel recv-buffer accumulation.
+        resp.close()
 
 
 def scrape_hospital(
     hospital: dict[str, Any],
-    session: requests.Session,
     bucket: storage.Bucket,
     scraped_at: str,
 ) -> dict[str, Any] | None:
     """Check and conditionally download one hospital's MRF file.
 
+    Creates its own requests.Session so each worker thread has an independent
+    connection pool — shared sessions cause urllib3 pool contention and
+    leave stale buffers when connections are reused across threads.
+
     Returns an update dict {mrf_url, last_modified} if the file was downloaded,
     or None if it was unchanged or an error occurred.
     """
-    hospital, should_download, new_lm, _ = _check_hospital(session, hospital)
+    with requests.Session() as session:
+        session.headers.update(REQUEST_HEADERS)
+        hospital, should_download, new_lm, _ = _check_hospital(session, hospital)
 
-    label = hospital.get("hospital_name") or hospital.get("mrf_url", "?")
-    if not should_download:
-        logger.debug("[%s] Unchanged, skipping", label)
-        return None
+        label = hospital.get("hospital_name") or hospital.get("mrf_url", "?")
+        if not should_download:
+            logger.debug("[%s] Unchanged, skipping", label)
+            return None
 
-    blob_name = _download_to_gcs(session, bucket, hospital, scraped_at)
-    if blob_name is None:
-        return None
+        blob_name = _download_to_gcs(session, bucket, hospital, scraped_at)
+        if blob_name is None:
+            return None
 
-    return {"mrf_url": hospital["mrf_url"], "last_modified": new_lm or ""}
+        return {"mrf_url": hospital["mrf_url"], "last_modified": new_lm or ""}
 
 
 def update_last_modified(
@@ -313,24 +326,21 @@ def main() -> None:
     scraped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     updates: list[dict[str, Any]] = []
 
-    with requests.Session() as session:
-        session.headers.update(REQUEST_HEADERS)
-
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {
-                pool.submit(scrape_hospital, h, session, bucket, scraped_at): (
-                    h.get("hospital_name") or h.get("mrf_url", "?")
-                )
-                for h in hospitals
-            }
-            for future in as_completed(futures):
-                label = futures[future]
-                try:
-                    result = future.result()
-                    if result:
-                        updates.append(result)
-                except Exception as exc:
-                    logger.error("[%s] Unexpected error: %s", label, exc)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {
+            pool.submit(scrape_hospital, h, bucket, scraped_at): (
+                h.get("hospital_name") or h.get("mrf_url", "?")
+            )
+            for h in hospitals
+        }
+        for future in as_completed(futures):
+            label = futures[future]
+            try:
+                result = future.result()
+                if result:
+                    updates.append(result)
+            except Exception as exc:
+                logger.error("[%s] Unexpected error: %s", label, exc)
 
     logger.info(
         "Scrape complete: %d/%d files downloaded",
