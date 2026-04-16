@@ -294,10 +294,21 @@ def update_last_modified(
         logger.info("No hospitals to update.")
         return
 
+    # Deduplicate by mrf_url — multiple hospitals can share one URL (health
+    # system MRFs covering several facilities). BigQuery MERGE requires at most
+    # one source row per target row; duplicates cause a 400 BadRequest.
+    deduped: dict[str, str] = {u["mrf_url"]: u["last_modified"] for u in updates}
+    if len(deduped) < len(updates):
+        logger.info(
+            "Deduplicated %d updates → %d unique mrf_urls",
+            len(updates),
+            len(deduped),
+        )
+
     staging_id = f"{GCP_PROJECT}.{BQ_DATASET}.scraper_lm_staging"
     ndjson = "\n".join(
-        json.dumps({"mrf_url": u["mrf_url"], "last_modified": u["last_modified"]})
-        for u in updates
+        json.dumps({"mrf_url": url, "last_modified": lm})
+        for url, lm in deduped.items()
     )
 
     load_config = bigquery.LoadJobConfig(
@@ -320,7 +331,7 @@ def update_last_modified(
     """
     bq.query(merge_sql).result()
     bq.delete_table(staging_id, not_found_ok=True)
-    logger.info("Updated last_modified for %d hospitals", len(updates))
+    logger.info("Updated last_modified for %d unique mrf_urls", len(deduped))
 
 
 def main() -> None:
