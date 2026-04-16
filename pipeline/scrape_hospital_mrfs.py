@@ -211,7 +211,10 @@ def _download_to_gcs(
             "state": hospital.get("state") or "",
             "hospital_npi": hospital.get("hospital_npi") or "",
         }
-        blob.upload_from_file(resp.raw, rewind=True)
+        # decode_content=True ensures urllib3 decompresses gzip on the fly.
+        # rewind must NOT be set — network streams are not seekable.
+        resp.raw.decode_content = True
+        blob.upload_from_file(resp.raw)
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name
     except Exception as exc:
