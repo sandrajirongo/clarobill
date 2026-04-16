@@ -33,7 +33,7 @@ gcloud run jobs create clarobill-mrf-scraper \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 3600 \
-  --memory 512Mi \
+  --memory 1Gi \
   --cpu 1 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
   --project "${PROJECT}" \
@@ -43,7 +43,7 @@ gcloud run jobs update clarobill-mrf-scraper \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 3600 \
-  --memory 512Mi \
+  --memory 1Gi \
   --cpu 1 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
   --project "${PROJECT}"

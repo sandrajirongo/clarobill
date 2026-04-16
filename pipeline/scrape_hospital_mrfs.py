@@ -55,7 +55,12 @@ GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 
 # Concurrent download workers — stay polite to hospital web servers.
 # Each hospital is a different origin so parallel downloads are fine.
-MAX_WORKERS = 20
+# 8 workers × 8MB GCS chunk size ≈ 64MB peak upload buffer, safe within 1Gi.
+MAX_WORKERS = 8
+
+# GCS resumable upload chunk size (bytes). Default is 100MB per worker which
+# causes OOM at high concurrency. 8MB gives good throughput with low memory.
+GCS_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 
 # HEAD/GET timeout in seconds — hospitals have slow web servers.
 REQUEST_TIMEOUT = 30
@@ -202,7 +207,7 @@ def _download_to_gcs(
     blob_name = f"raw/{slug}/{scraped_at}{ext}"
 
     try:
-        blob = bucket.blob(blob_name)
+        blob = bucket.blob(blob_name, chunk_size=GCS_UPLOAD_CHUNK_SIZE)
         # Store hospital context in blob metadata — parser reads these to link
         # rows to hospital_directory without needing NPI at scrape time.
         blob.metadata = {
