@@ -61,8 +61,11 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 500
 
 HOSPITAL_DIRECTORY_SCHEMA = [
-    bigquery.SchemaField("npi", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("name", "STRING"),
+    # hospital_npi is NULLABLE — NPIs are extracted from MRF file content during
+    # the parse step, not reliably available at bootstrap time (Payerset uses EINs).
+    bigquery.SchemaField("hospital_npi", "STRING"),
+    bigquery.SchemaField("hospital_name", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("system_name", "STRING"),
     bigquery.SchemaField("state", "STRING"),
     bigquery.SchemaField("city", "STRING"),
     bigquery.SchemaField("mrf_url", "STRING"),
@@ -76,18 +79,22 @@ def parse_csv(
     path: Path,
     npi_col: str,
     name_col: str,
+    system_name_col: str,
     state_col: str,
     city_col: str,
     mrf_url_col: str,
 ) -> list[dict]:
     """Parse a hospital CSV into dicts ready for BigQuery insertion.
 
-    Rows with a missing or non-10-digit NPI are skipped with a warning.
+    hospital_npi is optional — rows without a valid 10-digit NPI are still
+    included with hospital_npi=None, because NPIs are extracted from MRF file
+    content during the parse step.  Rows without a hospital_name are skipped.
 
     Args:
         path: Path to the input CSV file.
-        npi_col: Column header for the NPI field.
-        name_col: Column header for the hospital name.
+        npi_col: Column header for the NPI field (may be blank).
+        name_col: Column header for the hospital name (required).
+        system_name_col: Column header for the health system name.
         state_col: Column header for the 2-letter state code.
         city_col: Column header for the city.
         mrf_url_col: Column header for the MRF URL (may be empty).
@@ -102,17 +109,25 @@ def parse_csv(
         reader = csv.DictReader(f)
 
         for line_num, row in enumerate(reader, start=2):
-            npi = row.get(npi_col, "").strip()
-            if not npi or not npi.isdigit() or len(npi) != 10:
-                logger.warning("Line %d: skipping invalid NPI %r", line_num, npi)
+            hospital_name = row.get(name_col, "").strip()
+            if not hospital_name:
+                logger.warning("Line %d: skipping row with no hospital name", line_num)
                 skipped += 1
                 continue
+
+            raw_npi = row.get(npi_col, "").strip()
+            hospital_npi: str | None = None
+            if raw_npi and raw_npi.isdigit() and len(raw_npi) == 10:
+                hospital_npi = raw_npi
+            elif raw_npi:
+                logger.debug("Line %d: non-10-digit NPI %r — will resolve from MRF", line_num, raw_npi)
 
             mrf_url = row.get(mrf_url_col, "").strip() or None
 
             rows.append({
-                "npi": npi,
-                "name": row.get(name_col, "").strip() or None,
+                "hospital_npi": hospital_npi,
+                "hospital_name": hospital_name,
+                "system_name": row.get(system_name_col, "").strip() or None,
                 "state": row.get(state_col, "").strip().upper() or None,
                 "city": row.get(city_col, "").strip() or None,
                 "mrf_url": mrf_url,
@@ -135,9 +150,12 @@ def upsert_hospitals(
 
     Uses a load-to-staging + MERGE pattern:
     1. Loads all rows to a temp staging table.
-    2. MERGEs into hospital_directory: INSERT new NPIs, UPDATE existing names/locations.
-    3. Existing mrf_url and scrape metadata are preserved — bootstrap does not
-       overwrite URLs that the scraper has already validated.
+    2. MERGEs into hospital_directory joining on mrf_url (always populated,
+       unique per hospital).  hospital_npi is intentionally NOT the join key
+       because it is NULL for most hospitals until the MRF is parsed.
+    3. INSERT new mrf_urls (new hospitals from the Payerset scrape).
+    4. UPDATE existing rows to refresh hospital_name, system_name, state.
+    5. Existing hospital_npi and scrape metadata are preserved.
 
     Args:
         client: Authenticated BigQuery client.
@@ -166,17 +184,20 @@ def upsert_hospitals(
     merge_sql = f"""
         MERGE `{project}.{dataset}.hospital_directory` T
         USING `{staging_table_id}` S
-        ON T.npi = S.npi
+        ON T.mrf_url = S.mrf_url
         WHEN NOT MATCHED THEN
-            INSERT (npi, name, state, city, mrf_url, last_scraped, last_modified, schema_version)
-            VALUES (S.npi, S.name, S.state, S.city, S.mrf_url, NULL, NULL, NULL)
+            INSERT (hospital_npi, hospital_name, system_name, state, city, mrf_url,
+                    last_scraped, last_modified, schema_version)
+            VALUES (S.hospital_npi, S.hospital_name, S.system_name, S.state, S.city,
+                    S.mrf_url, NULL, NULL, NULL)
         WHEN MATCHED THEN
             UPDATE SET
-                name = COALESCE(S.name, T.name),
-                state = COALESCE(S.state, T.state),
-                city = COALESCE(S.city, T.city),
-                -- Preserve the scraper-validated MRF URL; only overwrite if we have a new one.
-                mrf_url = COALESCE(T.mrf_url, S.mrf_url)
+                hospital_name = COALESCE(S.hospital_name, T.hospital_name),
+                system_name   = COALESCE(S.system_name, T.system_name),
+                state         = COALESCE(S.state, T.state),
+                city          = COALESCE(S.city, T.city),
+                -- Only backfill NPI if we now have one and didn't before.
+                hospital_npi  = COALESCE(T.hospital_npi, S.hospital_npi)
     """
     logger.info("Merging into hospital_directory...")
     client.query(merge_sql).result()
@@ -194,8 +215,9 @@ def main() -> None:
     parser.add_argument("--file", type=Path, required=True, help="Path to the hospital CSV file")
     parser.add_argument("--project", default="clarobill-prd", help="GCP project ID")
     parser.add_argument("--dataset", default="hospital_prices", help="BigQuery dataset")
-    parser.add_argument("--npi-col", default="npi", help="CSV column for NPI")
-    parser.add_argument("--name-col", default="name", help="CSV column for hospital name")
+    parser.add_argument("--npi-col", default="hospital_npi", help="CSV column for NPI (optional)")
+    parser.add_argument("--name-col", default="hospital_name", help="CSV column for hospital name")
+    parser.add_argument("--system-name-col", default="system_name", help="CSV column for health system name")
     parser.add_argument("--state-col", default="state", help="CSV column for state")
     parser.add_argument("--city-col", default="city", help="CSV column for city")
     parser.add_argument("--mrf-url-col", default="mrf_url", help="CSV column for MRF URL")
@@ -214,6 +236,7 @@ def main() -> None:
         args.file,
         npi_col=args.npi_col,
         name_col=args.name_col,
+        system_name_col=args.system_name_col,
         state_col=args.state_col,
         city_col=args.city_col,
         mrf_url_col=args.mrf_url_col,

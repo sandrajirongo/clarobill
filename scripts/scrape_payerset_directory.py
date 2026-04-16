@@ -65,7 +65,7 @@ REQUEST_HEADERS = {
     "User-Agent": "ClaroBill-Research/1.0 (price transparency; contact@clarobill.com)",
 }
 
-OUTPUT_COLUMNS = ["npi", "name", "system_name", "state", "mrf_url", "record_count", "is_direct_download"]
+OUTPUT_COLUMNS = ["hospital_npi", "hospital_name", "system_name", "state", "mrf_url", "record_count", "is_direct_download"]
 
 # Matches a Markdown link: [any text](url)
 _MD_LINK_RE = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
@@ -280,8 +280,8 @@ def enrich_with_npis(
             npis_missing += 1
 
         enriched.append({
-            "npi": npi or "",
-            "name": row["name"],
+            "hospital_npi": npi or "",
+            "hospital_name": row["name"],
             "system_name": row["system_name"],
             "state": row["state"],
             "mrf_url": row["mrf_url"],
@@ -296,7 +296,7 @@ def enrich_with_npis(
         logger.info("Saved NPI cache to %s", npi_cache_path)
 
     logger.info(
-        "NPI summary: %d from filename, %d from NPPES API, %d unresolved",
+        "NPI summary: %d from filename, %d NPPES API calls made, %d unresolved (NPPES name matching often fails — NPIs will be extracted from MRF file content during parsing)",
         npis_from_filename, npis_from_api, npis_missing,
     )
     return enriched
@@ -360,7 +360,7 @@ def main() -> None:
     write_csv(enriched, args.out)
 
     total = len(enriched)
-    with_npi = sum(1 for r in enriched if r["npi"])
+    with_npi = sum(1 for r in enriched if r["hospital_npi"])
     direct = sum(1 for r in enriched if r["is_direct_download"] == "true")
     print(f"\n  Total hospitals : {total}")
     print(f"  Direct download : {direct} ({direct * 100 // total}%)")

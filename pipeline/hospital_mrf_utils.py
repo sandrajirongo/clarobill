@@ -76,6 +76,40 @@ class ChargeRow:
         }
 
 
+def extract_npi_from_mrf_root(root: dict[str, Any]) -> str | None:
+    """Extract a 10-digit NPI from MRF root object metadata.
+
+    CMS v2.0.0 files include the hospital NPI in the root under various key
+    names depending on the vendor.  This checks the most common variants and
+    validates the result is exactly 10 digits before returning it.
+
+    Args:
+        root: The root-level dict of a parsed MRF JSON file.
+
+    Returns:
+        A 10-digit NPI string, or None if not found or not parseable.
+    """
+    candidates = [
+        root.get("hospital_npi"),
+        root.get("npi"),
+        root.get("provider_npi"),
+    ]
+    # Some vendors nest location info: root["hospital_location"][0]["hospital_npi"]
+    location = root.get("hospital_location")
+    if isinstance(location, list) and location:
+        candidates.append(location[0].get("hospital_npi"))
+        candidates.append(location[0].get("npi"))
+
+    for val in candidates:
+        if val is None:
+            continue
+        digits = str(val).strip().replace("-", "")
+        if len(digits) == 10 and digits.isdigit():
+            return digits
+
+    return None
+
+
 def detect_mrf_version(root: dict[str, Any]) -> str | None:
     """Return the schema version string from an MRF root dict, or None.
 

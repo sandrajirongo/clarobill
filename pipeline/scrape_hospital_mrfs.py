@@ -11,10 +11,12 @@ via a BigQuery MERGE so the next run knows which files to skip.
 
 GCS layout:
   mrf-staging/
-    raw/{npi}/{scraped_at_utc_iso}{.ext}
-    e.g. raw/1234567890/2025-01-15T00:00:00Z.json.gz
+    raw/{name_slug}/{scraped_at_utc_iso}{.ext}
+    e.g. raw/johns-hopkins-hospital/2025-01-15T00:00:00Z.json.gz
 
-The parser job (parse_hospital_mrfs.py) reads from this prefix.
+The parser reads hospital context (name, mrf_url, state) from GCS blob
+metadata rather than the path, since NPIs are not known until the MRF is
+parsed.  The parser job (parse_hospital_mrfs.py) reads from this prefix.
 
 --- Running locally ---
   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/pipeline-sa-key.json
@@ -81,17 +83,29 @@ def build_clients() -> tuple[bigquery.Client, storage.Client]:
 def load_hospitals(bq: bigquery.Client) -> list[dict[str, Any]]:
     """Load all hospitals that have an MRF URL from BigQuery.
 
-    Returns list of dicts with keys: npi, name, mrf_url, last_modified.
+    Returns list of dicts with keys: hospital_npi, hospital_name, state,
+    mrf_url, last_modified.
     """
     query = f"""
-        SELECT npi, name, mrf_url, last_modified
+        SELECT hospital_npi, hospital_name, state, mrf_url, last_modified
         FROM `{GCP_PROJECT}.{BQ_DATASET}.hospital_directory`
         WHERE mrf_url IS NOT NULL AND TRIM(mrf_url) != ''
-        ORDER BY npi
+        ORDER BY hospital_name
     """
     rows = list(bq.query(query).result())
     logger.info("Loaded %d hospitals with MRF URLs", len(rows))
     return [dict(row) for row in rows]
+
+
+def _name_slug(name: str) -> str:
+    """Return a GCS-safe path segment from a hospital name.
+
+    Lowercases, replaces all non-alphanumeric runs with hyphens, trims leading
+    and trailing hyphens, and caps at 60 characters so paths stay readable.
+    Used for GCS blob paths since NPIs are not available at scrape time.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug[:60]
 
 
 def _infer_extension(url: str, content_type: str | None) -> str:
@@ -129,7 +143,7 @@ def _check_hospital(
     Returns (hospital, should_download, new_last_modified, content_length).
     should_download is True when Last-Modified has changed or was never recorded.
     """
-    npi = hospital["npi"]
+    label = hospital.get("hospital_name") or hospital.get("mrf_url", "?")
     url = hospital["mrf_url"]
     stored_lm = hospital.get("last_modified")
 
@@ -137,7 +151,7 @@ def _check_hospital(
         resp = session.head(url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
         resp.raise_for_status()
     except requests.RequestException as exc:
-        logger.warning("[%s] HEAD failed: %s", npi, exc)
+        logger.warning("[%s] HEAD failed: %s", label, exc)
         return hospital, False, None, None
 
     new_lm = resp.headers.get("Last-Modified") or resp.headers.get("ETag")
@@ -147,7 +161,7 @@ def _check_hospital(
     if size and size > MAX_FILE_SIZE_BYTES:
         logger.warning(
             "[%s] File too large (%d MB), skipping",
-            npi,
+            label,
             size // (1024 * 1024),
         )
         return hospital, False, new_lm, size
@@ -165,30 +179,43 @@ def _download_to_gcs(
     """Download a hospital's MRF file and upload it to GCS.
 
     Returns the GCS blob name on success, None on failure.
-    The blob name encodes the NPI and scrape timestamp so the parser
-    can identify which hospital the file belongs to.
+
+    The blob path uses the hospital name slug (NPIs are not reliably available
+    at scrape time — the NPI is extracted from inside the MRF during parsing).
+    Hospital context (name, mrf_url, state) is stored in GCS blob metadata so
+    the parser can link rows back to hospital_directory.
     """
-    npi = hospital["npi"]
+    name = hospital.get("hospital_name") or ""
     url = hospital["mrf_url"]
+    label = name or url
 
     try:
         resp = session.get(url, timeout=REQUEST_TIMEOUT, stream=True, allow_redirects=True)
         resp.raise_for_status()
     except requests.RequestException as exc:
-        logger.error("[%s] GET failed: %s", npi, exc)
+        logger.error("[%s] GET failed: %s", label, exc)
         return None
 
     content_type = resp.headers.get("Content-Type", "")
     ext = _infer_extension(url, content_type)
-    blob_name = f"raw/{npi}/{scraped_at}{ext}"
+    slug = _name_slug(name) if name else "unknown"
+    blob_name = f"raw/{slug}/{scraped_at}{ext}"
 
     try:
         blob = bucket.blob(blob_name)
+        # Store hospital context in blob metadata — parser reads these to link
+        # rows to hospital_directory without needing NPI at scrape time.
+        blob.metadata = {
+            "hospital_name": name,
+            "mrf_url": url,
+            "state": hospital.get("state") or "",
+            "hospital_npi": hospital.get("hospital_npi") or "",
+        }
         blob.upload_from_file(resp.raw, rewind=True)
-        logger.info("[%s] Uploaded to gs://%s/%s", npi, bucket.name, blob_name)
+        logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name
     except Exception as exc:
-        logger.error("[%s] GCS upload failed: %s", npi, exc)
+        logger.error("[%s] GCS upload failed: %s", label, exc)
         return None
 
 
@@ -200,20 +227,21 @@ def scrape_hospital(
 ) -> dict[str, Any] | None:
     """Check and conditionally download one hospital's MRF file.
 
-    Returns an update dict {npi, last_modified} if the file was downloaded,
+    Returns an update dict {mrf_url, last_modified} if the file was downloaded,
     or None if it was unchanged or an error occurred.
     """
     hospital, should_download, new_lm, _ = _check_hospital(session, hospital)
 
+    label = hospital.get("hospital_name") or hospital.get("mrf_url", "?")
     if not should_download:
-        logger.debug("[%s] Unchanged, skipping", hospital["npi"])
+        logger.debug("[%s] Unchanged, skipping", label)
         return None
 
     blob_name = _download_to_gcs(session, bucket, hospital, scraped_at)
     if blob_name is None:
         return None
 
-    return {"npi": hospital["npi"], "last_modified": new_lm or ""}
+    return {"mrf_url": hospital["mrf_url"], "last_modified": new_lm or ""}
 
 
 def update_last_modified(
@@ -223,24 +251,29 @@ def update_last_modified(
     """Batch-update hospital_directory.last_modified for all scraped hospitals.
 
     Uses a staging table + MERGE to avoid individual row-level DML queries.
+    Joins on mrf_url (always populated) rather than hospital_npi (often NULL
+    until the MRF is parsed and the NPI is extracted from the file content).
     Updates only the last_modified column — last_scraped is set by the parser
     after it successfully loads the charges.
 
     Args:
         bq: Authenticated BigQuery client.
-        updates: List of {npi, last_modified} dicts.
+        updates: List of {mrf_url, last_modified} dicts.
     """
     if not updates:
         logger.info("No hospitals to update.")
         return
 
     staging_id = f"{GCP_PROJECT}.{BQ_DATASET}.scraper_lm_staging"
-    ndjson = "\n".join(json.dumps({"npi": u["npi"], "last_modified": u["last_modified"]}) for u in updates)
+    ndjson = "\n".join(
+        json.dumps({"mrf_url": u["mrf_url"], "last_modified": u["last_modified"]})
+        for u in updates
+    )
 
     load_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         schema=[
-            bigquery.SchemaField("npi", "STRING"),
+            bigquery.SchemaField("mrf_url", "STRING"),
             bigquery.SchemaField("last_modified", "STRING"),
         ],
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
@@ -251,7 +284,7 @@ def update_last_modified(
     merge_sql = f"""
         MERGE `{GCP_PROJECT}.{BQ_DATASET}.hospital_directory` T
         USING `{staging_id}` S
-        ON T.npi = S.npi
+        ON T.mrf_url = S.mrf_url
         WHEN MATCHED THEN
             UPDATE SET last_modified = S.last_modified
     """
@@ -277,17 +310,19 @@ def main() -> None:
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             futures = {
-                pool.submit(scrape_hospital, h, session, bucket, scraped_at): h["npi"]
+                pool.submit(scrape_hospital, h, session, bucket, scraped_at): (
+                    h.get("hospital_name") or h.get("mrf_url", "?")
+                )
                 for h in hospitals
             }
             for future in as_completed(futures):
-                npi = futures[future]
+                label = futures[future]
                 try:
                     result = future.result()
                     if result:
                         updates.append(result)
                 except Exception as exc:
-                    logger.error("[%s] Unexpected error: %s", npi, exc)
+                    logger.error("[%s] Unexpected error: %s", label, exc)
 
     logger.info(
         "Scrape complete: %d/%d files downloaded",

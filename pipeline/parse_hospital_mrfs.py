@@ -7,14 +7,15 @@ according to CMS JSON schema v2.0.0, and loads the normalised charge rows
 into BigQuery hospital_charges.
 
 For each hospital processed:
-  1. Extract NPI from GCS blob path (raw/{npi}/{timestamp}.ext)
-  2. Stream-parse the JSON/CSV file using hospital_mrf_utils
-  3. Write normalised rows as NDJSON to a GCS staging blob
-  4. DELETE existing rows for this NPI from hospital_charges (idempotent)
-  5. Run a BigQuery load job from the staging blob → hospital_charges
-  6. Update hospital_directory.last_scraped for this NPI
-  7. Delete the raw MRF blob (GCS lifecycle handles it anyway, but explicit
-     deletion prevents double-processing if the scheduler overlaps)
+  1. Read hospital context (hospital_name, mrf_url, state) from GCS blob metadata
+  2. Extract NPI from the MRF JSON root object (authoritative source)
+  3. Stream-parse the JSON file using hospital_mrf_utils
+  4. Write normalised rows as NDJSON to a GCS staging blob
+  5. DELETE existing rows for this NPI from hospital_charges (idempotent)
+  6. Run a BigQuery load job from the staging blob → hospital_charges
+  7. Update hospital_directory.last_scraped (joined on mrf_url)
+  8. Backfill hospital_directory.hospital_npi if it was previously NULL
+  9. Delete the raw MRF blob (prevents double-processing if scheduler overlaps)
 
 --- Running locally ---
   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/pipeline-sa-key.json
@@ -42,6 +43,7 @@ from google.cloud import bigquery, storage
 from hospital_mrf_utils import (
     ChargeRow,
     extract_mrf_date,
+    extract_npi_from_mrf_root,
     stream_charges_v2,
 )
 
@@ -60,7 +62,7 @@ STAGING_PREFIX = "staging/"  # temp NDJSON files during BigQuery load
 
 # BigQuery schema for hospital_charges
 HOSPITAL_CHARGES_SCHEMA = [
-    bigquery.SchemaField("hospital_npi", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("hospital_npi", "STRING"),  # NULLABLE — extracted from MRF content
     bigquery.SchemaField("code_type", "STRING"),
     bigquery.SchemaField("code", "STRING"),
     bigquery.SchemaField("description", "STRING"),
@@ -87,7 +89,11 @@ def build_clients() -> tuple[bigquery.Client, storage.Client]:
 
 
 def list_raw_blobs(bucket: storage.Bucket) -> list[storage.Blob]:
-    """List all MRF blobs in the raw/ prefix, sorted by NPI then name."""
+    """List all MRF blobs in the raw/ prefix, sorted by name.
+
+    Reloads each blob to ensure custom metadata is present — list_blobs() does
+    not always populate metadata in the returned Blob objects.
+    """
     blobs = list(bucket.list_blobs(prefix=RAW_PREFIX))
     blobs = [b for b in blobs if not b.name.endswith("/")]
     blobs.sort(key=lambda b: b.name)
@@ -95,10 +101,18 @@ def list_raw_blobs(bucket: storage.Bucket) -> list[storage.Blob]:
     return blobs
 
 
-def _extract_npi_from_path(blob_name: str) -> str | None:
-    """Extract the NPI from a GCS path of the form raw/{npi}/{timestamp}.ext."""
-    match = re.match(r"raw/(\d{10})/", blob_name)
-    return match.group(1) if match else None
+def _get_blob_metadata(bucket: storage.Bucket, blob: storage.Blob) -> dict[str, str]:
+    """Return the custom metadata dict for a GCS blob, reloading if necessary.
+
+    The scraper stores hospital context in blob metadata so the parser doesn't
+    need to re-query BigQuery to know which hospital a file belongs to.
+    Keys: hospital_name, mrf_url, state, hospital_npi (may be empty string).
+    """
+    # Reload to guarantee metadata is populated (list_blobs can omit it).
+    fresh = bucket.get_blob(blob.name)
+    if fresh and fresh.metadata:
+        return dict(fresh.metadata)
+    return {}
 
 
 def _open_mrf_blob(blob: storage.Blob) -> io.RawIOBase:
@@ -174,20 +188,46 @@ def load_charges_from_gcs(bq: bigquery.Client, staging_uri: str) -> bigquery.Loa
     return job
 
 
-def mark_last_scraped(bq: bigquery.Client, npi: str, scraped_at: str) -> None:
-    """Update hospital_directory.last_scraped after successful charge load."""
+def mark_last_scraped(bq: bigquery.Client, mrf_url: str, scraped_at: str) -> None:
+    """Update hospital_directory.last_scraped after successful charge load.
+
+    Joins on mrf_url because hospital_npi may still be NULL for newly-added
+    hospitals whose NPI hasn't been extracted from their MRF yet.
+    """
     sql = f"""
         UPDATE `{DIRECTORY_TABLE}`
         SET last_scraped = @scraped_at
-        WHERE npi = @npi
+        WHERE mrf_url = @mrf_url
     """
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
             bigquery.ScalarQueryParameter("scraped_at", "TIMESTAMP", scraped_at),
-            bigquery.ScalarQueryParameter("npi", "STRING", npi),
+            bigquery.ScalarQueryParameter("mrf_url", "STRING", mrf_url),
         ]
     )
     bq.query(sql, job_config=job_config).result()
+
+
+def update_hospital_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) -> None:
+    """Backfill hospital_directory.hospital_npi extracted from the MRF file.
+
+    Called once per hospital after the NPI is successfully read from the MRF
+    JSON root.  Only updates rows where hospital_npi is currently NULL so that
+    manually-set or previously-resolved NPIs are not overwritten.
+    """
+    sql = f"""
+        UPDATE `{DIRECTORY_TABLE}`
+        SET hospital_npi = @hospital_npi
+        WHERE mrf_url = @mrf_url AND hospital_npi IS NULL
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("hospital_npi", "STRING", hospital_npi),
+            bigquery.ScalarQueryParameter("mrf_url", "STRING", mrf_url),
+        ]
+    )
+    bq.query(sql, job_config=job_config).result()
+    logger.info("Backfilled hospital_npi=%s for mrf_url=%s", hospital_npi, mrf_url)
 
 
 def process_blob(
@@ -199,24 +239,40 @@ def process_blob(
 
     Returns True on success, False on any error (logs details and continues
     to the next hospital so one bad MRF doesn't abort the entire run).
+
+    NPI strategy: the scraper stores the hospital_name/mrf_url/state in GCS
+    blob metadata at download time.  The NPI is not reliably available then
+    (Payerset uses EINs, not NPIs).  This function reads the MRF JSON root to
+    extract the NPI, then backfills hospital_directory if it was NULL.
     """
-    hospital_npi = _extract_npi_from_path(blob.name)
-    if not hospital_npi:
-        logger.error("Cannot extract NPI from blob path: %s — skipping", blob.name)
+    meta = _get_blob_metadata(bucket, blob)
+    mrf_url = meta.get("mrf_url") or ""
+    hospital_name = meta.get("hospital_name") or blob.name
+    label = hospital_name
+
+    if not mrf_url:
+        logger.error("Blob %s has no mrf_url metadata — skipping", blob.name)
         return False
 
-    logger.info("[%s] Processing %s", hospital_npi, blob.name)
+    logger.info("[%s] Processing %s", label, blob.name)
     scraped_at = datetime.now(timezone.utc).isoformat()
 
-    # We need the effective_date from the MRF root before streaming charges.
-    # Load just the root metadata (first ~4 KB) to extract last_updated_on.
+    # Read the first 8 KB to get effective_date and NPI from the MRF root.
     effective_date = _read_mrf_date(blob)
     if not effective_date:
-        # Fall back to today if the MRF doesn't publish a date.
         effective_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        logger.warning("[%s] MRF has no last_updated_on — using today %s", hospital_npi, effective_date)
+        logger.warning("[%s] MRF has no last_updated_on — using today %s", label, effective_date)
 
-    staging_blob_name = f"{STAGING_PREFIX}{hospital_npi}/{uuid.uuid4()}.ndjson"
+    # Extract NPI from MRF JSON root — the most reliable source.
+    # Fall back to the value the scraper stored in blob metadata (may be empty).
+    hospital_npi = _read_mrf_npi(blob) or meta.get("hospital_npi") or ""
+    if not hospital_npi:
+        logger.warning(
+            "[%s] NPI not found in MRF root or blob metadata — charges will have blank NPI",
+            label,
+        )
+
+    staging_blob_name = f"{STAGING_PREFIX}{uuid.uuid4()}.ndjson"
     staging_uri = f"gs://{GCS_BUCKET}/{staging_blob_name}"
 
     try:
@@ -225,17 +281,22 @@ def process_blob(
             row_count = _write_ndjson_to_gcs(rows, bucket, staging_blob_name)
 
         if row_count == 0:
-            logger.warning("[%s] No charge rows parsed — skipping load", hospital_npi)
+            logger.warning("[%s] No charge rows parsed — skipping load", label)
             bucket.blob(staging_blob_name).delete()
             return False
 
-        logger.info("[%s] Parsed %d charge rows", hospital_npi, row_count)
+        logger.info("[%s] Parsed %d charge rows", label, row_count)
 
-        delete_existing_charges(bq, hospital_npi)
+        if hospital_npi:
+            delete_existing_charges(bq, hospital_npi)
         load_charges_from_gcs(bq, staging_uri)
-        logger.info("[%s] Loaded %d rows to hospital_charges", hospital_npi, row_count)
+        logger.info("[%s] Loaded %d rows to hospital_charges", label, row_count)
 
-        mark_last_scraped(bq, hospital_npi, scraped_at)
+        mark_last_scraped(bq, mrf_url, scraped_at)
+
+        # Backfill NPI into hospital_directory if it was NULL (common on first scrape).
+        if hospital_npi:
+            update_hospital_npi(bq, mrf_url, hospital_npi)
 
         # Delete raw MRF blob — prevents double-processing on next run.
         blob.delete()
@@ -243,8 +304,7 @@ def process_blob(
         return True
 
     except Exception as exc:
-        logger.error("[%s] Failed: %s", hospital_npi, exc, exc_info=True)
-        # Best-effort cleanup of staging file
+        logger.error("[%s] Failed: %s", label, exc, exc_info=True)
         try:
             bucket.blob(staging_blob_name).delete()
         except Exception:
@@ -252,34 +312,53 @@ def process_blob(
         return False
 
 
-def _read_mrf_date(blob: storage.Blob) -> str | None:
-    """Read the first 8 KB of an MRF blob to extract last_updated_on.
+def _read_header_bytes(blob: storage.Blob) -> bytes:
+    """Download the first 8 KB of an MRF blob, decompressing gzip if needed.
 
-    Uses a partial download rather than streaming the entire file since
-    the date field is always in the root object (near the start).
+    The MRF root metadata (last_updated_on, NPI) is always near the start of
+    the file, so we only need a small slice rather than the full download.
+    Returns empty bytes on any error.
     """
-    import json as _json
-
     try:
-        # Download first 8 KB — enough to contain the root metadata.
-        header_bytes = blob.download_as_bytes(start=0, end=8192)
+        raw = blob.download_as_bytes(start=0, end=8192)
         if blob.name.endswith(".gz") or blob.name.endswith(".gzip"):
-            header_bytes = gzip.decompress(header_bytes[:])
+            raw = gzip.decompress(raw)
+        return raw
     except Exception:
-        return None
+        return b""
 
-    try:
-        # Find the last_updated_on field via substring search to avoid
-        # partial-JSON parse errors (the 8 KB slice is not complete JSON).
-        import re as _re
-        match = _re.search(rb'"last_updated_on"\s*:\s*"([^"]{4,20})"', header_bytes)
+
+def _read_mrf_date(blob: storage.Blob) -> str | None:
+    """Extract last_updated_on from the first 8 KB of an MRF blob."""
+    header = _read_header_bytes(blob)
+    if not header:
+        return None
+    match = re.search(rb'"last_updated_on"\s*:\s*"([^"]{4,20})"', header)
+    if match:
+        return match.group(1).decode("utf-8", errors="replace")[:10]
+    match = re.search(rb'"version_date"\s*:\s*"([^"]{4,20})"', header)
+    if match:
+        return match.group(1).decode("utf-8", errors="replace")[:10]
+    return None
+
+
+def _read_mrf_npi(blob: storage.Blob) -> str | None:
+    """Extract the hospital NPI from the first 8 KB of an MRF blob.
+
+    CMS v2.0.0 MRFs include the NPI in the root object.  We search for
+    common key names rather than fully parsing the header slice, since the
+    slice is not valid JSON on its own.
+
+    Returns a 10-digit NPI string or None.
+    """
+    header = _read_header_bytes(blob)
+    if not header:
+        return None
+    for key in (b"hospital_npi", b"npi", b"provider_npi"):
+        pattern = rb'"' + key + rb'"\s*:\s*"(\d{10})"'
+        match = re.search(pattern, header)
         if match:
-            return match.group(1).decode("utf-8", errors="replace")[:10]
-        match = _re.search(rb'"version_date"\s*:\s*"([^"]{4,20})"', header_bytes)
-        if match:
-            return match.group(1).decode("utf-8", errors="replace")[:10]
-    except Exception:
-        pass
+            return match.group(1).decode()
     return None
 
 
