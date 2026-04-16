@@ -23,7 +23,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy pipeline source files.
-COPY hospital_mrf_utils.py scrape_hospital_mrfs.py parse_hospital_mrfs.py .
+COPY hospital_mrf_utils.py scrape_hospital_mrfs.py parse_hospital_mrfs.py ./
 
 ENV LOG_LEVEL=INFO
 
