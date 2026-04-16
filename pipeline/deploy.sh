@@ -27,12 +27,19 @@ gcloud builds submit \
   --project "${PROJECT}" \
   pipeline/
 
+# Task timeout: 4 hours (14400s) handles ~3,100 hospitals comfortably.
+# Scaling path when hospital count grows (target ~18,000 = 6x current):
+#   Use --tasks N + --parallelism N to shard work across N task instances.
+#   Each task reads CLOUD_RUN_TASK_INDEX and processes hospitals[index::N].
+#   At N=6 tasks, each handles ~3,000 hospitals — same wall-clock time as today.
+#   Both scraper and parser need to be updated to support task sharding.
 echo "==> Creating/updating clarobill-mrf-scraper Cloud Run Job..."
 gcloud run jobs create clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 7200 \
+  --task-timeout 14400 \
+  --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
@@ -42,7 +49,8 @@ gcloud run jobs update clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 7200 \
+  --task-timeout 14400 \
+  --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
@@ -54,7 +62,8 @@ gcloud run jobs create clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 7200 \
+  --task-timeout 14400 \
+  --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
@@ -65,7 +74,8 @@ gcloud run jobs update clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 7200 \
+  --task-timeout 14400 \
+  --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
