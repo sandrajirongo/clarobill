@@ -48,7 +48,8 @@ export type BillingErrorCode =
   | 'TERMINATED_CODE_BILLED'
   | 'ANESTHESIA_OUTLIER'
   | 'FACILITY_CHARGE_OUTLIER'
-  | 'AMBULANCE_CHARGE_OUTLIER';
+  | 'AMBULANCE_CHARGE_OUTLIER'
+  | 'HOSPITAL_CHARGE_OUTLIER';
 
 export interface BillingError {
   code: BillingErrorCode;

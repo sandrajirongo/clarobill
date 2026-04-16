@@ -40,6 +40,22 @@ _ANES_START_END_PATTERN = re.compile(
 # How many lines after the CPT code line to search for a charge amount
 _LOOKAHEAD_LINES = 3
 
+# Hospital name detection — keywords that identify a line as a hospital/facility name.
+# Ordered roughly by specificity: "hospital" is almost always the name, "clinic" less so.
+_HOSPITAL_KEYWORDS = re.compile(
+    r"\b(hospital|medical center|medical group|health system|healthcare|health care|"
+    r"cancer center|surgical center|surgery center|rehabilitation|rehab center|"
+    r"urgent care|community health|children'?s|pediatric|memorial|clinic)\b",
+    re.IGNORECASE,
+)
+# Patterns to strip from a candidate name line before returning it.
+_NOISE_PATTERNS = [
+    re.compile(r"\b\d{5}(?:-\d{4})?\b"),          # ZIP codes
+    re.compile(r"\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b"),  # Phone numbers
+    re.compile(r"\b(suite|ste|floor|fl|room|rm)\s*\d+\b", re.IGNORECASE),  # Suite/floor numbers
+    re.compile(r"[,|]\s*$"),                        # Trailing commas or pipes
+]
+
 # NPI patterns — used by extract_npi(), separate from the line-item parse flow.
 # Primary: explicit "NPI:" / "NPI #" label immediately preceding the 10-digit number.
 _NPI_LABEL_PATTERN = re.compile(r"\bNPI[:\s#]+(\d{10})\b", re.IGNORECASE)
@@ -266,6 +282,35 @@ class BillParser:
         # Sanity bounds: 1–999 statute miles covers all realistic ambulance transports
         if 1 <= miles <= 999:
             return miles
+        return None
+
+    def extract_hospital_name(self, raw_text: str) -> str | None:
+        """Extract the hospital or facility name from the top of the OCR text.
+
+        Scans the first 20 lines for the line most likely to be the facility
+        name — one that contains a hospital-identifying keyword (e.g. "hospital",
+        "medical center", "health system"). Returns the first match after
+        stripping ZIP codes, phone numbers, and other noise.
+
+        Returns None when no credible facility name is found, which causes the
+        hospital charge lookup to skip the name-based fallback rather than
+        querying with a bad search term.
+
+        Args:
+            raw_text: Full text from OCR extraction.
+
+        Returns:
+            Cleaned facility name string, or None.
+        """
+        lines = raw_text.splitlines()
+        for line in lines[:20]:
+            if not _HOSPITAL_KEYWORDS.search(line):
+                continue
+            name = line.strip()
+            for pattern in _NOISE_PATTERNS:
+                name = pattern.sub("", name).strip()
+            if len(name) >= 5:
+                return name
         return None
 
     def extract_npi(self, raw_text: str) -> str | None:

@@ -7,10 +7,12 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from google.cloud import bigquery
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from supabase import Client
 
+from app.core.config import settings
 from app.core.dependencies import get_ai_analysis_service, get_email_service, get_supabase_client
 from app.models.bill import (
     AnalyzeAccepted,
@@ -98,12 +100,19 @@ async def _run_analysis_pipeline(
         parser = BillParser()
         parsed_items = parser.parse(raw_text, bill_date=date.today())
 
-        # Best-effort NPI extraction — Luhn-validated, stored for hospital charge lookup.
-        # None when no valid NPI is found; the pipeline continues without it.
+        # Best-effort NPI and name extraction — stored for hospital charge lookup.
+        # Both are optional; the pipeline continues without them.
         hospital_npi = parser.extract_npi(raw_text)
+        hospital_name = parser.extract_hospital_name(raw_text)
         if hospital_npi:
             logger.info("Extracted NPI %s from bill %s", hospital_npi, bill_id)
-            supabase.table("bills").update({"hospital_npi": hospital_npi}).eq("id", bill_id).execute()
+        if hospital_name:
+            logger.info("Extracted hospital name '%s' from bill %s", hospital_name, bill_id)
+        if hospital_npi or hospital_name:
+            supabase.table("bills").update({
+                "hospital_npi": hospital_npi,
+                "hospital_name": hospital_name,
+            }).eq("id", bill_id).execute()
 
         # Persist line items to the database
         line_item_rows = [
@@ -145,6 +154,8 @@ async def _run_analysis_pipeline(
         ambulance_rates = _load_ambulance_rates(
             supabase, cpt_codes, locality_code, zip_code, rate_date
         )
+        bq = _build_bq_client()
+        hospital_charges = _load_hospital_charges(bq, cpt_codes, hospital_npi, hospital_name)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -154,6 +165,7 @@ async def _run_analysis_pipeline(
             opps_rates=opps_rates,
             ambulance_rates=ambulance_rates,
             hcpcs_termination_dates=hcpcs_termination_dates,
+            hospital_charges=hospital_charges,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -754,6 +766,129 @@ def _load_anesthesia_cf(
         )
         return None
     return Decimal(str(response.data[0]["non_qualifying_cf"]))
+
+
+def _build_bq_client() -> bigquery.Client | None:
+    """Build a BigQuery client using Application Default Credentials.
+
+    Returns None when gcp_project_id is not configured (local dev without GCP
+    access), which causes hospital charge lookup to be skipped gracefully.
+    On Cloud Run the runtime SA (clarobill-vision-sa) provides credentials
+    automatically via ADC — no key file needed.
+    """
+    if not settings.gcp_project_id:
+        return None
+    try:
+        return bigquery.Client(project=settings.gcp_project_id)
+    except Exception as exc:
+        logger.warning("Could not build BigQuery client — hospital charge lookup disabled: %s", exc)
+        return None
+
+
+def _load_hospital_charges(
+    bq: bigquery.Client | None,
+    cpt_codes: list[str],
+    hospital_npi: str | None,
+    hospital_name: str | None,
+) -> dict[str, Decimal]:
+    """Load the hospital's published gross charges for the CPT codes on the bill.
+
+    Queries BigQuery hospital_charges using:
+      1. NPI match (exact) — preferred; always unambiguous.
+      2. Name match (LIKE on hospital_directory) — fallback when NPI unavailable.
+         Only used when exactly one hospital matches, to avoid returning charges
+         for the wrong facility.
+
+    Returns an empty dict when: BigQuery not configured, no hospital identified,
+    no match found, or name is ambiguous. The rules engine skips the hospital
+    charge outlier rule when the dict is empty.
+    """
+    if bq is None or not cpt_codes:
+        return {}
+    if not hospital_npi and not hospital_name:
+        return {}
+
+    dataset = f"{settings.gcp_project_id}.{settings.bigquery_dataset}"
+    unique_codes = list(set(cpt_codes))
+
+    # 1. NPI match — exact and unambiguous
+    if hospital_npi:
+        return _query_charges_by_npi(bq, dataset, unique_codes, hospital_npi)
+
+    # 2. Name match — resolve NPI from hospital_directory first
+    assert hospital_name is not None
+    npi = _resolve_npi_by_name(bq, dataset, hospital_name)
+    if npi is None:
+        logger.info("Hospital name '%s' matched 0 or >1 hospitals — skipping charge lookup", hospital_name)
+        return {}
+    return _query_charges_by_npi(bq, dataset, unique_codes, npi)
+
+
+def _query_charges_by_npi(
+    bq: bigquery.Client,
+    dataset: str,
+    cpt_codes: list[str],
+    hospital_npi: str,
+) -> dict[str, Decimal]:
+    """Query hospital_charges for a specific NPI, returning gross charge per CPT code.
+
+    Takes the highest gross_charge per code when a hospital has multiple rows for
+    the same code (e.g. different settings or payer rows with different charges).
+    The gross charge is the hospital's own maximum list price — billing above it
+    is an unambiguous error regardless of which specific row was used for billing.
+    """
+    query = f"""
+        SELECT code, MAX(gross_charge) AS gross_charge
+        FROM `{dataset}.hospital_charges`
+        WHERE hospital_npi = @npi
+          AND code IN UNNEST(@codes)
+          AND gross_charge IS NOT NULL
+          AND gross_charge > 0
+        GROUP BY code
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("npi", "STRING", hospital_npi),
+        bigquery.ArrayQueryParameter("codes", "STRING", cpt_codes),
+    ])
+    try:
+        rows = list(bq.query(query, job_config=job_config).result())
+    except Exception as exc:
+        logger.warning("BigQuery hospital charge lookup failed for NPI %s: %s", hospital_npi, exc)
+        return {}
+    return {row["code"]: Decimal(str(row["gross_charge"])).quantize(Decimal("0.01")) for row in rows}
+
+
+def _resolve_npi_by_name(
+    bq: bigquery.Client,
+    dataset: str,
+    hospital_name: str,
+) -> str | None:
+    """Resolve a hospital_npi from hospital_directory by fuzzy name match.
+
+    Returns the NPI only when exactly one hospital matches, preventing charges
+    from the wrong facility being returned when names are ambiguous.
+    Uses a case-insensitive LIKE match on a cleaned version of the name.
+    """
+    # Use the name as-is for the LIKE pattern — BigQuery LOWER() handles case
+    name_pattern = f"%{hospital_name.strip().lower()}%"
+    query = f"""
+        SELECT hospital_npi, COUNT(*) AS match_count
+        FROM `{dataset}.hospital_directory`
+        WHERE LOWER(hospital_name) LIKE @name_pattern
+          AND hospital_npi IS NOT NULL
+        GROUP BY hospital_npi
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("name_pattern", "STRING", name_pattern),
+    ])
+    try:
+        rows = list(bq.query(query, job_config=job_config).result())
+    except Exception as exc:
+        logger.warning("BigQuery name lookup failed for '%s': %s", hospital_name, exc)
+        return None
+    if len(rows) == 1:
+        return str(rows[0]["hospital_npi"])
+    return None
 
 
 def _map_errors_to_line_items(

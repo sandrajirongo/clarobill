@@ -86,7 +86,7 @@ class TestDuplicateDetection:
 
 class TestPriceOutlierDetection:
     def test_flags_charge_above_threshold(self, engine_with_data: RulesEngine) -> None:
-        # Medicare rate for 99214 is $100. 2x threshold = $200. $350 should be flagged.
+        # Medicare rate for 99214 is $100. 1.1x threshold = $110. $350 should be flagged.
         items = [make_line_item("99214", 350.00)]
         errors = engine_with_data.run(items)
         outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
@@ -94,8 +94,8 @@ class TestPriceOutlierDetection:
         assert outlier_errors[0].medicare_benchmark_rate == Decimal("100.00")
 
     def test_does_not_flag_charge_below_threshold(self, engine_with_data: RulesEngine) -> None:
-        # $150 is 1.5x the $100 Medicare rate — below the 2x threshold
-        items = [make_line_item("99214", 150.00)]
+        # $105 is 1.05x the $100 Medicare rate — below the 1.1x threshold
+        items = [make_line_item("99214", 105.00)]
         errors = engine_with_data.run(items)
         outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
         assert len(outlier_errors) == 0
@@ -330,7 +330,7 @@ class TestFacilityChargeOutlier:
         )
 
     def test_flags_charge_above_threshold(self, opps_engine: RulesEngine) -> None:
-        # $900 cap × 2x threshold = $1,800. $2,500 should be flagged.
+        # $900 cap × 1.1x threshold = $990. $2,500 should be flagged.
         items = [make_line_item("27447", 2500.00)]
         errors = opps_engine.run(items)
         facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
@@ -339,8 +339,8 @@ class TestFacilityChargeOutlier:
         assert facility_errors[0].estimated_overcharge == Decimal("1600.00")
 
     def test_does_not_flag_charge_below_threshold(self, opps_engine: RulesEngine) -> None:
-        # $1,500 is 1.67x the $900 cap — below the 2x threshold
-        items = [make_line_item("27447", 1500.00)]
+        # $950 is 1.056x the $900 cap — below the 1.1x threshold
+        items = [make_line_item("27447", 950.00)]
         errors = opps_engine.run(items)
         facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
         assert len(facility_errors) == 0
@@ -386,7 +386,7 @@ class TestAmbulanceChargeOutlier:
         )
 
     def test_flags_inflated_transport_charge(self, amb_engine: RulesEngine) -> None:
-        # $710 benchmark × 2 = $1,420 threshold. $2,800 should be flagged.
+        # $710 benchmark × 1.1x threshold = $781. $2,800 should be flagged.
         items = [make_line_item("A0427", 2800.00)]
         errors = amb_engine.run(items)
         amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
@@ -395,8 +395,8 @@ class TestAmbulanceChargeOutlier:
         assert amb_errors[0].medicare_benchmark_rate == Decimal("710.00")
 
     def test_does_not_flag_charge_below_threshold(self, amb_engine: RulesEngine) -> None:
-        # $1,200 is 1.69x the $710 benchmark — below the 2x threshold
-        items = [make_line_item("A0427", 1200.00)]
+        # $750 is 1.056x the $710 benchmark — below the 1.1x threshold
+        items = [make_line_item("A0427", 750.00)]
         errors = amb_engine.run(items)
         amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
         assert len(amb_errors) == 0
@@ -477,8 +477,8 @@ class TestAmbulanceChargeOutlier:
         assert len(amb_errors) == 1
 
     def test_reasonable_mileage_charge_not_flagged(self) -> None:
-        # 15 miles × $9.33/mile = $139.95 total. $12.00/mile = $180 total.
-        # $12.00/mile is 1.29x the $9.33 benchmark — below 2x threshold.
+        # 15 miles × $9.33/mile benchmark. $10.00/mile is 1.07x — below 1.1x threshold.
+        # (9.33 × 1.1 = $10.263; $10.00 < $10.263 → not flagged)
         engine = RulesEngine(
             ncci_edit_pairs={},
             medicare_rates={},
@@ -489,8 +489,8 @@ class TestAmbulanceChargeOutlier:
             description="Ground mileage",
             service_date=date(2026, 3, 15),
             quantity=15,
-            unit_charge=12.00,
-            total_charge=180.00,
+            unit_charge=10.00,
+            total_charge=150.00,
             modifier=None,
             diagnosis_pointers=[],
         )
@@ -564,3 +564,81 @@ class TestTerminatedCodeDetection:
         assert len(term_errors) == 2
         flagged_codes = {e.description.split()[1] for e in term_errors}
         assert flagged_codes == {"A0080", "E0190"}
+
+
+class TestHospitalChargeOutlier:
+    # Gross charges sourced from realistic MRF data for a mid-size US hospital.
+    # 99214 (office visit): $350 published gross charge
+    # 27447 (total knee replacement): $28,000 published gross charge
+    # 85025 (CBC): $85 published gross charge
+    HOSPITAL_CHARGES = {
+        "99214": Decimal("350.00"),
+        "27447": Decimal("28000.00"),
+        "85025": Decimal("85.00"),
+    }
+
+    @pytest.fixture()
+    def hosp_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            hospital_charges=self.HOSPITAL_CHARGES,
+        )
+
+    def test_flags_charge_above_published_gross(self, hosp_engine: RulesEngine) -> None:
+        # Hospital published $350 gross charge for 99214. $450 is 1.29x — above 1.1x threshold.
+        items = [make_line_item("99214", 450.00)]
+        errors = hosp_engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 1
+        assert hosp_errors[0].severity == "critical"
+        assert hosp_errors[0].estimated_overcharge == Decimal("100.00")
+        assert hosp_errors[0].medicare_benchmark_rate == Decimal("350.00")
+
+    def test_does_not_flag_charge_at_published_gross(self, hosp_engine: RulesEngine) -> None:
+        # Billing exactly the published gross charge is fine
+        items = [make_line_item("99214", 350.00)]
+        errors = hosp_engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 0
+
+    def test_does_not_flag_charge_below_threshold(self, hosp_engine: RulesEngine) -> None:
+        # $370 is 1.057x the $350 published price — below the 1.1x threshold
+        items = [make_line_item("99214", 370.00)]
+        errors = hosp_engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 0
+
+    def test_flags_inflated_surgery_charge(self, hosp_engine: RulesEngine) -> None:
+        # $28,000 gross charge for 27447. $35,000 is 1.25x — above 1.1x threshold.
+        items = [make_line_item("27447", 35000.00)]
+        errors = hosp_engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 1
+        assert hosp_errors[0].estimated_overcharge == Decimal("7000.00")
+
+    def test_does_not_flag_unknown_cpt_code(self, hosp_engine: RulesEngine) -> None:
+        # 36415 (venipuncture) is not in the hospital's published charges — skip it
+        items = [make_line_item("36415", 9999.00)]
+        errors = hosp_engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 0
+
+    def test_no_flag_when_hospital_charges_not_loaded(self) -> None:
+        # Engine without hospital_charges should not run the rule at all
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("99214", 99999.00)]
+        errors = engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 0
+
+    def test_flags_only_the_outlier_code(self, hosp_engine: RulesEngine) -> None:
+        # 99214 at $450 is flagged; 85025 at $90 (1.06x of $85) is not
+        items = [
+            make_line_item("99214", 450.00),
+            make_line_item("85025", 90.00),
+        ]
+        errors = hosp_engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        assert len(hosp_errors) == 1
+        assert hosp_errors[0].affected_indices == [0]

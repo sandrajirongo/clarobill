@@ -42,19 +42,21 @@ class RulesEngine:
         self,
         ncci_edit_pairs: dict[str, set[str]],
         medicare_rates: dict[str, Decimal],
-        outlier_threshold: float = 2.0,
+        outlier_threshold: float = 1.1,
         non_payable_codes: dict[str, str] | None = None,
         anesthesia_cf: Decimal | None = None,
         anesthesia_base_units: dict[str, int] | None = None,
         opps_rates: dict[str, Decimal] | None = None,
         ambulance_rates: dict[str, Decimal] | None = None,
         hcpcs_termination_dates: dict[str, date] | None = None,
+        hospital_charges: dict[str, Decimal] | None = None,
     ) -> None:
         """
         Args:
             ncci_edit_pairs:           Map of column_one_code → set of column_two_codes.
             medicare_rates:            Map of cpt_code → non_facility_rate.
-            outlier_threshold:         Flag charge when it exceeds Medicare rate by this multiplier.
+            outlier_threshold:         Flag charge when it exceeds the benchmark by this multiplier.
+                                       Default 1.1 = flag anything more than 10% over benchmark.
             non_payable_codes:         Map of cpt_code → proc_stat for non-payable codes found on
                                        the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
                                        are critical; 'N' (non-covered) is a warning.
@@ -72,6 +74,9 @@ class RulesEngine:
             hcpcs_termination_dates:   Map of hcpc → last valid date from cms_hcpcs_codes.
                                        When provided, enables detection of terminated HCPCS
                                        Level II codes billed after their termination date.
+            hospital_charges:          Map of cpt_code → hospital's own published gross charge
+                                       from their MRF price transparency file. When provided,
+                                       enables hospital charge outlier detection.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -82,6 +87,7 @@ class RulesEngine:
         self._opps_rates = opps_rates or {}
         self._ambulance_rates = ambulance_rates or {}
         self._hcpcs_termination_dates = hcpcs_termination_dates or {}
+        self._hospital_charges = hospital_charges or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -101,6 +107,7 @@ class RulesEngine:
         errors.extend(self._detect_facility_outliers(line_items))
         errors.extend(self._detect_ambulance_outliers(line_items))
         errors.extend(self._detect_terminated_codes(line_items))
+        errors.extend(self._detect_hospital_charge_outliers(line_items))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -499,6 +506,50 @@ class RulesEngine:
                 estimated_overcharge=Decimal(str(item.total_charge)),
                 medicare_benchmark_rate=None,
             ))
+
+        return errors
+
+    def _detect_hospital_charge_outliers(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag charges that exceed the hospital's own published gross charge.
+
+        Hospitals are required by CMS price transparency rules to publish their
+        gross (chargemaster) rate for every procedure. Billing above that rate
+        means the patient was charged more than the hospital's own list price —
+        an unambiguous billing error regardless of insurance or payer.
+
+        Uses the same outlier_threshold multiplier as other outlier rules
+        (default 1.1 = flag anything more than 10% over the published price).
+        Disabled when hospital_charges is not loaded (hospital not in our database
+        or NPI/name could not be matched).
+        """
+        if not self._hospital_charges:
+            return []
+
+        errors: list[DetectedError] = []
+
+        for index, item in enumerate(line_items):
+            gross_charge = self._hospital_charges.get(item.cpt_code)
+            if gross_charge is None or gross_charge <= 0:
+                continue
+
+            charge = Decimal(str(item.total_charge))
+            if charge > gross_charge * Decimal(str(self._outlier_threshold)):
+                overcharge = charge - gross_charge
+                label = f" ({item.description})" if item.description else ""
+                errors.append(DetectedError(
+                    code="HOSPITAL_CHARGE_OUTLIER",
+                    severity="critical",
+                    affected_indices=[index],
+                    description=(
+                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"{label}, but this hospital's own published price list "
+                        f"(CMS price transparency file) shows a gross charge of "
+                        f"${gross_charge:.2f}. You were billed "
+                        f"${overcharge:.2f} more than the hospital's own listed price."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=gross_charge,
+                ))
 
         return errors
 
