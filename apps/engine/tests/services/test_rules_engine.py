@@ -642,3 +642,100 @@ class TestHospitalChargeOutlier:
         hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
         assert len(hosp_errors) == 1
         assert hosp_errors[0].affected_indices == [0]
+
+
+
+class TestNegotiatedRateExceeded:
+    # Negotiated rates for a commercial PPO plan at a mid-size hospital.
+    # These are realistic contracted rates — typically 30-60% below gross charge.
+    # 99214 (office visit): $142 negotiated (vs $350 gross)
+    # 27447 (total knee): $12,500 negotiated (vs $28,000 gross)
+    # 71046 (chest X-ray 2-view): $95 negotiated
+    NEGOTIATED_CHARGES = {
+        "99214": Decimal("142.00"),
+        "27447": Decimal("12500.00"),
+        "71046": Decimal("95.00"),
+    }
+
+    @pytest.fixture()
+    def neg_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            negotiated_charges=self.NEGOTIATED_CHARGES,
+        )
+
+    def test_flags_charge_above_negotiated_rate(self, neg_engine: RulesEngine) -> None:
+        # $142 negotiated for 99214. $850 is 5.99x — far above 1.1x threshold.
+        items = [make_line_item("99214", 850.00)]
+        errors = neg_engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 1
+        assert neg_errors[0].severity == "critical"
+        assert neg_errors[0].estimated_overcharge == Decimal("708.00")
+        assert neg_errors[0].medicare_benchmark_rate == Decimal("142.00")
+
+    def test_does_not_flag_charge_at_negotiated_rate(self, neg_engine: RulesEngine) -> None:
+        items = [make_line_item("99214", 142.00)]
+        errors = neg_engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 0
+
+    def test_does_not_flag_charge_below_threshold(self, neg_engine: RulesEngine) -> None:
+        # $150 is 1.056x the $142 negotiated rate — below 1.1x threshold
+        items = [make_line_item("99214", 150.00)]
+        errors = neg_engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 0
+
+    def test_flags_surgery_billed_at_gross_not_negotiated(self, neg_engine: RulesEngine) -> None:
+        # Common error: hospital bills gross charge $28,000 instead of $12,500 contracted rate
+        items = [make_line_item("27447", 28000.00)]
+        errors = neg_engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 1
+        assert neg_errors[0].estimated_overcharge == Decimal("15500.00")
+
+    def test_does_not_flag_unknown_cpt_code(self, neg_engine: RulesEngine) -> None:
+        # 85025 not in negotiated charges — skip, do not flag
+        items = [make_line_item("85025", 9999.00)]
+        errors = neg_engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 0
+
+    def test_no_flag_when_negotiated_charges_not_loaded(self) -> None:
+        # Engine without negotiated_charges should not run the rule
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("99214", 99999.00)]
+        errors = engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 0
+
+    def test_flags_only_the_outlier_code(self, neg_engine: RulesEngine) -> None:
+        # 99214 at $850 is flagged; 71046 at $100 (1.05x of $95) is not
+        items = [
+            make_line_item("99214", 850.00),
+            make_line_item("71046", 100.00),
+        ]
+        errors = neg_engine.run(items)
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(neg_errors) == 1
+        assert neg_errors[0].affected_indices == [0]
+
+    def test_negotiated_and_hospital_charge_rules_both_fire(self) -> None:
+        # When both negotiated_charges and hospital_charges are loaded, both rules run.
+        # Each provides independent evidence — the report shows both.
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            hospital_charges={"99214": Decimal("350.00")},
+            negotiated_charges={"99214": Decimal("142.00")},
+        )
+        items = [make_line_item("99214", 850.00)]
+        errors = engine.run(items)
+        hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
+        neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        assert len(hosp_errors) == 1
+        assert len(neg_errors) == 1
+        # Negotiated overcharge ($708) is larger than hospital charge overcharge ($500)
+        assert neg_errors[0].estimated_overcharge > hosp_errors[0].estimated_overcharge

@@ -57,7 +57,8 @@ async def analyze_bill(
 
     background_tasks.add_task(
         _run_analysis_pipeline,
-        bill_id, body.file_path, body.state, body.county, body.zip_code, supabase,
+        bill_id, body.file_path, body.state, body.county, body.zip_code,
+        body.payer_name, body.plan_name, supabase,
     )
 
     return AnalyzeAccepted()
@@ -69,6 +70,8 @@ async def _run_analysis_pipeline(
     state: str | None,
     county: str | None,
     zip_code: str | None,
+    payer_name: str | None,
+    plan_name: str | None,
     supabase: Client,
 ) -> None:
     """Full analysis pipeline — runs in the background after accepting the request.
@@ -77,7 +80,7 @@ async def _run_analysis_pipeline(
       1. Download file from Supabase Storage
       2. OCR extraction
       3. Line item parsing
-      4. Rules engine
+      4. Rules engine (all rules, including negotiated rate if payer/plan provided)
       5. AI analysis (Claude)
       6. Persist results and update bill status
     """
@@ -108,11 +111,18 @@ async def _run_analysis_pipeline(
             logger.info("Extracted NPI %s from bill %s", hospital_npi, bill_id)
         if hospital_name:
             logger.info("Extracted hospital name '%s' from bill %s", hospital_name, bill_id)
-        if hospital_npi or hospital_name:
-            supabase.table("bills").update({
-                "hospital_npi": hospital_npi,
-                "hospital_name": hospital_name,
-            }).eq("id", bill_id).execute()
+        # Persist all confirmed identity fields — hospital from OCR, payer/plan from user
+        identity_update: dict = {}
+        if hospital_npi:
+            identity_update["hospital_npi"] = hospital_npi
+        if hospital_name:
+            identity_update["hospital_name"] = hospital_name
+        if payer_name:
+            identity_update["payer_name"] = payer_name
+        if plan_name:
+            identity_update["plan_name"] = plan_name
+        if identity_update:
+            supabase.table("bills").update(identity_update).eq("id", bill_id).execute()
 
         # Persist line items to the database
         line_item_rows = [
@@ -156,6 +166,7 @@ async def _run_analysis_pipeline(
         )
         bq = _build_bq_client()
         hospital_charges = _load_hospital_charges(bq, cpt_codes, hospital_npi, hospital_name)
+        negotiated_charges = _load_negotiated_charges(bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -166,6 +177,7 @@ async def _run_analysis_pipeline(
             ambulance_rates=ambulance_rates,
             hcpcs_termination_dates=hcpcs_termination_dates,
             hospital_charges=hospital_charges,
+            negotiated_charges=negotiated_charges,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -889,6 +901,102 @@ def _resolve_npi_by_name(
     if len(rows) == 1:
         return str(rows[0]["hospital_npi"])
     return None
+
+
+def _load_negotiated_charges(
+    bq: bigquery.Client | None,
+    cpt_codes: list[str],
+    hospital_npi: str | None,
+    hospital_name: str | None,
+    payer_name: str | None,
+    plan_name: str | None,
+) -> dict[str, Decimal]:
+    """Load the insurer-specific contracted rate for each CPT code on this bill.
+
+    Queries hospital_charges WHERE hospital_npi matches AND payer_name/plan_name
+    match the patient's confirmed insurance plan. Returns the MAX(negotiated_charge)
+    per code when multiple rows match (e.g. different settings or negotiated_type values).
+
+    Returns empty dict when:
+      - BigQuery not configured
+      - No CPT codes on the bill
+      - Hospital not identified (no NPI and no resolvable name)
+      - Payer or plan not provided (user skipped insurance confirmation)
+      - No matching rows found in hospital_charges for this payer/plan combination
+        (hospital may not have published per-payer rates, or MRF uses different names)
+
+    The rules engine skips NEGOTIATED_RATE_EXCEEDED when this returns empty.
+    """
+    if bq is None or not cpt_codes:
+        return {}
+    if not payer_name or not plan_name:
+        return {}
+    if not hospital_npi and not hospital_name:
+        return {}
+
+    dataset = f"{settings.gcp_project_id}.{settings.bigquery_dataset}"
+    unique_codes = list(set(cpt_codes))
+
+    # Resolve NPI if only name is available — same logic as hospital charge lookup
+    npi = hospital_npi
+    if not npi:
+        assert hospital_name is not None
+        npi = _resolve_npi_by_name(bq, dataset, hospital_name)
+        if npi is None:
+            logger.info(
+                "Hospital name '%s' matched 0 or >1 hospitals — skipping negotiated rate lookup",
+                hospital_name,
+            )
+            return {}
+
+    # LIKE match on payer/plan — MRF data uses various naming conventions.
+    # Use the user-entered value as a substring search (case-insensitive).
+    # Only return rates when negotiated_type is 'negotiated' or 'derived' —
+    # 'percentage' rates are multipliers of another rate and cannot be directly
+    # compared to billed charges without additional context.
+    payer_pattern = f"%{payer_name.strip().lower()}%"
+    plan_pattern = f"%{plan_name.strip().lower()}%"
+
+    query = f"""
+        SELECT code, MAX(negotiated_charge) AS negotiated_charge
+        FROM `{dataset}.hospital_charges`
+        WHERE hospital_npi = @npi
+          AND LOWER(payer_name) LIKE @payer_pattern
+          AND LOWER(plan_name) LIKE @plan_pattern
+          AND code IN UNNEST(@codes)
+          AND negotiated_charge IS NOT NULL
+          AND negotiated_charge > 0
+          AND negotiated_type IN ('negotiated', 'derived')
+        GROUP BY code
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("npi", "STRING", npi),
+        bigquery.ScalarQueryParameter("payer_pattern", "STRING", payer_pattern),
+        bigquery.ScalarQueryParameter("plan_pattern", "STRING", plan_pattern),
+        bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+    ])
+    try:
+        rows = list(bq.query(query, job_config=job_config).result())
+    except Exception as exc:
+        logger.warning(
+            "BigQuery negotiated rate lookup failed for NPI %s / payer '%s' / plan '%s': %s",
+            npi, payer_name, plan_name, exc,
+        )
+        return {}
+
+    if not rows:
+        logger.info(
+            "No negotiated rates found for NPI %s / payer '%s' / plan '%s' — "
+            "hospital may not publish per-payer rates or names don't match MRF data.",
+            npi, payer_name, plan_name,
+        )
+        return {}
+
+    logger.info(
+        "Loaded %d negotiated rates for NPI %s / payer '%s' / plan '%s'",
+        len(rows), npi, payer_name, plan_name,
+    )
+    return {row["code"]: Decimal(str(row["negotiated_charge"])).quantize(Decimal("0.01")) for row in rows}
 
 
 def _map_errors_to_line_items(

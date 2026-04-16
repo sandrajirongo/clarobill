@@ -50,6 +50,7 @@ class RulesEngine:
         ambulance_rates: dict[str, Decimal] | None = None,
         hcpcs_termination_dates: dict[str, date] | None = None,
         hospital_charges: dict[str, Decimal] | None = None,
+        negotiated_charges: dict[str, Decimal] | None = None,
     ) -> None:
         """
         Args:
@@ -77,6 +78,11 @@ class RulesEngine:
             hospital_charges:          Map of cpt_code → hospital's own published gross charge
                                        from their MRF price transparency file. When provided,
                                        enables hospital charge outlier detection.
+            negotiated_charges:        Map of cpt_code → the specific negotiated rate contracted
+                                       between the hospital and the patient's insurer/plan, from
+                                       the MRF price transparency file. When provided, enables
+                                       the negotiated rate exceeded detection — the strongest
+                                       price benchmark available.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -88,6 +94,7 @@ class RulesEngine:
         self._ambulance_rates = ambulance_rates or {}
         self._hcpcs_termination_dates = hcpcs_termination_dates or {}
         self._hospital_charges = hospital_charges or {}
+        self._negotiated_charges = negotiated_charges or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -108,6 +115,7 @@ class RulesEngine:
         errors.extend(self._detect_ambulance_outliers(line_items))
         errors.extend(self._detect_terminated_codes(line_items))
         errors.extend(self._detect_hospital_charge_outliers(line_items))
+        errors.extend(self._detect_negotiated_rate_exceeded(line_items))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -549,6 +557,54 @@ class RulesEngine:
                     ),
                     estimated_overcharge=overcharge,
                     medicare_benchmark_rate=gross_charge,
+                ))
+
+        return errors
+
+    def _detect_negotiated_rate_exceeded(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag charges that exceed the patient's insurer-specific contracted rate.
+
+        This is the strongest price benchmark in the engine. The negotiated rate is the
+        exact dollar amount the patient's insurer agreed to pay this hospital for each
+        procedure. Billing above it means the patient is being charged outside the terms
+        of the insurance contract — the hospital cannot collect more than its contracted
+        rate from an in-network patient.
+
+        Data source: hospital_charges BigQuery table, filtered to the patient's
+        payer_name and plan_name. The rate is loaded by _load_negotiated_charges()
+        in bills.py before the engine runs.
+
+        Disabled when negotiated_charges is empty (insurer not identified, plan not
+        matched in MRF data, or hospital not in our database).
+        """
+        if not self._negotiated_charges:
+            return []
+
+        errors: list[DetectedError] = []
+
+        for index, item in enumerate(line_items):
+            negotiated_rate = self._negotiated_charges.get(item.cpt_code)
+            if negotiated_rate is None or negotiated_rate <= 0:
+                continue
+
+            charge = Decimal(str(item.total_charge))
+            if charge > negotiated_rate * Decimal(str(self._outlier_threshold)):
+                overcharge = charge - negotiated_rate
+                label = f" ({item.description})" if item.description else ""
+                errors.append(DetectedError(
+                    code="NEGOTIATED_RATE_EXCEEDED",
+                    severity="critical",
+                    affected_indices=[index],
+                    description=(
+                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"{label}. Your insurance plan's contracted rate at this hospital "
+                        f"for this procedure is ${negotiated_rate:.2f} — a difference of "
+                        f"${overcharge:.2f}. In-network providers cannot bill above their "
+                        f"contracted rate. This may be a billing error or an improper "
+                        f"balance-billing attempt."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=negotiated_rate,
                 ))
 
         return errors

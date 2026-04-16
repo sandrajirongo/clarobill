@@ -15,6 +15,44 @@ export interface Bill {
   fileSize: number;
   mimeType: 'application/pdf' | 'image/jpeg' | 'image/png';
   status: BillStatus;
+  // OCR-extracted provider identity — confirmed during pre-analysis verification
+  hospitalNpi: string | null;
+  hospitalName: string | null;
+  // Insurance confirmed by user at verification time — denormalized from insurance_plans
+  profileMemberId: string | null;
+  payerName: string | null;
+  planName: string | null;
+  // Timestamp when the user completed pre-analysis verification
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Profile Member & Insurance Types ────────────────────────────────────────
+
+export type PlanType = 'commercial' | 'medicare' | 'medicaid' | 'tricare' | 'self_pay';
+
+export interface ProfileMember {
+  id: string;
+  userId: string;
+  fullName: string;
+  dateOfBirth: string;
+  state: string | null;
+  county: string | null;
+  zipCode: string | null;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InsurancePlan {
+  id: string;
+  profileMemberId: string;
+  payerName: string;
+  planName: string;
+  memberId: string | null;
+  planType: PlanType;
+  isPrimaryPlan: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,7 +87,8 @@ export type BillingErrorCode =
   | 'ANESTHESIA_OUTLIER'
   | 'FACILITY_CHARGE_OUTLIER'
   | 'AMBULANCE_CHARGE_OUTLIER'
-  | 'HOSPITAL_CHARGE_OUTLIER';
+  | 'HOSPITAL_CHARGE_OUTLIER'
+  | 'NEGOTIATED_RATE_EXCEEDED';
 
 export interface BillingError {
   code: BillingErrorCode;

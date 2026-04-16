@@ -40,6 +40,7 @@ class BillingErrorCode(StrEnum):
     FACILITY_CHARGE_OUTLIER = "FACILITY_CHARGE_OUTLIER"
     AMBULANCE_CHARGE_OUTLIER = "AMBULANCE_CHARGE_OUTLIER"
     HOSPITAL_CHARGE_OUTLIER = "HOSPITAL_CHARGE_OUTLIER"
+    NEGOTIATED_RATE_EXCEEDED = "NEGOTIATED_RATE_EXCEEDED"
 
 
 class LineItem(BaseModel):
@@ -101,6 +102,11 @@ class AnalyzeRequest(BaseModel):
     state: str | None = None
     county: str | None = None
     zip_code: str | None = None
+    # Insurance plan confirmed by user at verification time.
+    # Used to query the hospital's MRF for the exact negotiated rate per CPT code.
+    # Both must be provided to enable NEGOTIATED_RATE_EXCEEDED detection.
+    payer_name: str | None = None
+    plan_name: str | None = None
 
 
 class AnalyzeAccepted(BaseModel):
