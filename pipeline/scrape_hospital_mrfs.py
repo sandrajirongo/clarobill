@@ -68,9 +68,8 @@ GCS_UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
 HEAD_TIMEOUT = 60   # seconds — generous for slow hospital DNS + TLS handshake
 GET_TIMEOUT  = 120  # seconds — large files need time to start streaming
 
-# Maximum file size to download (500 MB). Files larger than this are logged
-# and skipped — they likely need a streaming / chunked download path.
-MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
+# No file size limit — files stream from hospital servers directly to GCS in
+# 16MB chunks so memory usage is constant regardless of file size.
 
 REQUEST_HEADERS = {
     "User-Agent": "ClaroBill-PriceTransparency/1.0 (price transparency research; contact@clarobill.com)",
@@ -166,13 +165,8 @@ def _check_hospital(
     content_length = resp.headers.get("Content-Length")
     size = int(content_length) if content_length and content_length.isdigit() else None
 
-    if size and size > MAX_FILE_SIZE_BYTES:
-        logger.warning(
-            "[%s] File too large (%d MB), skipping",
-            label,
-            size // (1024 * 1024),
-        )
-        return hospital, False, new_lm, size
+    if size:
+        logger.debug("[%s] File size: %d MB", label, size // (1024 * 1024))
 
     changed = (new_lm is None) or (new_lm != stored_lm)
     return hospital, changed, new_lm, size
