@@ -62,8 +62,11 @@ MAX_WORKERS = 20
 # enough for throughput, small enough to keep per-worker memory bounded.
 GCS_UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
 
-# HEAD/GET timeout in seconds — hospitals have slow web servers.
-REQUEST_TIMEOUT = 30
+# Separate timeouts for HEAD checks vs file downloads.
+# Hospital web servers are often slow — 30s HEAD timeouts cause many false
+# skips. Downloads can take minutes for large (100-500 MB) MRF files.
+HEAD_TIMEOUT = 60   # seconds — generous for slow hospital DNS + TLS handshake
+GET_TIMEOUT  = 120  # seconds — large files need time to start streaming
 
 # Maximum file size to download (500 MB). Files larger than this are logged
 # and skipped — they likely need a streaming / chunked download path.
@@ -153,7 +156,7 @@ def _check_hospital(
     stored_lm = hospital.get("last_modified")
 
     try:
-        resp = session.head(url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+        resp = session.head(url, timeout=HEAD_TIMEOUT, allow_redirects=True)
         resp.raise_for_status()
     except requests.RequestException as exc:
         logger.warning("[%s] HEAD failed: %s", label, exc)
@@ -200,14 +203,23 @@ def _download_to_gcs(
     label = name or url
 
     try:
-        resp = session.get(url, timeout=REQUEST_TIMEOUT, stream=True, allow_redirects=True)
+        resp = session.get(url, timeout=GET_TIMEOUT, stream=True, allow_redirects=True)
         resp.raise_for_status()
     except requests.RequestException as exc:
         logger.error("[%s] GET failed: %s", label, exc)
         return None
 
     content_type = resp.headers.get("Content-Type", "")
+    content_encoding = resp.headers.get("Content-Encoding", "").lower()
     ext = _infer_extension(url, content_type)
+
+    # Some hospital servers send plain .json files with Content-Encoding: gzip
+    # (transport compression). The actual bytes on the wire are compressed, so
+    # the URL path has no .gz suffix but the stored bytes are gzip.
+    # Append .gz so the parser knows to decompress them.
+    if "gzip" in content_encoding and not ext.endswith(".gz"):
+        ext += ".gz"
+
     slug = _name_slug(name) if name else "unknown"
     blob_name = f"raw/{slug}/{scraped_at}{ext}"
 
@@ -221,9 +233,12 @@ def _download_to_gcs(
             "state": hospital.get("state") or "",
             "hospital_npi": hospital.get("hospital_npi") or "",
         }
-        # decode_content=True ensures urllib3 decompresses gzip on the fly.
-        # rewind must NOT be set — network streams are not seekable.
-        resp.raw.decode_content = True
+        # decode_content=False: store the raw compressed bytes as received.
+        # The Content-Length header reflects the compressed size — if we let
+        # urllib3 decompress on the fly (decode_content=True), the GCS
+        # resumable upload gets more bytes than the Content-Range header
+        # declares, causing a 400 "Invalid request" from the GCS API.
+        resp.raw.decode_content = False
         blob.upload_from_file(resp.raw)
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name
