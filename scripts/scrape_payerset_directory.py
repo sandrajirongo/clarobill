@@ -367,7 +367,7 @@ def main() -> None:
     print(f"  With NPI        : {with_npi} ({with_npi * 100 // total}%)")
     print(f"  Missing NPI     : {total - with_npi}")
     if total - with_npi > 0:
-        print("  → Re-run with --resolve-npis --npi-cache npi_cache.json to fill missing NPIs")
+        print("  → Missing NPIs will be extracted from MRF file content when the pipeline parser runs")
 
 
 if __name__ == "__main__":
