@@ -191,6 +191,30 @@
 .paywallBtn:hover:not(:disabled) { background: var(--accent-h); transform: translateY(-1px); }
 .paywallBtn:disabled { opacity: .55; cursor: not-allowed; }
 
+/* Report generation pending (async after payment) */
+.reportPendingWrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.reportPendingSpinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(45, 74, 42, .12);
+  border-top-color: var(--sage);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.reportPendingTitle {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--txt);
+  margin-bottom: .3rem;
+}
+.reportPendingSub { font-size: .82rem; color: var(--txt2); line-height: 1.6; }
+
 /* Download buttons */
 .downloadRow { display: flex; gap: .75rem; flex-wrap: wrap; }
 .downloadBtn {

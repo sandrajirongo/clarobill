@@ -40,6 +40,22 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     return () => { cancelled = true; clearInterval(interval); };
   }, [analysis, bill.id, router]);
 
+  // After payment, report + dispute letter are generated async (15–60s).
+  // Refresh the Server Component every 5s until URLs appear, up to 2 minutes.
+  useEffect(() => {
+    if (!hasPaid || analysis === null) return;
+    if (analysis.reportUrl || analysis.disputeLetterUrl) return; // already ready
+
+    let refreshCount = 0;
+    const MAX_REFRESHES = 24;
+    const interval = setInterval(() => {
+      refreshCount++;
+      router.refresh();
+      if (refreshCount >= MAX_REFRESHES) clearInterval(interval);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [hasPaid, analysis, router]);
+
   // Loading state — engine still processing
   if (analysis === null) {
     return (
@@ -47,7 +63,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         <div className={s.inner}>
           <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
           <h1 className={s.pageTitle}>Analyzing your bill…</h1>
-          <p className={s.fileName}>{bill.fileName}</p>
+          <p className={s.fileName}>{bill.displayName ?? bill.fileName}</p>
           <div className={s.card} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem' }}>
             <div style={{ width: 28, height: 28, borderRadius: '50%', border: '3px solid rgba(45,74,42,.12)', borderTopColor: 'var(--sage)', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
             <div>
@@ -80,21 +96,31 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     }
   }
 
+  // Only show paywall CTA when there are actually errors to unlock.
+  // Showing it on a clean bill ("no issues found") would be misleading.
+  const showPaywall = !hasPaid && (analysis.errors.length + hiddenErrorCount) > 0;
+
+  // Report generation is async on the engine — can take 15–60s after payment.
+  // Show a pending card while we wait, then switch to download buttons on refresh.
+  const reportPending = hasPaid && !analysis.reportUrl && !analysis.disputeLetterUrl;
+
   return (
     <main className={s.main}>
       <div className={s.inner}>
 
         {paymentStatus === 'success' && (
           <div className={s.successBanner}>
-            Access confirmed. Your full report and dispute letter are being prepared below.
+            {reportPending
+              ? 'Payment confirmed — your report and dispute letter are being generated. This page updates automatically.'
+              : 'Payment confirmed. Your documents are ready below.'}
           </div>
         )}
 
         {/* Header */}
         <div>
           <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
-          <h1 className={s.pageTitle}>Bill Analysis</h1>
-          <p className={s.fileName}>{bill.fileName}</p>
+          <h1 className={s.pageTitle}>{bill.displayName ?? bill.fileName}</h1>
+          {bill.displayName && <p className={s.fileName}>{bill.fileName}</p>}
         </div>
 
         {/* Summary cards */}
@@ -132,8 +158,8 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
           )}
         </div>
 
-        {/* Paywall CTA */}
-        {!hasPaid && (
+        {/* Paywall CTA — only shown when errors exist to unlock */}
+        {showPaywall && (
           <div className={s.paywallCta}>
             <h2 className={s.paywallCtaTitle}>Get the Full Report</h2>
             <p className={s.paywallCtaSub}>
@@ -151,13 +177,25 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
           </div>
         )}
 
-        {/* Download links (post-payment) */}
+        {/* Documents section (post-payment) */}
+        {reportPending && (
+          <div className={s.card}>
+            <p className={s.cardLabel}>Your Documents</p>
+            <div className={s.reportPendingWrap}>
+              <div className={s.reportPendingSpinner} />
+              <div>
+                <p className={s.reportPendingTitle}>Generating your report…</p>
+                <p className={s.reportPendingSub}>
+                  Your full PDF report and ready-to-send dispute letter are being created.
+                  This usually takes under a minute — the page will update automatically.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {hasPaid && (analysis.reportUrl || analysis.disputeLetterUrl) && (
           <div className={s.card}>
             <p className={s.cardLabel}>Your Documents</p>
-            <p className={s.summaryText} style={{ marginBottom: '1rem' }}>
-              Download your full report and dispute letter below.
-            </p>
             <div className={s.downloadRow}>
               {analysis.reportUrl && (
                 <DownloadButton billId={bill.id} type="report" label="Download Report" />

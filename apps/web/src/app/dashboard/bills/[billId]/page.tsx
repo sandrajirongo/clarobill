@@ -22,7 +22,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
   // Fetch bill — RLS enforces ownership
   const { data: bill } = await supabase
     .from('bills')
-    .select('id, user_id, file_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
+    .select('id, user_id, file_name, display_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
     .eq('id', billId)
     .single();
 
@@ -49,6 +49,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
         bill={{
           id: bill.id,
           userId: bill.user_id,
+          displayName: bill.display_name ?? null,
           fileName: bill.file_name,
           filePath: bill.file_path,
           fileSize: bill.file_size,
@@ -82,7 +83,12 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
 
   const hasPaid = payment_record !== null;
 
-  const errors = analysis.errors as BillingError[];
+  // Sort by estimated overcharge descending so the teaser always shows the most
+  // valuable finding. A zero-overcharge error as the first visible item kills
+  // the paywall conversion — show the biggest dollar amount first.
+  const errors = (analysis.errors as BillingError[]).sort(
+    (a, b) => b.estimatedOvercharge - a.estimatedOvercharge
+  );
   const visibleErrors = hasPaid ? errors : errors.slice(0, 1);
   const hiddenErrorCount = hasPaid ? 0 : Math.max(0, errors.length - 1);
 
@@ -91,6 +97,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
       bill={{
         id: bill.id,
         userId: bill.user_id,
+        displayName: bill.display_name ?? null,
         fileName: bill.file_name,
         filePath: bill.file_path,
         fileSize: bill.file_size,
