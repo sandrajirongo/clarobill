@@ -42,7 +42,12 @@ export default function Article(): JSX.Element {
           in the provider's favor.
         </p>
 
-        <p>Here are the errors that show up most often — and what to do about each one.</p>
+        <p>
+          To catch any of these errors, you first need the right document. Most patients never receive an
+          itemized bill unless they ask for one.{' '}
+          <Link href="/blog/how-to-read-an-itemized-medical-bill">Our guide to reading an itemized bill</Link>{' '}
+          explains how to request it and what each column means. Once you have it, look for the following.
+        </p>
 
         <h2>1. Duplicate charges</h2>
 
@@ -98,7 +103,9 @@ export default function Article(): JSX.Element {
         <p>
           A real example: CPT 29881 covers knee arthroscopy with meniscectomy. CPT 29877 covers arthroscopic
           debridement. Under NCCI rules, 29877 is included in 29881 when performed during the same surgical
-          session — they cannot be billed separately. But they sometimes are.
+          session — they cannot be billed separately. If you are unfamiliar with how{' '}
+          <Link href="/blog/what-are-cpt-codes">CPT codes work and how they get abused</Link>, that guide
+          covers the system in plain English. But they sometimes are.
         </p>
 
         <p>
@@ -141,7 +148,10 @@ export default function Article(): JSX.Element {
         <h2>How to write an effective dispute letter</h2>
 
         <p>
-          Phone calls get lost. A written dispute creates a paper trail. Cite the exact CPT code, the exact
+          Phone calls get lost. A written dispute creates a paper trail. For the full process — including
+          what to put in the letter, how to cite specific rules, and what to do if the hospital pushes back —
+          see <Link href="/blog/how-to-dispute-a-hospital-bill">our complete hospital bill dispute guide</Link>.
+          In short: cite the exact CPT code, the exact
           date, the exact dollar amount, and the exact reason the charge is wrong. Reference the rule being
           violated where applicable.
         </p>

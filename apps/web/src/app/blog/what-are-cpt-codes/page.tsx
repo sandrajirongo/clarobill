@@ -30,7 +30,9 @@ export default function Article(): JSX.Element {
         <p>
           Somewhere on your medical bill, there are five-digit numbers that most patients ignore. They look
           like serial codes — 99213, 93000, 80053 — and they are easy to skip past when you are trying to
-          make sense of a bill that already feels overwhelming.
+          make sense of a bill that already feels overwhelming. If you are still working through what all
+          the columns mean, <Link href="/blog/how-to-read-an-itemized-medical-bill">our itemized bill guide</Link>{' '}
+          covers the full layout before you get to the codes.
         </p>
 
         <p>
@@ -145,8 +147,10 @@ export default function Article(): JSX.Element {
           Modifier 59 deserves special attention. It is used to override National Correct Coding Initiative
           (NCCI) edits — the rules that prevent certain code combinations from being billed together. Used
           legitimately, it documents that two procedures really were separate and distinct. Used improperly,
-          it is a tool for billing code pairs that should not be billed separately. When you see modifier 59,
-          it is worth understanding what it is overriding and whether the documentation supports it.
+          it is a tool for billing code pairs that should not be billed separately. Unbundling is one of the{' '}
+          <Link href="/blog/common-medical-billing-errors">most common billing errors</Link> — with a specific
+          dispute template you can use when you spot it. When you see modifier 59 with no clear justification,
+          that is where to look first.
         </p>
 
         <h2>You are allowed to question the codes</h2>
@@ -161,7 +165,9 @@ export default function Article(): JSX.Element {
           and why. If a code on your bill does not match your experience of the visit — if the complexity
           level seems wrong, if a procedure appears for something you do not recall — ask. Request the
           documentation. The codes are not obscure by necessity. They are just not typically explained to
-          the person who pays the bill.
+          the person who pays the bill. When you are ready to act on what you find,{' '}
+          <Link href="/blog/how-to-dispute-a-hospital-bill">our dispute guide walks through every step</Link>{' '}
+          including the specific language to use in a written challenge.
         </p>
 
       </div>

@@ -50,7 +50,9 @@ export default function Article(): JSX.Element {
           You are legally entitled to an itemized bill. Call the hospital billing department and ask for one.
           Do not accept the summary bill — the one that shows "hospital services: $14,200" as a single line.
           You need every charge broken out individually, with the CPT or HCPCS code, the date of service,
-          the quantity, and the dollar amount.
+          the quantity, and the dollar amount. If you have not done this before,{' '}
+          <Link href="/blog/how-to-read-an-itemized-medical-bill">our guide to reading an itemized bill</Link>{' '}
+          explains every column and what to look for before you start auditing.
         </p>
 
         <p>
@@ -89,7 +91,9 @@ export default function Article(): JSX.Element {
         <h2>Step 3: Identify the errors</h2>
 
         <p>
-          With your itemized bill in hand, look for these patterns:
+          With your itemized bill in hand, look for these patterns. We cover each of these in depth —
+          with real CPT code examples and exact dispute language — in{' '}
+          <Link href="/blog/common-medical-billing-errors">our guide to common billing errors</Link>.
         </p>
 
         <ul>
@@ -219,7 +223,10 @@ export default function Article(): JSX.Element {
 
         <p>
           That is why most people do not do it. The friction is real, and it is intentional — a system
-          that is confusing enough to deter disputes is a system that collects more revenue.
+          that is confusing enough to deter disputes is a system that collects more revenue. If the bill
+          is large or complex enough that professional help seems worth it,{' '}
+          <Link href="/blog/medical-billing-advocates">our guide to medical billing advocates</Link>{' '}
+          covers what they charge and when the economics make sense.
         </p>
 
         <p>

@@ -79,7 +79,8 @@ export default function Article(): JSX.Element {
             <p className={s.glossaryDef}>
               A five-digit code describing the exact procedure or service. This is the most important field
               on the bill. CPT 99214 means "established patient office visit, moderate-to-high complexity."
-              CPT 93000 is an EKG. These codes directly determine what insurance pays — and what you owe.
+              CPT 93000 is an EKG. These codes directly determine what insurance pays — and what you owe.{' '}
+              <Link href="/blog/what-are-cpt-codes">Our CPT code guide</Link> walks through the codes patients see most often and what they mean.
             </p>
           </div>
           <div style={{ marginTop: '1rem' }}>
@@ -141,6 +142,8 @@ export default function Article(): JSX.Element {
           <strong>3. The description does not match what happened.</strong> If you had a 15-minute follow-up
           but the bill shows CPT 99215 (requiring at least 40 minutes of total time), that is upcoding — the
           difference between a 99213 ($90) and a 99215 ($182) visit under the 2026 Medicare fee schedule.
+          Upcoding is one of several{' '}
+          <Link href="/blog/common-medical-billing-errors">common billing errors with specific dispute strategies</Link>.
         </p>
 
         <p>
@@ -155,6 +158,8 @@ export default function Article(): JSX.Element {
           Billing departments are not adversaries, but they do make mistakes — and they are not going to audit
           their own work for your benefit. If something looks wrong, ask for it in writing. If a charge is
           removed verbally but does not disappear from the next statement, follow up with a reference number.
+          For the exact steps — from writing the dispute letter to escalating when the hospital pushes back —
+          see <Link href="/blog/how-to-dispute-a-hospital-bill">our step-by-step hospital bill dispute guide</Link>.
         </p>
 
         <p>

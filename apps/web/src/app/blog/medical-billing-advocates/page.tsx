@@ -46,7 +46,9 @@ export default function Article(): JSX.Element {
 
         <p>
           A typical engagement starts with you sending your advocate the itemized bill and your
-          insurer's Explanation of Benefits. The advocate then:
+          insurer's Explanation of Benefits. If you have not yet requested your itemized bill,{' '}
+          <Link href="/blog/how-to-read-an-itemized-medical-bill">our guide explains how to get one and what each column means</Link>.
+          The advocate then:
         </p>
 
         <ul>
@@ -133,7 +135,8 @@ export default function Article(): JSX.Element {
           For the most common billing errors — duplicate charges, unbundled CPT codes, price outliers,
           non-payable codes — the rules are published and the disputes follow a predictable template.
           You do not need expert negotiation for these. You need the right reference data and a
-          well-formatted dispute letter.
+          well-formatted dispute letter. <Link href="/blog/common-medical-billing-errors">Our billing errors guide</Link>{' '}
+          covers each error type with the exact dispute language to use.
         </p>
 
         <p>
@@ -151,7 +154,9 @@ export default function Article(): JSX.Element {
         <h2>How to decide</h2>
 
         <p>
-          Here is a practical framework:
+          Here is a practical framework. For any of the DIY options,{' '}
+          <Link href="/blog/how-to-dispute-a-hospital-bill">our step-by-step dispute guide</Link>{' '}
+          covers the exact process.
         </p>
 
         <ul>
