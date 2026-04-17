@@ -43,8 +43,13 @@ export async function middleware(request: NextRequest) {
 
   // If Supabase redirected a ?code= to a non-callback route (e.g. homepage),
   // forward it to /auth/callback so the session can be established.
+  //
+  // Exception: /auth/update-password handles its own code exchange — the code
+  // there is a password-reset recovery token, not a sign-in code. Redirecting
+  // it to /auth/callback would silently log the user in and skip the
+  // "set new password" form entirely.
   const code = request.nextUrl.searchParams.get('code');
-  if (code && pathname !== '/auth/callback') {
+  if (code && pathname !== '/auth/callback' && pathname !== '/auth/update-password') {
     const callbackUrl = request.nextUrl.clone();
     callbackUrl.pathname = '/auth/callback';
     return NextResponse.redirect(callbackUrl);
