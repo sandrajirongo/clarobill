@@ -22,7 +22,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
   // Fetch bill — RLS enforces ownership
   const { data: bill } = await supabase
     .from('bills')
-    .select('id, user_id, file_name, file_path, file_size, mime_type, status, created_at, updated_at')
+    .select('id, user_id, file_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
     .eq('id', billId)
     .single();
 
@@ -64,6 +64,12 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
         fileSize: bill.file_size,
         mimeType: bill.mime_type,
         status: bill.status,
+        hospitalNpi: bill.hospital_npi ?? null,
+        hospitalName: bill.hospital_name ?? null,
+        profileMemberId: bill.profile_member_id ?? null,
+        payerName: bill.payer_name ?? null,
+        planName: bill.plan_name ?? null,
+        confirmedAt: bill.confirmed_at ?? null,
         createdAt: bill.created_at,
         updatedAt: bill.updated_at,
       }}
