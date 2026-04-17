@@ -257,7 +257,7 @@ def process_blob(
     logger.info("[%s] Processing %s", label, blob.name)
     scraped_at = datetime.now(timezone.utc).isoformat()
 
-    # Read the first 8 KB to get effective_date and NPI from the MRF root.
+    # Read the first 128 KB to get effective_date and NPI from the MRF root.
     effective_date = _read_mrf_date(blob)
     if not effective_date:
         effective_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -312,36 +312,49 @@ def process_blob(
         return False
 
 
+# A single gzip deflate block can be up to 65 KB compressed. Download 128 KB
+# so we almost always have enough compressed data to decode the full first block,
+# which contains the root metadata (hospital_npi, last_updated_on).
+_HEADER_DOWNLOAD_SIZE = 131072  # 128 KB
+
 def _read_header_bytes(blob: storage.Blob) -> bytes:
-    """Download the first 8 KB of an MRF blob, decompressing gzip if needed.
+    """Download the first 128 KB of an MRF blob, decompressing gzip if needed.
 
     The MRF root metadata (last_updated_on, NPI) is always near the start of
-    the file, so we only need a small slice rather than the full download.
+    the file. 128 KB is enough to span at least one full gzip deflate block
+    (max ~65 KB compressed) so decompression reliably yields the header JSON.
 
-    For gzip files we cannot use gzip.decompress() because the first 8 KB is a
-    truncated gzip stream — gzip.decompress requires a complete stream and raises
-    EOFError on partial data. We use GzipFile instead, which decompresses
-    incrementally and returns whatever bytes it can extract before the truncation.
+    For gzip files we read in 4 KB chunks and collect partial output. Per-chunk
+    EOFError handling means we keep whatever was decoded before truncation rather
+    than discarding it all.
 
     Returns empty bytes on any error.
     """
     try:
-        raw = blob.download_as_bytes(start=0, end=8192)
+        raw = blob.download_as_bytes(start=0, end=_HEADER_DOWNLOAD_SIZE)
         if blob.name.endswith(".gz") or blob.name.endswith(".gzip"):
+            decoded = io.BytesIO()
             try:
                 with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
-                    return gz.read(8192)
-            except (EOFError, gzip.BadGzipFile, OSError):
-                # Partial decompression is expected — return whatever was decoded.
-                # If GzipFile raised before yielding any bytes, fall through to raw.
-                return b""
+                    while decoded.tell() < 16384:  # stop after 16 KB of decoded output
+                        try:
+                            chunk = gz.read(4096)
+                        except EOFError:
+                            # End of the compressed region we downloaded — stop.
+                            break
+                        if not chunk:
+                            break
+                        decoded.write(chunk)
+            except (gzip.BadGzipFile, OSError):
+                pass  # return whatever we decoded before the error
+            return decoded.getvalue()
         return raw
     except Exception:
         return b""
 
 
 def _read_mrf_date(blob: storage.Blob) -> str | None:
-    """Extract last_updated_on from the first 8 KB of an MRF blob."""
+    """Extract last_updated_on from the MRF blob header."""
     header = _read_header_bytes(blob)
     if not header:
         return None
@@ -355,7 +368,7 @@ def _read_mrf_date(blob: storage.Blob) -> str | None:
 
 
 def _read_mrf_npi(blob: storage.Blob) -> str | None:
-    """Extract the hospital NPI from the first 8 KB of an MRF blob.
+    """Extract the hospital NPI from the MRF blob header.
 
     CMS v2.0.0 MRFs include the NPI in the root object under various key names.
     We search with regex rather than fully parsing the header slice, since the
