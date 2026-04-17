@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { MembersPanel } from '@/components/members-panel';
 import s from '../dashboard.module.css';
 
 export default function ProfilePage(): JSX.Element {
@@ -50,6 +51,9 @@ export default function ProfilePage(): JSX.Element {
         <h1 className={s.pageTitle}>Profile</h1>
         <p className={s.pageSub}>Manage your account and privacy settings</p>
       </div>
+
+      {/* Members & Insurance */}
+      <MembersPanel />
 
       {/* Account */}
       <div className={s.card}>

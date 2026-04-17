@@ -1,0 +1,264 @@
+.main {
+  padding: clamp(1.5rem, 4vw, 2.5rem) clamp(1rem, 4vw, 2rem);
+}
+.inner {
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Back link */
+.backLink {
+  font-size: .82rem;
+  color: var(--sage);
+  text-decoration: none;
+  display: inline-block;
+  margin-bottom: .75rem;
+  transition: color .15s;
+}
+.backLink:hover { color: var(--sage-l); }
+
+/* Page header */
+.pageTitle {
+  font-family: var(--fd);
+  font-size: clamp(1.4rem, 4vw, 1.75rem);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--txt);
+  margin-bottom: .35rem;
+}
+.pageSub { font-size: .875rem; color: var(--txt2); line-height: 1.6; }
+.fileName { font-size: .82rem; color: var(--txt3); margin-top: .25rem; }
+
+/* Step card */
+.stepCard {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+.stepCard[data-complete="true"] { border-color: rgba(45, 74, 42, .3); }
+
+.stepHeader {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding: 1rem 1.25rem;
+  cursor: default;
+}
+.stepNum {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--txt3);
+  flex-shrink: 0;
+  transition: background .2s, border-color .2s, color .2s;
+}
+.stepCard[data-complete="true"] .stepNum {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: #fff;
+}
+.stepTitle {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--txt);
+  flex: 1;
+}
+.stepCheck {
+  font-size: .82rem;
+  color: var(--sage);
+  font-weight: 700;
+}
+.stepSummary {
+  font-size: .8rem;
+  color: var(--txt2);
+  margin-left: auto;
+  text-align: right;
+  line-height: 1.4;
+}
+
+.stepBody { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--border); }
+
+/* Member selector */
+.memberList {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+.memberOption {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .75rem 1rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-xl);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--cream);
+}
+.memberOption:hover { border-color: var(--sage); background: rgba(45, 74, 42, .04); }
+.memberOption[data-selected="true"] { border-color: var(--sage); background: rgba(45, 74, 42, .06); }
+.memberOptionName { font-size: .875rem; font-weight: 600; color: var(--txt); }
+.memberOptionMeta { font-size: .75rem; color: var(--txt3); margin-top: .1rem; }
+.noMembersNote {
+  font-size: .84rem;
+  color: var(--txt2);
+  line-height: 1.6;
+  padding: .75rem 1rem;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+}
+.profileLink {
+  color: var(--sage);
+  text-decoration: none;
+  font-weight: 600;
+}
+.profileLink:hover { text-decoration: underline; }
+
+/* Plan selector */
+.planList {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+.planOption {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem 1rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-xl);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--cream);
+}
+.planOption:hover { border-color: var(--sage); background: rgba(45, 74, 42, .04); }
+.planOption[data-selected="true"] { border-color: var(--sage); background: rgba(45, 74, 42, .06); }
+.planPayer { font-size: .875rem; font-weight: 600; color: var(--txt); }
+.planName { font-size: .82rem; color: var(--txt2); margin-top: .1rem; }
+.noPlansNote {
+  font-size: .84rem;
+  color: var(--txt2);
+  line-height: 1.6;
+  padding: .75rem 1rem;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+}
+
+/* Hospital field */
+.hospitalInput {
+  font-family: var(--fb);
+  font-size: .9rem;
+  color: var(--txt);
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: .7rem 1rem;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.hospitalInput:focus { border-color: var(--sage); }
+.inputHint { font-size: .75rem; color: var(--txt3); margin-top: .4rem; }
+
+/* Service dates */
+.datesNote {
+  font-size: .875rem;
+  color: var(--txt2);
+  line-height: 1.65;
+  padding: .75rem 1rem;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+}
+
+/* Analyzing state */
+.analyzingWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(45, 74, 42, .12);
+  border-top-color: var(--sage);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.analyzingTitle {
+  font-family: var(--fd);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--txt);
+}
+.analyzingNote { font-size: .84rem; color: var(--txt2); line-height: 1.6; }
+
+/* Error state */
+.errorNote {
+  font-size: .84rem;
+  color: #B91C1C;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--r-xl);
+  padding: .9rem 1.1rem;
+  line-height: 1.55;
+}
+
+/* CTA */
+.ctaRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.ctaNote { font-size: .78rem; color: var(--txt3); flex: 1; min-width: 160px; }
+.ctaBtn {
+  background: var(--sage);
+  color: #fff;
+  font-family: var(--fb);
+  font-weight: 700;
+  font-size: .95rem;
+  padding: .85rem 2rem;
+  border-radius: var(--r-full);
+  border: none;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  white-space: nowrap;
+}
+.ctaBtn:hover:not(:disabled) { background: var(--sage-l); transform: translateY(-1px); }
+.ctaBtn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.retryBtn {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--sage);
+  border: 1px solid rgba(45, 74, 42, .2);
+  background: none;
+  border-radius: var(--r-full);
+  padding: .55rem 1.25rem;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: background .15s;
+}
+.retryBtn:hover { background: rgba(45, 74, 42, .05); }

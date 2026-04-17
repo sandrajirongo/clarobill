@@ -8,14 +8,13 @@ export type UploadState =
   | { status: 'idle' }
   | { status: 'validating' }
   | { status: 'uploading'; progress: number }
-  | { status: 'analyzing' }
-  | { status: 'complete'; billId: string }
+  | { status: 'ready'; billId: string }   // upload complete — waiting to navigate to /verify
   | { status: 'error'; error: ClarobillError };
 
 export function useBillUpload() {
   const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle' });
 
-  async function upload(file: File, state: string | null, county: string | null): Promise<void> {
+  async function upload(file: File): Promise<void> {
     setUploadState({ status: 'validating' });
 
     // 1. Validate file on the client (magic bytes + size)
@@ -63,10 +62,9 @@ export function useBillUpload() {
       return;
     }
 
-    setUploadState({ status: 'analyzing' });
-
-    // 4. Trigger analysis and track to completion
-    await triggerAnalysis(billId, state, county, setUploadState);
+    // 4. Upload is done — send user to the verification step.
+    //    Analysis is triggered only after the user confirms member, insurance, and hospital.
+    setUploadState({ status: 'ready', billId });
   }
 
   function reset(): void {
@@ -74,65 +72,4 @@ export function useBillUpload() {
   }
 
   return { uploadState, upload, reset };
-}
-
-const POLL_INTERVAL_MS = 2000;
-const MAX_POLLS = 90; // 3 minutes max (90 × 2s)
-
-async function triggerAnalysis(
-  billId: string,
-  state: string | null,
-  county: string | null,
-  setState: (state: UploadState) => void
-): Promise<void> {
-  // Kick off the engine — 202 Accepted means it's running in the background
-  const analyzeResponse = await fetch(`/api/bills/${billId}/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state, county }),
-  });
-  if (!analyzeResponse.ok) {
-    const { error } = await analyzeResponse.json();
-    setState({ status: 'error', error });
-    return;
-  }
-
-  // Poll until complete, failed, or timeout
-  let polls = 0;
-  await new Promise<void>((resolve) => {
-    const interval = setInterval(async () => {
-      polls += 1;
-
-      if (polls > MAX_POLLS) {
-        clearInterval(interval);
-        setState({
-          status: 'error',
-          error: { code: 'ANALYSIS_FAILED', detail: 'Analysis is taking longer than expected. Check back shortly or contact support.', step: 'timeout' },
-        });
-        resolve();
-        return;
-      }
-
-      const statusResponse = await fetch(`/api/bills/${billId}`);
-      if (!statusResponse.ok) {
-        // Transient network error — keep polling, don't abort yet
-        return;
-      }
-
-      const { status } = await statusResponse.json() as { status: string };
-
-      if (status === 'complete') {
-        clearInterval(interval);
-        setState({ status: 'complete', billId });
-        resolve();
-      } else if (status === 'failed') {
-        clearInterval(interval);
-        setState({
-          status: 'error',
-          error: { code: 'ANALYSIS_FAILED', detail: 'We could not analyze your bill. Please ensure you uploaded a clear image or PDF and try again.', step: 'engine' },
-        });
-        resolve();
-      }
-    }, POLL_INTERVAL_MS);
-  });
 }

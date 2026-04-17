@@ -1,11 +1,26 @@
 /**
- * CMS locality county data — maps states that have named county-level localities
- * to their list of counties. Generated from 26LOCCO.csv (CY 2026).
+ * CMS locality data — state list and county mappings.
  *
- * Only 18 states have specific county entries in CMS locality data. For all other
- * states the engine resolves the correct locality via the statewide / REST OF STATE
- * fallback — no county selection is needed.
+ * US_STATES: all states/territories CMS recognises. Used in member location
+ * selection and bill upload geography.
+ *
+ * COUNTIES_BY_STATE: only 18 states have named county-level CMS localities.
+ * For all other states the engine resolves the correct locality via the
+ * statewide / REST OF STATE fallback — no county selection needed.
  */
+
+export const US_STATES = [
+  'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado',
+  'Connecticut', 'Delaware', 'District Of Columbia', 'Florida', 'Georgia',
+  'Hawaii/Guam', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas',
+  'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan',
+  'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada',
+  'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina',
+  'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Puerto Rico',
+  'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas',
+  'Utah', 'Vermont', 'Virgin Islands', 'Virginia', 'Washington',
+  'West Virginia', 'Wisconsin', 'Wyoming',
+];
 export const COUNTIES_BY_STATE: Record<string, string[]> = {
   California: [
     'Alameda', 'Butte', 'Contra Costa', 'El Dorado', 'Fresno', 'Imperial',

@@ -650,3 +650,227 @@
 .footerLinks { display: flex; gap: 1.25rem; flex-shrink: 0; }
 .footerLink { font-size: .72rem; color: var(--txt3); text-decoration: none; transition: color .15s; }
 .footerLink:hover { color: var(--txt2); }
+
+/* ─── Card header / body layout ─────────────────────────────────────────── */
+.cardHeader {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.cardTitle {
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--txt3);
+}
+.cardBody {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ─── Members & Insurance panel ─────────────────────────────────────────── */
+.addBtn {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--sage);
+  border: 1px solid rgba(45, 74, 42, .2);
+  background: rgba(45, 74, 42, .05);
+  border-radius: var(--r-full);
+  padding: .35rem .9rem;
+  cursor: pointer;
+  transition: background .15s;
+  font-family: var(--fb);
+  white-space: nowrap;
+}
+.addBtn:hover { background: rgba(45, 74, 42, .1); }
+
+.memberCard {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+.memberHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .9rem 1rem;
+  background: var(--cream);
+}
+.memberName {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--txt);
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.memberMeta { font-size: .75rem; color: var(--txt3); margin-top: .15rem; }
+.primaryBadge {
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  background: var(--sage);
+  color: #fff;
+  padding: .15rem .5rem;
+  border-radius: var(--r-full);
+}
+.removeBtn {
+  font-size: .75rem;
+  color: var(--txt3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: .25rem .4rem;
+  border-radius: var(--r);
+  line-height: 1;
+  transition: color .15s, background .15s;
+  flex-shrink: 0;
+}
+.removeBtn:hover { color: #DC2626; background: #FEF2F2; }
+
+.plansSection {
+  padding: .75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.plansList { display: flex; flex-direction: column; gap: .35rem; }
+.planRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  font-size: .82rem;
+  padding: .4rem .5rem;
+  border-radius: var(--r);
+  background: var(--white);
+  border: 1px solid var(--border);
+}
+.planPayer { font-weight: 600; color: var(--txt); }
+.planName { color: var(--txt2); }
+.planTypeBadge {
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  color: var(--txt3);
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  padding: .1rem .45rem;
+  margin-left: .35rem;
+  white-space: nowrap;
+}
+.planMemberId { font-size: .72rem; color: var(--txt3); margin-left: .5rem; }
+.noPlansText { font-size: .78rem; color: var(--txt3); padding: .2rem .5rem; }
+
+.addPlanBtn {
+  align-self: flex-start;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--sage);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: .25rem .1rem;
+  font-family: var(--fb);
+  transition: color .15s;
+}
+.addPlanBtn:hover { color: var(--sage-l); }
+
+/* ─── Inline forms (add member / add plan) ───────────────────────────────── */
+.inlineForm {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 1.1rem 1.25rem;
+  background: var(--white);
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+}
+.inlineFormTitle {
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--txt3);
+}
+.formRow {
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  flex: 1;
+  min-width: 140px;
+}
+.formLabel {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--txt2);
+  letter-spacing: .02em;
+}
+.optionalTag { font-weight: 400; color: var(--txt3); }
+.formInput {
+  font-family: var(--fb);
+  font-size: .875rem;
+  color: var(--txt);
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: .55rem .75rem;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.formInput:focus { border-color: var(--sage); }
+.formSelect {
+  font-family: var(--fb);
+  font-size: .875rem;
+  color: var(--txt);
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: .55rem .75rem;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  cursor: pointer;
+}
+.formSelect:focus { border-color: var(--sage); }
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  padding-top: .25rem;
+}
+.saveBtn {
+  font-size: .82rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--sage);
+  border: none;
+  border-radius: var(--r-full);
+  padding: .55rem 1.25rem;
+  cursor: pointer;
+  transition: background .15s;
+  font-family: var(--fb);
+}
+.saveBtn:hover:not(:disabled) { background: var(--sage-l); }
+.saveBtn:disabled { opacity: .55; cursor: not-allowed; }
+.formError {
+  font-size: .8rem;
+  color: #B91C1C;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--r);
+  padding: .5rem .75rem;
+}
