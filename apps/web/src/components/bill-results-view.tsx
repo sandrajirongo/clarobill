@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
 import s from './bill-results-view.module.css';
 
 interface BillResultsViewProps {
   bill: Bill;
   lineItems: LineItem[];
-  analysis: AnalysisResult;
+  // null when the engine is still running — component renders a loading state
+  analysis: AnalysisResult | null;
   hiddenErrorCount: number;
   hasPaid: boolean;
   paymentStatus: string | null;
@@ -18,6 +20,45 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   const { bill, analysis, hiddenErrorCount, hasPaid, paymentStatus } = props;
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const router = useRouter();
+
+  // When analysis is still running, poll and refresh the server component when done.
+  useEffect(() => {
+    if (analysis !== null) return; // already have results
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/bills/${bill.id}`);
+        if (!res.ok || cancelled) return;
+        const { status } = await res.json() as { status: string };
+        if (status === 'complete' || status === 'failed') {
+          clearInterval(interval);
+          if (!cancelled) router.refresh(); // re-run Server Component to get results
+        }
+      } catch { /* network blip — keep polling */ }
+    }, 2500);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [analysis, bill.id, router]);
+
+  // Loading state — engine still processing
+  if (analysis === null) {
+    return (
+      <main className={s.main}>
+        <div className={s.inner}>
+          <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
+          <h1 className={s.pageTitle}>Analyzing your bill…</h1>
+          <p className={s.fileName}>{bill.fileName}</p>
+          <div className={s.card} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', border: '3px solid rgba(45,74,42,.12)', borderTopColor: 'var(--sage)', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+            <div>
+              <p style={{ fontSize: '.9rem', fontWeight: 600, color: 'var(--txt)', marginBottom: '.25rem' }}>Running 10 billing checks</p>
+              <p style={{ fontSize: '.82rem', color: 'var(--txt2)' }}>Comparing charges against Medicare rates, your hospital&apos;s published prices, and your insurer&apos;s contracted rates. About 30 seconds.</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   async function handleGetFullReport(): Promise<void> {
     setIsStartingCheckout(true);

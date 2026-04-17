@@ -39,7 +39,39 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
     .eq('bill_id', billId)
     .single();
 
-  if (!analysis) redirect('/dashboard');
+  // Analysis not ready yet — show a processing state instead of a broken redirect.
+  // This handles: navigating directly to the URL while the engine is still running,
+  // or refreshing the page mid-analysis.
+  if (!analysis) {
+    const inProgress = bill.status === 'ocr_processing' || bill.status === 'analyzing';
+    if (inProgress) {
+      return <BillResultsView
+        bill={{
+          id: bill.id,
+          userId: bill.user_id,
+          fileName: bill.file_name,
+          filePath: bill.file_path,
+          fileSize: bill.file_size,
+          mimeType: bill.mime_type,
+          status: bill.status,
+          hospitalNpi: bill.hospital_npi ?? null,
+          hospitalName: bill.hospital_name ?? null,
+          profileMemberId: bill.profile_member_id ?? null,
+          payerName: bill.payer_name ?? null,
+          planName: bill.plan_name ?? null,
+          confirmedAt: bill.confirmed_at ?? null,
+          createdAt: bill.created_at,
+          updatedAt: bill.updated_at,
+        }}
+        lineItems={[]}
+        analysis={null}
+        hiddenErrorCount={0}
+        hasPaid={false}
+        paymentStatus={payment ?? null}
+      />;
+    }
+    redirect('/dashboard');
+  }
 
   const { data: payment_record } = await supabase
     .from('payments')
