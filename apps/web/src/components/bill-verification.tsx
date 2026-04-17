@@ -15,6 +15,18 @@ const PLAN_TYPES = [
   { value: 'self_pay',   label: 'Self-Pay'   },
 ];
 
+// Medicaid sub-types — shown as a second dropdown when the user selects Medicaid.
+// Fee-for-Service uses published state fee schedules; Managed Care plans negotiate
+// their own rates with individual MCOs (Centene, Molina, UnitedHealthcare Community, etc.).
+const MEDICAID_PLAN_TYPES = [
+  { value: 'Fee-for-Service Medicaid',           label: 'Fee-for-Service (state pays providers directly)' },
+  { value: 'Medicaid Managed Care',              label: 'Managed Care (MCO covers your care)'             },
+  { value: 'CHIP',                               label: 'CHIP (Children\'s Health Insurance Program)'     },
+  { value: 'Dual Special Needs Plan (D-SNP)',    label: 'Dual Eligible (Medicare + Medicaid)'             },
+  { value: 'Long-Term Services and Supports',    label: 'Long-Term Care / LTSS'                           },
+  { value: 'Medicaid Waiver Program',            label: 'Home & Community-Based Waiver'                   },
+];
+
 interface InsurancePlan {
   id: string;
   payer_name: string;
@@ -73,6 +85,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   const [newPlan, setNewPlan]         = useState('');
   const [newPlanType, setNewPlanType] = useState('commercial');
   const [newMemberId, setNewMemberId] = useState('');
+  const [newMedicaidType, setNewMedicaidType] = useState('');
   const [newIsPrimary, setNewIsPrimary] = useState(false);
   const [addingPlan, setAddingPlan]   = useState(false);
 
@@ -172,12 +185,17 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
       return;
     }
     setAddingPlan(true); setFormError(null);
+    // For Medicaid, the plan name comes from the sub-type dropdown if the user didn't type one
+    const resolvedPlanName = newPlanType === 'medicaid' && !newPlan.trim()
+      ? newMedicaidType || null
+      : newPlan || null;
+
     const res = await fetch(`/api/profile/members/${selectedMemberId}/plans`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         payerName: newPayer || null,
-        planName: newPlan || null,
+        planName: resolvedPlanName,
         planType: newPlanType,
         memberId: newMemberId || null,
         isPrimaryPlan: newIsPrimary,
@@ -186,7 +204,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
     setAddingPlan(false);
     if (!res.ok) { setFormError('Could not save plan. Try again.'); return; }
     const { plan } = await res.json() as { plan: { id: string } };
-    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId(''); setNewIsPrimary(false);
+    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId(''); setNewMedicaidType(''); setNewIsPrimary(false);
     setShowAddPlan(false);
     resetScan();
     await loadMembers();
@@ -493,10 +511,30 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                         <div className={s.formRow}>
                           <div className={s.formField}>
                             <label className={s.formLabel}>Plan type</label>
-                            <select className={s.formSelect} value={newPlanType} onChange={(e) => setNewPlanType(e.target.value)}>
+                            <select
+                              className={s.formSelect}
+                              value={newPlanType}
+                              onChange={(e) => { setNewPlanType(e.target.value); setNewMedicaidType(''); }}
+                            >
                               {PLAN_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                             </select>
                           </div>
+                          {/* Medicaid sub-type — shown only for Medicaid */}
+                          {newPlanType === 'medicaid' && (
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>Medicaid program <span className={s.optionalTag}>(optional)</span></label>
+                              <select
+                                className={s.formSelect}
+                                value={newMedicaidType}
+                                onChange={(e) => setNewMedicaidType(e.target.value)}
+                              >
+                                <option value="">Select program…</option>
+                                {MEDICAID_PLAN_TYPES.map(({ value, label }) => (
+                                  <option key={value} value={value}>{label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </div>
 
                         {/* Payer name + plan name — optional for government programs */}
