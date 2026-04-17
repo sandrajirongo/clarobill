@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
     );
   }
 
-  let body: { fileName: string; fileSize: number; mimeType: string };
+  let body: { fileName: string; fileSize: number; mimeType: string; displayName?: string };
   try {
     body = await request.json();
   } catch {
@@ -33,7 +33,7 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
     );
   }
 
-  const { fileName, fileSize, mimeType } = body;
+  const { fileName, fileSize, mimeType, displayName } = body;
 
   if (fileSize > 20 * 1024 * 1024) {
     return NextResponse.json(
@@ -65,6 +65,7 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
     .insert({
       user_id: user.id,
       file_name: fileName,
+      display_name: displayName?.trim() || null,
       file_path: `${user.id}/placeholder`, // Updated after we know the billId
       file_size: fileSize,
       mime_type: mimeType,

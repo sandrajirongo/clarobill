@@ -7,6 +7,9 @@ import type { ClarobillError } from '@clarobill/shared';
 export type UploadState =
   | { status: 'idle' }
   | { status: 'validating' }
+  // File passed validation — waiting for user to confirm display name before upload starts.
+  // The component shows a name input pre-filled with the filename stem.
+  | { status: 'staged'; file: File; displayName: string }
   | { status: 'uploading'; progress: number }
   | { status: 'ready'; billId: string }   // upload complete — waiting to navigate to /verify
   | { status: 'error'; error: ClarobillError };
@@ -14,10 +17,27 @@ export type UploadState =
 export function useBillUpload() {
   const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle' });
 
-  async function upload(file: File): Promise<void> {
+  // Called when a file is dropped or selected. Validates and stages it.
+  async function stage(file: File): Promise<void> {
+    setUploadState({ status: 'validating' });
+    const validation = await validateUploadedFile(file);
+    if (!validation.valid) {
+      setUploadState({
+        status: 'error',
+        error: { code: 'INVALID_FILE_TYPE', detail: validation.error, receivedType: file.type },
+      });
+      return;
+    }
+    // Pre-fill display name with the filename stem (strip extension)
+    const stem = file.name.replace(/\.[^.]+$/, '');
+    setUploadState({ status: 'staged', file, displayName: stem });
+  }
+
+  // Called when the user confirms the name and clicks "Upload →".
+  async function upload(file: File, displayName: string): Promise<void> {
     setUploadState({ status: 'validating' });
 
-    // 1. Validate file on the client (magic bytes + size)
+    // File was already validated in stage() — re-validate to get the mimeType
     const validation = await validateUploadedFile(file);
     if (!validation.valid) {
       setUploadState({
@@ -35,6 +55,7 @@ export function useBillUpload() {
         fileName: file.name,
         fileSize: file.size,
         mimeType: validation.mimeType,
+        displayName: displayName.trim() || null,
       }),
     });
 
@@ -71,5 +92,5 @@ export function useBillUpload() {
     setUploadState({ status: 'idle' });
   }
 
-  return { uploadState, upload, reset };
+  return { uploadState, stage, upload, reset };
 }

@@ -10,6 +10,8 @@ export type BillStatus =
 export interface Bill {
   id: string;
   userId: string;
+  // User-supplied label; falls back to fileName when null
+  displayName: string | null;
   fileName: string;
   filePath: string;
   fileSize: number;

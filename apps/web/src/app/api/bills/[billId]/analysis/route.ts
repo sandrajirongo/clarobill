@@ -23,7 +23,7 @@ export async function GET(
   // RLS ensures users can only access their own bills
   const { data: bill, error: billError } = await supabase
     .from('bills')
-    .select('id, user_id, file_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
+    .select('id, user_id, file_name, display_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
     .eq('id', billId)
     .single();
 
@@ -56,6 +56,7 @@ export async function GET(
     bill: {
       id: bill.id,
       userId: bill.user_id,
+      displayName: bill.display_name ?? null,
       fileName: bill.file_name,
       filePath: bill.file_path,
       fileSize: bill.file_size,
