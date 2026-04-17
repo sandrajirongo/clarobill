@@ -13,12 +13,11 @@
   border-bottom: 1px solid var(--border);
 }
 .logo {
-  font-family: var(--fd);
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--txt);
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
   text-decoration: none;
-  letter-spacing: -.02em;
+  flex-shrink: 0;
 }
 .navCta {
   background: var(--sage);
@@ -40,6 +39,20 @@
 .hero {
   background: var(--cream);
   padding: clamp(3rem, 8vw, 5.5rem) clamp(1.25rem, 5vw, 2.75rem) clamp(2.5rem, 6vw, 4rem);
+  position: relative;
+  overflow: hidden;
+}
+/* Lime halo behind hero text — pulls the eye and adds warmth */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -15%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 110%;
+  height: 100%;
+  background: radial-gradient(ellipse 80% 55% at 50% 0%, rgba(200, 240, 96, .13), transparent 65%);
+  pointer-events: none;
 }
 .heroInner { max-width: 600px; margin: 0 auto; text-align: center; }
 .heroEyebrow {
@@ -51,7 +64,7 @@
   letter-spacing: .07em;
   text-transform: uppercase;
   padding: .35rem .9rem;
-  border-radius: var(--r-full);
+  border-radius: 6px;
   margin-bottom: 1.4rem;
   border: 1px solid var(--border);
 }
@@ -90,11 +103,16 @@
   border-radius: var(--r-full);
   border: none;
   cursor: pointer;
-  transition: background .15s, transform .1s;
+  transition: background .15s, transform .15s, box-shadow .15s;
   text-decoration: none;
   letter-spacing: .01em;
+  box-shadow: 0 4px 20px rgba(45, 74, 42, .30);
 }
-.btnSageLg:hover { background: var(--sage-l); transform: translateY(-1px); }
+.btnSageLg:hover {
+  background: var(--sage-l);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(45, 74, 42, .38);
+}
 .heroMicro {
   display: flex;
   align-items: center;
@@ -182,7 +200,7 @@
   background: var(--white);
   border-radius: 1.75rem;
   padding: 2rem 2rem 1.5rem;
-  box-shadow: 0 2px 28px rgba(0, 0, 0, .06);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 .testiScroll {
@@ -282,7 +300,7 @@
   letter-spacing: .07em;
   text-transform: uppercase;
   padding: .35rem .9rem;
-  border-radius: var(--r-full);
+  border-radius: 6px;
   margin-bottom: 1rem;
   border: 1px solid var(--border);
 }
@@ -349,6 +367,12 @@
   border-radius: var(--r-xl);
   padding: 1.6rem 1.65rem;
   border: 1px solid var(--border);
+  transition: box-shadow .2s, transform .2s, border-color .2s;
+}
+.wcard:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(45, 74, 42, .18);
 }
 .wcardFull { grid-column: 1 / -1; }
 .wi {

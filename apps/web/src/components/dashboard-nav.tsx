@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { LogoWithMark } from '@/components/logo';
 import s from '@/app/dashboard/dashboard.module.css';
 
 interface DashboardNavProps {
@@ -69,7 +70,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
     <>
       <header className={s.nav}>
         <Link href="/dashboard" className={s.navLogo}>
-          Claro<em style={{ fontStyle: 'italic' }}>Bill</em>.
+          <LogoWithMark size="sm" />
         </Link>
 
         <nav className={s.navLinks}>

@@ -21,13 +21,11 @@
   gap: 1.5rem;
 }
 .navLogo {
-  font-family: var(--fd);
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--txt);
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
   text-decoration: none;
-  letter-spacing: -.02em;
-  shrink-flex: 0;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 .navLinks {
@@ -271,6 +269,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  transition: box-shadow .18s, transform .18s;
+}
+.billItem:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 .billName {
   font-size: .875rem;
@@ -369,7 +372,10 @@
   transition: border-color .15s;
   cursor: default;
 }
-.uploadZone:hover { border-color: var(--sage); }
+.uploadZone:hover {
+  border-color: var(--sage);
+  box-shadow: 0 0 0 4px rgba(45, 74, 42, .07), var(--shadow-sm);
+}
 .uploadIcon {
   width: 52px;
   height: 52px;

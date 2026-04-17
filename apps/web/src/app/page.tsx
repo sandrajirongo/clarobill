@@ -4,6 +4,7 @@ import s from './page.module.css';
 import { Reveal } from '@/components/landing/reveal';
 import { FaqAccordion } from '@/components/landing/faq';
 import { ReportIcon, LetterIcon, SpeedIcon } from '@/components/icons';
+import { LogoWithMark } from '@/components/logo';
 
 export const metadata: Metadata = {
   title: 'ClaroBill — Find Errors in Your Medical Bill',
@@ -29,7 +30,7 @@ export default function LandingPage(): JSX.Element {
       {/* NAV */}
       <nav className={s.nav}>
         <a className={s.logo} href="#">
-          Claro<em style={{ fontStyle: 'italic', fontWeight: 700 }}>Bill</em>.
+          <LogoWithMark size="md" />
         </a>
         <Link className={s.navCta} href="/auth/sign-in">Get started</Link>
       </nav>
