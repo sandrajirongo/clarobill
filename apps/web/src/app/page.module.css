@@ -197,7 +197,7 @@
 }
 .statsInner { max-width: 640px; margin: 0 auto; }
 .statsCard {
-  background: var(--white);
+  background: linear-gradient(160deg, #ffffff 0%, #F7F5EF 100%);
   border-radius: 1.75rem;
   padding: 2rem 2rem 1.5rem;
   box-shadow: var(--shadow-lg);
@@ -215,7 +215,7 @@
 .testiScroll::-webkit-scrollbar { display: none; }
 .tcard {
   flex: 0 0 220px;
-  background: var(--cream);
+  background: linear-gradient(160deg, #F4F2EC 0%, #ECEAE0 100%);
   border-radius: var(--r-xl);
   padding: 1rem 1.1rem;
   border: 1px solid var(--border);
@@ -269,7 +269,7 @@
   margin-bottom: 1.5rem;
 }
 .statBox {
-  background: var(--cream);
+  background: linear-gradient(160deg, #F4F2EC 0%, #ECEAE0 100%);
   border-radius: var(--r-xl);
   padding: 1.4rem 1.25rem;
   border: 1px solid var(--border);
@@ -363,7 +363,7 @@
   .whatGrid { grid-template-columns: 1fr 1fr; }
 }
 .wcard {
-  background: var(--cream);
+  background: linear-gradient(160deg, #F4F2EC 0%, #ECEAE0 100%);
   border-radius: var(--r-xl);
   padding: 1.6rem 1.65rem;
   border: 1px solid var(--border);
@@ -407,7 +407,7 @@
 }
 .faqList { display: flex; flex-direction: column; gap: .55rem; }
 .faqItem {
-  background: var(--white);
+  background: linear-gradient(160deg, #ffffff 0%, #F7F5EF 100%);
   border-radius: var(--r-xl);
   border: 1px solid var(--border);
   overflow: hidden;
