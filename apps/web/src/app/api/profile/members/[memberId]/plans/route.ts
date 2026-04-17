@@ -18,16 +18,29 @@ export async function POST(
 
   const { memberId } = await params;
   const body = await request.json() as {
-    payerName: string;
-    planName: string;
+    payerName?: string | null;
+    planName?: string | null;
     memberId?: string | null;
     planType?: string;
     isPrimaryPlan?: boolean;
   };
 
-  if (!body.payerName?.trim() || !body.planName?.trim()) {
+  // Government programs don't have a distinct insurer name — use the program name
+  // as the default so payer_name/plan_name stay non-null in the DB.
+  const PLAN_DEFAULTS: Record<string, { payer: string; plan: string }> = {
+    medicare: { payer: 'Medicare',  plan: 'Medicare Fee-for-Service' },
+    medicaid: { payer: 'Medicaid',  plan: 'State Medicaid'           },
+    tricare:  { payer: 'TRICARE',   plan: 'TRICARE Standard'         },
+    self_pay: { payer: 'Self-Pay',  plan: 'Self-Pay'                 },
+  };
+  const planType = body.planType ?? 'commercial';
+  const defaults = PLAN_DEFAULTS[planType];
+  const payerName = body.payerName?.trim() || defaults?.payer || '';
+  const planName  = body.planName?.trim()  || defaults?.plan  || '';
+
+  if (!payerName || !planName) {
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail: 'Payer name and plan name are required.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Insurer name and plan name are required.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 400 }
     );
   }
@@ -49,14 +62,23 @@ export async function POST(
     );
   }
 
+  // If this plan is being set as primary, clear the flag on all other plans for
+  // this member first so only one plan can be primary at a time.
+  if (body.isPrimaryPlan) {
+    await supabase
+      .from('insurance_plans')
+      .update({ is_primary_plan: false })
+      .eq('profile_member_id', memberId);
+  }
+
   const { data: plan, error } = await supabase
     .from('insurance_plans')
     .insert({
       profile_member_id: memberId,
-      payer_name: body.payerName.trim(),
-      plan_name: body.planName.trim(),
+      payer_name: payerName,
+      plan_name: planName,
       member_id: body.memberId ?? null,
-      plan_type: body.planType ?? 'commercial',
+      plan_type: planType,
       is_primary_plan: body.isPrimaryPlan ?? false,
     })
     .select()

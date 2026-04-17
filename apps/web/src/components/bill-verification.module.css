@@ -269,6 +269,76 @@
 }
 .profileLink:hover { text-decoration: underline; }
 
+/* Inline form: header row with title + scan button */
+.inlineFormHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+
+/* Scan card button */
+.scanBtn {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--sage);
+  background: rgba(45, 74, 42, .07);
+  border: 1px solid rgba(45, 74, 42, .2);
+  border-radius: var(--r-full);
+  padding: .32rem .85rem;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: background .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.scanBtn:hover:not(:disabled) { background: rgba(45, 74, 42, .12); }
+.scanBtn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Scan status messages */
+.scanError {
+  font-size: .78rem;
+  color: #B91C1C;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--r);
+  padding: .45rem .75rem;
+}
+.scanWarn {
+  font-size: .78rem;
+  color: #92400E;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: var(--r);
+  padding: .45rem .75rem;
+}
+.scanNote {
+  font-size: .78rem;
+  color: var(--txt2);
+  padding: .35rem .1rem;
+}
+/* Highlight uncertain fields pre-filled by card scan */
+.formInputUncertain { border-color: #F59E0B !important; background: #FFFBEB !important; }
+
+/* Checkbox row for isPrimary toggle */
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--txt2);
+  cursor: pointer;
+  padding-top: 1.65rem; /* align with input bottom edge */
+}
+.checkboxLabel input[type="checkbox"] {
+  accent-color: var(--sage);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* Plan selector */
 .planList {
   display: flex;
@@ -291,6 +361,34 @@
 .planOption[data-selected="true"] { border-color: var(--sage); background: rgba(45, 74, 42, .06); }
 .planPayer { font-size: .875rem; font-weight: 600; color: var(--txt); }
 .planName { font-size: .82rem; color: var(--txt2); margin-top: .1rem; }
+
+/* Primary / secondary plan badges */
+.planBadgePrimary {
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--sage);
+  background: rgba(45, 74, 42, .08);
+  border: 1px solid rgba(45, 74, 42, .2);
+  border-radius: var(--r-full);
+  padding: .15rem .5rem;
+  flex-shrink: 0;
+  align-self: center;
+}
+.planBadgeSecondary {
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--txt3);
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  padding: .15rem .5rem;
+  flex-shrink: 0;
+  align-self: center;
+}
 .noPlansNote {
   font-size: .84rem;
   color: var(--txt2);

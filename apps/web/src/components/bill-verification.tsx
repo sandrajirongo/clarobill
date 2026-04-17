@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { US_STATES, COUNTIES_BY_STATE } from '@/lib/utils/county-data';
+import { useCardScan } from '@/lib/hooks/use-card-scan';
 import s from './bill-verification.module.css';
 
 const PLAN_TYPES = [
@@ -19,6 +20,7 @@ interface InsurancePlan {
   payer_name: string;
   plan_name: string;
   plan_type: string;
+  member_id: string | null;
   is_primary_plan: boolean;
 }
 interface ProfileMember {
@@ -70,7 +72,11 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   const [newPayer, setNewPayer]       = useState('');
   const [newPlan, setNewPlan]         = useState('');
   const [newPlanType, setNewPlanType] = useState('commercial');
+  const [newMemberId, setNewMemberId] = useState('');
+  const [newIsPrimary, setNewIsPrimary] = useState(false);
   const [addingPlan, setAddingPlan]   = useState(false);
+
+  const { scanState, inputRef: cardInputRef, openFilePicker, handleFile, reset: resetScan } = useCardScan();
 
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -110,6 +116,16 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
     return () => timeouts.forEach(clearTimeout);
   }, [phase]);
 
+  // Pre-fill plan form fields when a card scan completes
+  useEffect(() => {
+    if (scanState.status !== 'done') return;
+    const r = scanState.result;
+    if (r.payerName) setNewPayer(r.payerName);
+    if (r.planName)  setNewPlan(r.planName);
+    if (r.planType)  setNewPlanType(r.planType);
+    if (r.memberId)  setNewMemberId(r.memberId);
+  }, [scanState]);
+
   function handleSelectMember(memberId: string): void {
     setSelectedMemberId(memberId);
     const m = members.find((x) => x.id === memberId);
@@ -148,18 +164,31 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   // ── Inline add plan ──────────────────────────────────────────────────────
   async function handleAddPlan(): Promise<void> {
     if (!selectedMemberId) return;
-    if (!newPayer.trim() || !newPlan.trim()) { setFormError('Insurer name and plan name are required.'); return; }
+    // Government plans don't require explicit payer/plan names — the API fills defaults.
+    // Commercial plans must have both.
+    const isGovPlan = newPlanType !== 'commercial';
+    if (!isGovPlan && (!newPayer.trim() || !newPlan.trim())) {
+      setFormError('Insurer name and plan name are required.');
+      return;
+    }
     setAddingPlan(true); setFormError(null);
     const res = await fetch(`/api/profile/members/${selectedMemberId}/plans`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payerName: newPayer, planName: newPlan, planType: newPlanType }),
+      body: JSON.stringify({
+        payerName: newPayer || null,
+        planName: newPlan || null,
+        planType: newPlanType,
+        memberId: newMemberId || null,
+        isPrimaryPlan: newIsPrimary,
+      }),
     });
     setAddingPlan(false);
     if (!res.ok) { setFormError('Could not save plan. Try again.'); return; }
     const { plan } = await res.json() as { plan: { id: string } };
-    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial');
+    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId(''); setNewIsPrimary(false);
     setShowAddPlan(false);
+    resetScan();
     await loadMembers();
     setSelectedPlanId(plan.id);
   }
@@ -398,30 +427,69 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                             role="radio"
                             aria-checked={selectedPlanId === p.id}
                           >
-                            <p className={s.planPayer}>{p.payer_name}</p>
-                            <p className={s.planName}>{p.plan_name}</p>
+                            <div style={{ flex: 1 }}>
+                              <p className={s.planPayer}>{p.payer_name}</p>
+                              <p className={s.planName}>{p.plan_name}</p>
+                            </div>
+                            {p.is_primary_plan ? (
+                              <span className={s.planBadgePrimary}>Primary</span>
+                            ) : selectedMember.insurance_plans.length > 1 ? (
+                              <span className={s.planBadgeSecondary}>Secondary</span>
+                            ) : null}
                           </div>
                         ))}
                       </div>
                     )}
 
                     {!showAddPlan ? (
-                      <button className={s.addInlineBtn} onClick={() => { setShowAddPlan(true); setFormError(null); }}>
+                      <button
+                        className={s.addInlineBtn}
+                        onClick={() => {
+                          setShowAddPlan(true);
+                          setFormError(null);
+                          // Default new plan to primary if the member has none yet
+                          setNewIsPrimary(selectedMember.insurance_plans.length === 0);
+                        }}
+                      >
                         {selectedMember.insurance_plans.length === 0 ? '+ Add insurance plan' : '+ Add another plan'}
                       </button>
                     ) : (
                       <div className={s.inlineFormBox}>
-                        <p className={s.inlineFormTitle}>Insurance plan</p>
-                        <div className={s.formRow}>
-                          <div className={s.formField}>
-                            <label className={s.formLabel}>Insurance company *</label>
-                            <input className={s.formInput} placeholder="Blue Cross Blue Shield" value={newPayer} onChange={(e) => setNewPayer(e.target.value)} autoFocus />
-                          </div>
-                          <div className={s.formField}>
-                            <label className={s.formLabel}>Plan name *</label>
-                            <input className={s.formInput} placeholder="PPO Gold" value={newPlan} onChange={(e) => setNewPlan(e.target.value)} />
-                          </div>
+                        {/* Header row: title + scan card button */}
+                        <div className={s.inlineFormHeader}>
+                          <p className={s.inlineFormTitle}>Insurance plan</p>
+                          <button
+                            type="button"
+                            className={s.scanBtn}
+                            onClick={openFilePicker}
+                            disabled={scanState.status === 'scanning'}
+                          >
+                            {scanState.status === 'scanning' ? 'Reading card…' : 'Scan card'}
+                          </button>
                         </div>
+
+                        {/* Hidden file input — opened programmatically by scan button */}
+                        <input
+                          ref={cardInputRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          style={{ display: 'none' }}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }}
+                        />
+
+                        {/* Scan status feedback */}
+                        {scanState.status === 'error' && (
+                          <p className={s.scanError}>{scanState.message}</p>
+                        )}
+                        {scanState.status === 'done' && !scanState.result.confident && (
+                          <p className={s.scanWarn}>Some fields may be uncertain — please review before saving.</p>
+                        )}
+                        {scanState.status === 'done' && scanState.result.note && (
+                          <p className={s.scanNote}>{scanState.result.note}</p>
+                        )}
+
+                        {/* Plan type — shown first because it affects which fields are required */}
                         <div className={s.formRow}>
                           <div className={s.formField}>
                             <label className={s.formLabel}>Plan type</label>
@@ -430,12 +498,82 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                             </select>
                           </div>
                         </div>
-                        <p className={s.planHint}>
-                          The plan name is used to match your insurer&apos;s contracted rate in hospital price transparency data.
-                          Use the name as it appears on your insurance card.
-                        </p>
+
+                        {/* Payer name + plan name — optional for government programs */}
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>
+                              Insurance company
+                              {newPlanType === 'commercial' ? ' *' : <span className={s.optionalTag}> (optional)</span>}
+                            </label>
+                            <input
+                              className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.payerName ? s.formInputUncertain : ''}`}
+                              placeholder={
+                                newPlanType === 'medicare' ? 'Medicare (or leave blank)' :
+                                newPlanType === 'medicaid' ? 'Medicaid (or leave blank)' :
+                                newPlanType === 'tricare'  ? 'TRICARE (or leave blank)'  :
+                                newPlanType === 'self_pay' ? 'Self-Pay (or leave blank)' :
+                                'Blue Cross Blue Shield'
+                              }
+                              value={newPayer}
+                              onChange={(e) => setNewPayer(e.target.value)}
+                              autoFocus={newPlanType === 'commercial'}
+                            />
+                          </div>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>
+                              Plan name
+                              {newPlanType === 'commercial' ? ' *' : <span className={s.optionalTag}> (optional)</span>}
+                            </label>
+                            <input
+                              className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.planName ? s.formInputUncertain : ''}`}
+                              placeholder={
+                                newPlanType === 'medicare' ? 'e.g. Medicare Advantage' :
+                                newPlanType === 'medicaid' ? 'e.g. Managed Care'       :
+                                newPlanType === 'tricare'  ? 'e.g. TRICARE Select'     :
+                                newPlanType === 'self_pay' ? ''                         :
+                                'PPO Gold'
+                              }
+                              value={newPlan}
+                              onChange={(e) => setNewPlan(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Member ID + primary plan toggle */}
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>
+                              Member ID <span className={s.optionalTag}>(for dispute letters)</span>
+                            </label>
+                            <input
+                              className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.memberId ? s.formInputUncertain : ''}`}
+                              placeholder="e.g. XYZ123456789"
+                              value={newMemberId}
+                              onChange={(e) => setNewMemberId(e.target.value)}
+                            />
+                          </div>
+                          <div className={s.formField}>
+                            <label className={s.checkboxLabel}>
+                              <input
+                                type="checkbox"
+                                checked={newIsPrimary}
+                                onChange={(e) => setNewIsPrimary(e.target.checked)}
+                              />
+                              Primary insurance
+                            </label>
+                          </div>
+                        </div>
+
+                        {newPlanType === 'commercial' && (
+                          <p className={s.planHint}>
+                            Use the plan name as it appears on your insurance card — it&apos;s used to
+                            look up your insurer&apos;s contracted rate in hospital price transparency data.
+                          </p>
+                        )}
+
                         <div className={s.formActions}>
-                          <button className={s.cancelBtn} onClick={() => { setShowAddPlan(false); setFormError(null); }}>Cancel</button>
+                          <button className={s.cancelBtn} onClick={() => { setShowAddPlan(false); setFormError(null); resetScan(); }}>Cancel</button>
                           <button className={s.saveBtn} disabled={addingPlan} onClick={() => void handleAddPlan()}>
                             {addingPlan ? 'Saving…' : 'Save plan'}
                           </button>

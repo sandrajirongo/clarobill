@@ -49,6 +49,14 @@ export async function middleware(request: NextRequest) {
     callbackUrl.pathname = '/auth/callback';
     return NextResponse.redirect(callbackUrl);
   }
+  // Authenticated users visiting the landing page go straight to their dashboard.
+  // This handles the "open a new tab → back to homepage" issue.
+  if (user && pathname === '/') {
+    const dashboardUrl = request.nextUrl.clone();
+    dashboardUrl.pathname = '/dashboard';
+    return NextResponse.redirect(dashboardUrl);
+  }
+
   const isPublicRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith('/auth/') || pathname.startsWith('/legal/')
   ) || pathname === '/icon' || pathname === '/apple-icon' || pathname.startsWith('/blog');
