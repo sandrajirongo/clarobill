@@ -29,6 +29,20 @@ const articles = [
     date: 'April 7, 2026',
     readTime: '6 min read',
   },
+  {
+    slug: 'how-to-dispute-a-hospital-bill',
+    title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide',
+    description: 'A practical guide to disputing hospital billing errors — from requesting your itemized bill to writing a dispute letter that actually gets results.',
+    date: 'April 17, 2026',
+    readTime: '9 min read',
+  },
+  {
+    slug: 'medical-billing-advocates',
+    title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One',
+    description: 'Advocates can recover real money from billing errors — but they typically keep 25–35% of what they save you. Here is when hiring one makes sense.',
+    date: 'April 17, 2026',
+    readTime: '7 min read',
+  },
 ];
 
 export default function BlogIndexPage(): JSX.Element {

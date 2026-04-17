@@ -210,10 +210,12 @@ const allArticles = [
   { slug: 'how-to-read-an-itemized-medical-bill', title: 'How to Read an Itemized Medical Bill' },
   { slug: 'common-medical-billing-errors', title: 'The Most Common Medical Billing Errors (And How to Dispute Them)' },
   { slug: 'what-are-cpt-codes', title: "What Are CPT Codes? A Patient's Guide" },
+  { slug: 'how-to-dispute-a-hospital-bill', title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide' },
+  { slug: 'medical-billing-advocates', title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One' },
 ];
 
 function RelatedArticles({ current }: { current: string }): JSX.Element {
-  const related = allArticles.filter((a) => a.slug !== current);
+  const related = allArticles.filter((a) => a.slug !== current).slice(0, 3);
   return (
     <div className={s.relatedSection}>
       <p className={s.relatedLabel}>More guides</p>
