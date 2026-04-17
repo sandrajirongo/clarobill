@@ -294,6 +294,13 @@
   color: var(--txt3);
   margin-top: .2rem;
 }
+/* Shown instead of meta date for failed bills */
+.billFailedNote {
+  font-size: .75rem;
+  color: #B91C1C;
+  margin-top: .2rem;
+  line-height: 1.4;
+}
 .billActions {
   display: flex;
   align-items: center;

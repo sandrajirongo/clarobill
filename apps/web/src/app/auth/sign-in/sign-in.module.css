@@ -136,6 +136,29 @@
   line-height: 1.55;
 }
 
+/* ─── Benefit lines (context for first-time visitors) ───────────────────── */
+.benefits {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+.benefitItem {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  font-size: .8rem;
+  color: var(--txt2);
+  line-height: 1.5;
+}
+.benefitIcon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: -.05rem;
+}
+
 /* ─── Footer note ─────────────────────────────────────────────────────────── */
 .note {
   text-align: center;

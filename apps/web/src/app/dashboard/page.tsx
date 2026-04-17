@@ -103,7 +103,13 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     {bill.display_name && (
                       <p className={s.billFileName}>{bill.file_name}</p>
                     )}
-                    <p className={s.billMeta}>Uploaded {uploadedDate}</p>
+                    {isFailed ? (
+                      <p className={s.billFailedNote}>
+                        We couldn&apos;t analyze this bill — retry or upload a clearer copy.
+                      </p>
+                    ) : (
+                      <p className={s.billMeta}>Uploaded {uploadedDate}</p>
+                    )}
                   </div>
                   <div className={s.billActions}>
                     <span className={`${s.badge} ${s[st?.cls ?? 'badgePending']}`}>

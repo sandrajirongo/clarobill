@@ -65,6 +65,22 @@ export default function SignInPage(): JSX.Element {
             {isLoading ? 'Sending…' : 'Send magic link'}
           </button>
         </form>
+
+        {/* Benefit lines — context for first-time users arriving via direct link */}
+        <div className={s.benefits}>
+          <div className={s.benefitItem}>
+            <span className={s.benefitIcon}>🔍</span>
+            <span>Finds billing errors — duplicate charges, unbundled codes, inflated fees</span>
+          </div>
+          <div className={s.benefitItem}>
+            <span className={s.benefitIcon}>📊</span>
+            <span>Compares your charges against Medicare benchmarks in 30 seconds</span>
+          </div>
+          <div className={s.benefitItem}>
+            <span className={s.benefitIcon}>✉️</span>
+            <span>Generates a ready-to-send dispute letter with every report</span>
+          </div>
+        </div>
       </div>
 
       <p className={s.note}>
