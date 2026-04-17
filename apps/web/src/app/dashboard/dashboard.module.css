@@ -910,6 +910,13 @@
   flex-direction: column;
   gap: .85rem;
 }
+/* Header row: small all-caps title + scan button side by side */
+.inlineFormHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
 .inlineFormTitle {
   font-size: .78rem;
   font-weight: 600;
@@ -917,6 +924,26 @@
   text-transform: uppercase;
   color: var(--txt3);
 }
+/* Scan card pill button in the add-plan form header */
+.scanBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--sage);
+  background: rgba(45, 74, 42, .07);
+  border: 1px solid rgba(45, 74, 42, .2);
+  border-radius: var(--r-full);
+  padding: .32rem .85rem;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: background .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.scanBtn:hover:not(:disabled) { background: rgba(45, 74, 42, .12); }
+.scanBtn:disabled { opacity: .55; cursor: not-allowed; }
 .formRow {
   display: flex;
   gap: .75rem;

@@ -13,6 +13,7 @@ import {
   TRICARE_PLAN_TYPES,
 } from '@/lib/utils/insurance-constants';
 import { useCardScan } from '@/lib/hooks/use-card-scan';
+import { CameraIcon } from '@/components/icons';
 import s from './bill-verification.module.css';
 
 interface InsurancePlan {
@@ -499,6 +500,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                             onClick={openFilePicker}
                             disabled={scanState.status === 'scanning'}
                           >
+                            <CameraIcon size={13} />
                             {scanState.status === 'scanning' ? 'Reading card…' : 'Scan card'}
                           </button>
                         </div>

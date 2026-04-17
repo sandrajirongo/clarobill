@@ -279,6 +279,9 @@
 
 /* Scan card button */
 .scanBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
   font-size: .75rem;
   font-weight: 600;
   color: var(--sage);

@@ -11,6 +11,7 @@ import {
   TRICARE_PLAN_TYPES,
 } from '@/lib/utils/insurance-constants';
 import { useCardScan } from '@/lib/hooks/use-card-scan';
+import { CameraIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
 interface InsurancePlan {
@@ -302,6 +303,7 @@ export function MembersPanel(): JSX.Element {
                         onClick={openFilePicker}
                         disabled={scanState.status === 'scanning'}
                       >
+                        <CameraIcon size={13} />
                         {scanState.status === 'scanning' ? 'Reading card…' : 'Scan card'}
                       </button>
                     </div>
