@@ -317,12 +317,24 @@ def _read_header_bytes(blob: storage.Blob) -> bytes:
 
     The MRF root metadata (last_updated_on, NPI) is always near the start of
     the file, so we only need a small slice rather than the full download.
+
+    For gzip files we cannot use gzip.decompress() because the first 8 KB is a
+    truncated gzip stream — gzip.decompress requires a complete stream and raises
+    EOFError on partial data. We use GzipFile instead, which decompresses
+    incrementally and returns whatever bytes it can extract before the truncation.
+
     Returns empty bytes on any error.
     """
     try:
         raw = blob.download_as_bytes(start=0, end=8192)
         if blob.name.endswith(".gz") or blob.name.endswith(".gzip"):
-            raw = gzip.decompress(raw)
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
+                    return gz.read(8192)
+            except (EOFError, gzip.BadGzipFile, OSError):
+                # Partial decompression is expected — return whatever was decoded.
+                # If GzipFile raised before yielding any bytes, fall through to raw.
+                return b""
         return raw
     except Exception:
         return b""
@@ -345,9 +357,13 @@ def _read_mrf_date(blob: storage.Blob) -> str | None:
 def _read_mrf_npi(blob: storage.Blob) -> str | None:
     """Extract the hospital NPI from the first 8 KB of an MRF blob.
 
-    CMS v2.0.0 MRFs include the NPI in the root object.  We search for
-    common key names rather than fully parsing the header slice, since the
+    CMS v2.0.0 MRFs include the NPI in the root object under various key names.
+    We search with regex rather than fully parsing the header slice, since the
     slice is not valid JSON on its own.
+
+    Handles both formats hospitals use:
+      - String:  "hospital_npi": "1234567890"
+      - Integer: "hospital_npi": 1234567890
 
     Returns a 10-digit NPI string or None.
     """
@@ -355,10 +371,14 @@ def _read_mrf_npi(blob: storage.Blob) -> str | None:
     if not header:
         return None
     for key in (b"hospital_npi", b"npi", b"provider_npi"):
-        pattern = rb'"' + key + rb'"\s*:\s*"(\d{10})"'
-        match = re.search(pattern, header)
-        if match:
-            return match.group(1).decode()
+        # String format: "hospital_npi": "1234567890"
+        m = re.search(rb'"' + key + rb'"\s*:\s*"(\d{10})"', header)
+        if m:
+            return m.group(1).decode()
+        # Integer format: "hospital_npi": 1234567890
+        m = re.search(rb'"' + key + rb'"\s*:\s*(\d{10})\b', header)
+        if m:
+            return m.group(1).decode()
     return None
 
 
