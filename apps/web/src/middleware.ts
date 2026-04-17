@@ -54,11 +54,14 @@ export async function middleware(request: NextRequest) {
     callbackUrl.pathname = '/auth/callback';
     return NextResponse.redirect(callbackUrl);
   }
-  // Authenticated users visiting the landing page go straight to their dashboard.
-  // This handles the "open a new tab → back to homepage" issue.
-  if (user && pathname === '/') {
+  // Authenticated users visiting the landing page or sign-in page go straight
+  // to their dashboard. This handles both the "open new tab → homepage" case
+  // and the "click blog CTA while already signed in" case.
+  const AUTH_ENTRY_POINTS = ['/', '/auth/sign-in', '/auth/sign-up'];
+  if (user && AUTH_ENTRY_POINTS.includes(pathname)) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
+    dashboardUrl.search = '';
     return NextResponse.redirect(dashboardUrl);
   }
 
