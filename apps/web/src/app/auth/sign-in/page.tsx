@@ -13,6 +13,31 @@ type Mode = 'magic-link' | 'password';
 type PasswordSubMode = 'signin' | 'signup' | 'forgot';
 type Msg = { type: 'success' | 'error'; text: string };
 
+// ─── Password strength ────────────────────────────────────────────────────────
+
+type StrengthLevel = 'too-short' | 'weak' | 'fair' | 'good' | 'strong';
+interface PasswordStrength { score: 0 | 1 | 2 | 3 | 4; level: StrengthLevel; label: string }
+
+function getPasswordStrength(pw: string): PasswordStrength {
+  if (pw.length === 0) return { score: 0, level: 'too-short', label: '' };
+  if (pw.length < 8)   return { score: 0, level: 'too-short', label: 'Too short' };
+  const hasNumber  = /\d/.test(pw);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(pw);
+  const isLong     = pw.length >= 12;
+  if (isLong && hasNumber && hasSpecial) return { score: 4, level: 'strong', label: 'Strong' };
+  if (hasNumber && hasSpecial)           return { score: 3, level: 'good',   label: 'Good' };
+  if (hasNumber || hasSpecial)           return { score: 2, level: 'fair',   label: 'Fair' };
+  return                                        { score: 1, level: 'weak',   label: 'Weak' };
+}
+
+const STRENGTH_COLOR: Record<StrengthLevel, string> = {
+  'too-short': 'var(--border)',
+  weak:        '#ef4444',
+  fair:        '#f59e0b',
+  good:        'var(--accent-dark, #84cc16)',
+  strong:      'var(--sage)',
+};
+
 export default function SignInPage(): JSX.Element {
   const [mode, setMode] = useState<Mode>('magic-link');
 
@@ -254,6 +279,35 @@ function PasswordForm(): JSX.Element {
             placeholder="At least 8 characters"
             className={s.input}
           />
+          {password.length > 0 && (() => {
+            const st = getPasswordStrength(password);
+            const color = STRENGTH_COLOR[st.level];
+            return (
+              <div className={s.strengthMeter}>
+                <div className={s.strengthBar}>
+                  {([1, 2, 3, 4] as const).map((seg) => (
+                    <div
+                      key={seg}
+                      className={s.strengthSegment}
+                      style={{ background: st.score >= seg ? color : undefined }}
+                    />
+                  ))}
+                </div>
+                {st.label && <span className={s.strengthLabel} style={{ color }}>{st.label}</span>}
+              </div>
+            );
+          })()}
+          <ul className={s.requirements}>
+            <li className={`${s.req} ${password.length >= 8 ? s.reqMet : ''}`}>
+              At least 8 characters
+            </li>
+            <li className={`${s.req} ${/\d/.test(password) ? s.reqMet : ''}`}>
+              Contains a number
+            </li>
+            <li className={`${s.req} ${/[^a-zA-Z0-9]/.test(password) ? s.reqMet : ''}`}>
+              Contains a special character (!@#$%&amp;*)
+            </li>
+          </ul>
         </div>
         <div>
           <label htmlFor="su-cpw" className={s.label}>Confirm password</label>
