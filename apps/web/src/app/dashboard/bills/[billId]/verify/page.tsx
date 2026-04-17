@@ -24,8 +24,10 @@ export default async function VerifyPage({ params }: PageProps): Promise<JSX.Ele
 
   if (!bill) redirect('/dashboard');
 
-  // Already confirmed or past the upload step — go to results
-  if (bill.confirmed_at || bill.status !== 'uploading') {
+  // Redirect to results if already confirmed and past uploading.
+  // Allow 'failed' through so users can retry without re-uploading.
+  const canVerify = bill.status === 'uploading' || bill.status === 'failed';
+  if (!canVerify) {
     redirect(`/dashboard/bills/${billId}`);
   }
 

@@ -51,8 +51,10 @@ export async function POST(
     );
   }
 
-  if (bill.status !== 'uploading') {
-    // Already verified or in progress — idempotent
+  // Allow retry from 'failed' status — the user may have hit a transient engine error.
+  // Any other status (ocr_processing, analyzing, complete) means analysis is already
+  // in flight or done; return accepted idempotently without re-triggering.
+  if (bill.status !== 'uploading' && bill.status !== 'failed') {
     return NextResponse.json({ accepted: true });
   }
 

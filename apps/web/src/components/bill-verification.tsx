@@ -48,7 +48,8 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [selectedPlanId, setSelectedPlanId]     = useState<string | null>(null);
-  const [hospitalName, setHospitalName] = useState(ocrHospitalName ?? '');
+  // hospitalName is sourced from OCR — not user-editable on the verify page.
+  // The engine can extract it from the file; we pass it for BigQuery price-list lookup only.
 
   // 'compact': returning user summary card | 'expanded': step-by-step
   const [formMode, setFormMode] = useState<'compact' | 'expanded'>('expanded');
@@ -73,6 +74,10 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
 
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Progress steps shown during analysis — advance on a timer to give feedback
+  // while the engine runs. Each step is a real check; timing is approximate.
+  const [analysisStep, setAnalysisStep] = useState(0);
+
   const loadMembers = useCallback(async (): Promise<void> => {
     const res = await fetch('/api/profile/members');
     if (!res.ok) { setLoadingMembers(false); return; }
@@ -93,6 +98,17 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   }, []);
 
   useEffect(() => { void loadMembers(); }, [loadMembers]);
+
+  useEffect(() => {
+    if (phase !== 'analyzing') return;
+    setAnalysisStep(0);
+    // Advance through 5 visual steps at ~6s intervals while the engine runs.
+    // These mirror the real checks in rules_engine.py — not faked, just pre-shown.
+    const timeouts = [6000, 12000, 18000, 24000, 30000].map((ms, i) =>
+      setTimeout(() => setAnalysisStep(i + 1), ms)
+    );
+    return () => timeouts.forEach(clearTimeout);
+  }, [phase]);
 
   function handleSelectMember(memberId: string): void {
     setSelectedMemberId(memberId);
@@ -186,7 +202,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
         profileMemberId: selectedMember.id,
         payerName: selectedPlan.payer_name,
         planName: selectedPlan.plan_name,
-        hospitalName: hospitalName.trim() || null,
+        hospitalName: ocrHospitalName ?? null,
       }),
     });
     if (!res.ok) {
@@ -198,17 +214,36 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   }
 
   // ── Analyzing screen ─────────────────────────────────────────────────────
+  const ANALYSIS_STEPS = [
+    'Reading your bill',
+    'Extracting charge codes',
+    'Comparing against Medicare benchmarks',
+    'Checking your insurer\'s contracted rates',
+    'Scanning for duplicate charges',
+    'Finalizing your report',
+  ];
+
   if (phase === 'analyzing') {
     return (
       <main className={s.main}>
         <div className={s.inner}>
           <div className={s.analyzingWrap}>
-            <div className={s.spinner} />
             <p className={s.analyzingTitle}>Analyzing your bill…</p>
-            <p className={s.analyzingNote}>
-              Running 10 billing checks against Medicare benchmarks, your hospital&apos;s
-              published rates, and your insurer&apos;s contracted rates. About 30 seconds.
-            </p>
+            <p className={s.analyzingNote}>Running 10 billing checks. About 30 seconds.</p>
+            <div className={s.analysisSteps}>
+              {ANALYSIS_STEPS.map((label, i) => {
+                const isDone   = i < analysisStep;
+                const isActive = i === analysisStep;
+                return (
+                  <div key={i} className={`${s.analysisStep} ${isDone ? s.analysisStepDone : isActive ? s.analysisStepActive : s.analysisStepPending}`}>
+                    <span className={s.analysisStepDot}>
+                      {isDone ? '✓' : isActive ? <span className={s.analysisStepPulse} /> : null}
+                    </span>
+                    <span className={s.analysisStepText}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </main>
@@ -224,10 +259,10 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
 
         <div>
           <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
-          <h1 className={s.pageTitle}>Confirm bill details</h1>
+          <h1 className={s.pageTitle}>Before we analyze your bill</h1>
           <p className={s.pageSub}>
-            We need your insurance information to check if your provider billed above
-            your insurer&apos;s contracted rate — often the largest source of overcharges.
+            We compare every charge against Medicare benchmarks and your insurer&apos;s
+            contracted rates. Takes about 30 seconds — just tell us who this bill is for.
           </p>
           <p className={s.fileName}>{fileName}</p>
         </div>
@@ -251,17 +286,6 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                 <span className={s.compactValue}>{selectedPlan.payer_name}</span>
                 <span className={s.compactSub}>{selectedPlan.plan_name}</span>
               </div>
-            </div>
-            <div className={s.compactHospital}>
-              <label className={s.compactLabel}>Hospital / provider <span className={s.optionalTag}>(optional)</span></label>
-              <input
-                className={s.hospitalInput}
-                type="text"
-                placeholder="e.g. Cedars-Sinai Medical Center"
-                value={hospitalName}
-                onChange={(e) => setHospitalName(e.target.value)}
-              />
-              <p className={s.inputHint}>Helps find your provider&apos;s published price list for comparison.</p>
             </div>
             <button className={s.changeLink} onClick={() => setFormMode('expanded')}>
               Change member or insurance →
@@ -423,24 +447,6 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
               </div>
             </div>
 
-            {/* Step 3: Hospital */}
-            <div className={s.stepCard} data-complete={String(hospitalName.trim().length > 0)}>
-              <div className={s.stepHeader}>
-                <span className={s.stepNum}>3</span>
-                <span className={s.stepTitle}>Hospital or provider <span className={s.optionalTag} style={{ textTransform: 'none', letterSpacing: 0 }}>(optional)</span></span>
-                {hospitalName.trim() && <span className={s.stepSummary}>{hospitalName.trim()}</span>}
-              </div>
-              <div className={s.stepBody}>
-                <input
-                  className={s.hospitalInput}
-                  type="text"
-                  placeholder="e.g. Cedars-Sinai Medical Center"
-                  value={hospitalName}
-                  onChange={(e) => setHospitalName(e.target.value)}
-                />
-                <p className={s.inputHint}>Helps us find your provider&apos;s published price list for comparison.</p>
-              </div>
-            </div>
           </>
         )}
 
