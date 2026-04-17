@@ -280,12 +280,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Subtle original filename shown below a user-supplied display name */
+.billFileName {
+  font-size: .7rem;
+  color: var(--txt3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: .1rem;
+}
 .billMeta {
   font-size: .75rem;
   color: var(--txt3);
   margin-top: .2rem;
 }
-.billRetention { color: #B45309; }
 .billActions {
   display: flex;
   align-items: center;
@@ -420,6 +428,63 @@
   font-family: var(--fb);
   text-decoration: underline;
 }
+
+/* Staged state — file validated, user entering display name */
+.uploadStagedWrap {
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+  text-align: left;
+}
+.uploadStagedFile {
+  font-size: .78rem;
+  color: var(--txt3);
+  word-break: break-all;
+  text-align: center;
+}
+.uploadNameRow {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+.uploadNameLabel {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--txt2);
+  letter-spacing: .02em;
+}
+.uploadNameInput {
+  font-family: var(--fb);
+  font-size: .9rem;
+  color: var(--txt);
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: .55rem .8rem;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.uploadNameInput:focus { border-color: var(--sage); }
+.uploadStagedActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-top: .25rem;
+}
+.uploadCancelBtn {
+  font-size: .82rem;
+  color: var(--txt2);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  padding: .5rem .9rem;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: background .15s;
+}
+.uploadCancelBtn:hover { background: var(--cream2); }
 
 /* ─── Upload geography picker ────────────────────────────────────────────── */
 .geoRow {

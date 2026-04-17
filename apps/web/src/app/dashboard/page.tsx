@@ -18,10 +18,10 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   const user = await getAuthenticatedUser();
   const supabase = await createSupabaseServerClient();
 
-  const [billsResult, analysesResult, referralResult, membersResult] = await Promise.all([
+  const [billsResult, analysesResult, referralResult] = await Promise.all([
     supabase
       .from('bills')
-      .select('id, file_name, status, created_at')
+      .select('id, file_name, display_name, status, created_at')
       .order('created_at', { ascending: false }),
     supabase
       .from('analysis_results')
@@ -31,16 +31,11 @@ export default async function DashboardPage(): Promise<JSX.Element> {
       .select('code, credits_cents')
       .eq('user_id', user!.id)
       .maybeSingle(),
-    supabase
-      .from('profile_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user!.id),
   ]);
 
   const bills = billsResult.data ?? [];
   const analyses = analysesResult.data ?? [];
   const referralCode = referralResult.data;
-  const hasMember = (membersResult.count ?? 0) > 0;
 
   const totalSavings = analyses.reduce((sum, a) => sum + Number(a.total_potential_savings), 0);
   const totalErrors  = analyses.reduce((sum, a) => sum + ((a.errors as unknown[]).length), 0);
@@ -64,20 +59,18 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         />
       )}
 
-      {/* Onboarding nudge — shown to new users before their first upload */}
-      {!hasMember && bills.length === 0 && (
+      {/* Onboarding nudge — only shown before first upload; points at the uploader.
+          Profile details (member + insurance) are collected during the verify step,
+          so we don't ask users to "set up a profile first" before they see value. */}
+      {bills.length === 0 && (
         <div className={s.onboardingNudge}>
-          <div className={s.onboardingIcon}>👤</div>
           <div>
-            <p className={s.onboardingTitle}>Set up your profile first</p>
+            <p className={s.onboardingTitle}>Upload your first bill to get started</p>
             <p className={s.onboardingText}>
-              Add yourself and your insurance plan so we can check if your provider
-              billed above your insurer&apos;s contracted rate — often the biggest savings.
+              Drop a medical bill, EOB, or superbill below. We&apos;ll check every charge
+              against Medicare benchmarks and your insurer&apos;s contracted rates.
             </p>
           </div>
-          <Link href="/dashboard/profile" className={s.onboardingBtn}>
-            Set up profile →
-          </Link>
         </div>
       )}
 
@@ -95,25 +88,22 @@ export default async function DashboardPage(): Promise<JSX.Element> {
           <ul className={s.billList}>
             {bills.map((bill) => {
               const st = STATUS_BADGE[bill.status];
-              const isComplete = bill.status === 'complete';
-              const isUploading = bill.status === 'uploading';
+              const isComplete   = bill.status === 'complete';
+              const isUploading  = bill.status === 'uploading';
               const isProcessing = bill.status === 'ocr_processing' || bill.status === 'analyzing';
+              const isFailed     = bill.status === 'failed';
               const uploadedDate = new Date(bill.created_at).toLocaleDateString('en-US', {
                 month: 'short', day: 'numeric', year: 'numeric',
               });
-              const deleteAfter = new Date(
-                new Date(bill.created_at).getTime() + 60 * 24 * 60 * 60 * 1000
-              ).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
               return (
                 <li key={bill.id} className={s.billItem}>
                   <div style={{ minWidth: 0 }}>
-                    <p className={s.billName}>{bill.file_name}</p>
-                    <p className={s.billMeta}>
-                      Uploaded {uploadedDate}
-                      {' · '}
-                      <span className={s.billRetention}>Deleted {deleteAfter}</span>
-                    </p>
+                    <p className={s.billName}>{bill.display_name ?? bill.file_name}</p>
+                    {bill.display_name && (
+                      <p className={s.billFileName}>{bill.file_name}</p>
+                    )}
+                    <p className={s.billMeta}>Uploaded {uploadedDate}</p>
                   </div>
                   <div className={s.billActions}>
                     <span className={`${s.badge} ${s[st?.cls ?? 'badgePending']}`}>
@@ -126,12 +116,17 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     )}
                     {isUploading && (
                       <Link href={`/dashboard/bills/${bill.id}/verify`} className={s.verifyLink}>
-                        Verify & Analyze →
+                        Analyze →
                       </Link>
                     )}
                     {isProcessing && (
                       <Link href={`/dashboard/bills/${bill.id}`} className={s.viewLink}>
                         View →
+                      </Link>
+                    )}
+                    {isFailed && (
+                      <Link href={`/dashboard/bills/${bill.id}/verify`} className={s.verifyLink}>
+                        Retry →
                       </Link>
                     )}
                   </div>
