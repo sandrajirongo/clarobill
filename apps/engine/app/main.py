@@ -14,6 +14,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from app.api.v1.bills import router as bills_router
+from app.api.insurance_card import router as insurance_card_router
 from app.core.config import settings
 from app.core.security import verify_engine_api_key
 
@@ -61,6 +62,12 @@ app.add_middleware(
 
 app.include_router(
     bills_router,
+    prefix="/api/v1",
+    dependencies=[Depends(verify_engine_api_key)],
+)
+
+app.include_router(
+    insurance_card_router,
     prefix="/api/v1",
     dependencies=[Depends(verify_engine_api_key)],
 )
