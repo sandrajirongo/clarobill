@@ -3,7 +3,16 @@
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { US_STATES, COUNTIES_BY_STATE } from '@/lib/utils/county-data';
 import s from './bill-verification.module.css';
+
+const PLAN_TYPES = [
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'medicare',   label: 'Medicare'   },
+  { value: 'medicaid',   label: 'Medicaid'   },
+  { value: 'tricare',    label: 'TRICARE'    },
+  { value: 'self_pay',   label: 'Self-Pay'   },
+];
 
 interface InsurancePlan {
   id: string;
@@ -12,7 +21,6 @@ interface InsurancePlan {
   plan_type: string;
   is_primary_plan: boolean;
 }
-
 interface ProfileMember {
   id: string;
   full_name: string;
@@ -24,102 +32,153 @@ interface ProfileMember {
   insurance_plans: InsurancePlan[];
 }
 
-interface BillVerificationProps {
+interface Props {
   billId: string;
   fileName: string;
-  // OCR-extracted hospital name (may be empty/null if not yet extracted)
   ocrHospitalName: string | null;
 }
 
-const POLL_INTERVAL_MS = 2500;
-const MAX_POLLS = 80; // ~3.5 minutes
+const POLL_MS = 2500;
+const MAX_POLLS = 80;
 
-export function BillVerification({ billId, fileName, ocrHospitalName }: BillVerificationProps): JSX.Element {
+export function BillVerification({ billId, fileName, ocrHospitalName }: Props): JSX.Element {
   const router = useRouter();
 
-  const [members, setMembers] = useState<ProfileMember[]>([]);
+  const [members, setMembers]           = useState<ProfileMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
-
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [selectedPlanId, setSelectedPlanId]     = useState<string | null>(null);
   const [hospitalName, setHospitalName] = useState(ocrHospitalName ?? '');
 
-  const [phase, setPhase] = useState<'form' | 'analyzing' | 'error'>('form');
+  // 'compact': returning user summary card | 'expanded': step-by-step
+  const [formMode, setFormMode] = useState<'compact' | 'expanded'>('expanded');
+  const [phase, setPhase]       = useState<'form' | 'analyzing' | 'error'>('form');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Load the user's profile members on mount, and pre-select the primary member
-  useEffect(() => {
-    fetch('/api/profile/members')
-      .then((r) => r.json())
-      .then(({ members: data }: { members: ProfileMember[] }) => {
-        setMembers(data);
-        const primary = data.find((m) => m.is_primary) ?? data[0];
-        if (primary) {
-          setSelectedMemberId(primary.id);
-          const primaryPlan = primary.insurance_plans.find((p) => p.is_primary_plan)
-            ?? primary.insurance_plans[0];
-          if (primaryPlan) setSelectedPlanId(primaryPlan.id);
-        }
-      })
-      .finally(() => setLoadingMembers(false));
+  // Inline member creation form state
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [newName, setNewName]   = useState('');
+  const [newDob, setNewDob]     = useState('');
+  const [newState, setNewState] = useState('');
+  const [newCounty, setNewCounty] = useState('');
+  const [newZip, setNewZip]     = useState('');
+  const [addingMember, setAddingMember] = useState(false);
+
+  // Inline plan creation form state
+  const [showAddPlan, setShowAddPlan] = useState(false);
+  const [newPayer, setNewPayer]       = useState('');
+  const [newPlan, setNewPlan]         = useState('');
+  const [newPlanType, setNewPlanType] = useState('commercial');
+  const [addingPlan, setAddingPlan]   = useState(false);
+
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const loadMembers = useCallback(async (): Promise<void> => {
+    const res = await fetch('/api/profile/members');
+    if (!res.ok) { setLoadingMembers(false); return; }
+    const { members: data } = await res.json() as { members: ProfileMember[] };
+    setMembers(data);
+    setLoadingMembers(false);
+
+    // Auto-select primary member + plan; switch to compact mode if everything is ready
+    const primary = data.find((m) => m.is_primary) ?? data[0];
+    if (primary) {
+      setSelectedMemberId(primary.id);
+      const primaryPlan = primary.insurance_plans.find((p) => p.is_primary_plan) ?? primary.insurance_plans[0];
+      if (primaryPlan) {
+        setSelectedPlanId(primaryPlan.id);
+        setFormMode('compact'); // returning user — show summary by default
+      }
+    }
   }, []);
 
-  // When member changes, reset plan selection and pick the primary plan for the new member
+  useEffect(() => { void loadMembers(); }, [loadMembers]);
+
   function handleSelectMember(memberId: string): void {
     setSelectedMemberId(memberId);
-    const member = members.find((m) => m.id === memberId);
-    if (member) {
-      const primary = member.insurance_plans.find((p) => p.is_primary_plan)
-        ?? member.insurance_plans[0];
-      setSelectedPlanId(primary?.id ?? null);
-    } else {
-      setSelectedPlanId(null);
-    }
+    const m = members.find((x) => x.id === memberId);
+    const plan = m?.insurance_plans.find((p) => p.is_primary_plan) ?? m?.insurance_plans[0];
+    setSelectedPlanId(plan?.id ?? null);
+    setShowAddPlan(false);
   }
 
   const selectedMember = members.find((m) => m.id === selectedMemberId) ?? null;
-  const selectedPlan = selectedMember?.insurance_plans.find((p) => p.id === selectedPlanId) ?? null;
-
+  const selectedPlan   = selectedMember?.insurance_plans.find((p) => p.id === selectedPlanId) ?? null;
   const canRun = Boolean(selectedMember && selectedPlan);
 
+  // ── Inline add member ────────────────────────────────────────────────────
+  async function handleAddMember(): Promise<void> {
+    if (!newName.trim() || !newDob) { setFormError('Name and date of birth are required.'); return; }
+    setAddingMember(true); setFormError(null);
+    const res = await fetch('/api/profile/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: newName, dateOfBirth: newDob,
+        state: newState || null, county: newCounty || null, zipCode: newZip || null,
+        isPrimary: members.length === 0,
+      }),
+    });
+    setAddingMember(false);
+    if (!res.ok) { setFormError('Could not save member. Try again.'); return; }
+    const { member } = await res.json() as { member: { id: string } };
+    setNewName(''); setNewDob(''); setNewState(''); setNewCounty(''); setNewZip('');
+    setShowAddMember(false);
+    await loadMembers();
+    setSelectedMemberId(member.id);
+    setShowAddPlan(true); // prompt to add a plan for this new member
+  }
+
+  // ── Inline add plan ──────────────────────────────────────────────────────
+  async function handleAddPlan(): Promise<void> {
+    if (!selectedMemberId) return;
+    if (!newPayer.trim() || !newPlan.trim()) { setFormError('Insurer name and plan name are required.'); return; }
+    setAddingPlan(true); setFormError(null);
+    const res = await fetch(`/api/profile/members/${selectedMemberId}/plans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payerName: newPayer, planName: newPlan, planType: newPlanType }),
+    });
+    setAddingPlan(false);
+    if (!res.ok) { setFormError('Could not save plan. Try again.'); return; }
+    const { plan } = await res.json() as { plan: { id: string } };
+    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial');
+    setShowAddPlan(false);
+    await loadMembers();
+    setSelectedPlanId(plan.id);
+  }
+
+  // ── Analysis polling ─────────────────────────────────────────────────────
   const poll = useCallback(async (): Promise<void> => {
     let polls = 0;
     await new Promise<void>((resolve) => {
-      const interval = setInterval(async () => {
-        polls += 1;
+      const id = setInterval(async () => {
+        polls++;
         if (polls > MAX_POLLS) {
-          clearInterval(interval);
+          clearInterval(id);
           setPhase('error');
-          setErrorMsg('Analysis is taking longer than expected. Check back in a moment.');
-          resolve();
-          return;
+          setErrorMsg('Analysis is taking longer than expected. Check back shortly.');
+          resolve(); return;
         }
         try {
           const res = await fetch(`/api/bills/${billId}`);
-          if (!res.ok) return; // transient — keep polling
+          if (!res.ok) return;
           const { status } = await res.json() as { status: string };
-          if (status === 'complete') {
-            clearInterval(interval);
-            router.push(`/dashboard/bills/${billId}`);
-            resolve();
-          } else if (status === 'failed') {
-            clearInterval(interval);
+          if (status === 'complete') { clearInterval(id); router.push(`/dashboard/bills/${billId}`); resolve(); }
+          else if (status === 'failed') {
+            clearInterval(id);
             setPhase('error');
-            setErrorMsg('We could not analyze your bill. Please ensure the file is a clear image or PDF and try again.');
+            setErrorMsg('We could not analyze your bill. Make sure the file is a clear image or PDF and try again.');
             resolve();
           }
-        } catch {
-          // network blip — keep polling
-        }
-      }, POLL_INTERVAL_MS);
+        } catch { /* network blip */ }
+      }, POLL_MS);
     });
   }, [billId, router]);
 
   async function handleRunAnalysis(): Promise<void> {
     if (!selectedMember || !selectedPlan) return;
-    setPhase('analyzing');
-    setErrorMsg(null);
-
+    setPhase('analyzing'); setErrorMsg(null);
     const res = await fetch(`/api/bills/${billId}/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -130,18 +189,15 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: BillVeri
         hospitalName: hospitalName.trim() || null,
       }),
     });
-
     if (!res.ok) {
       const { error } = await res.json() as { error: { detail: string } };
-      setPhase('error');
-      setErrorMsg(error?.detail ?? 'Something went wrong. Please try again.');
+      setPhase('error'); setErrorMsg(error?.detail ?? 'Something went wrong. Please try again.');
       return;
     }
-
-    // Engine is running — poll for completion
     await poll();
   }
 
+  // ── Analyzing screen ─────────────────────────────────────────────────────
   if (phase === 'analyzing') {
     return (
       <main className={s.main}>
@@ -150,9 +206,8 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: BillVeri
             <div className={s.spinner} />
             <p className={s.analyzingTitle}>Analyzing your bill…</p>
             <p className={s.analyzingNote}>
-              We're running 10 billing checks against Medicare benchmarks,<br />
-              your hospital's published rates, and your insurer's contracted rates.<br />
-              This takes about 30 seconds.
+              Running 10 billing checks against Medicare benchmarks, your hospital&apos;s
+              published rates, and your insurer&apos;s contracted rates. About 30 seconds.
             </p>
           </div>
         </div>
@@ -160,169 +215,251 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: BillVeri
     );
   }
 
+  const newMemberCounties = newState ? (COUNTIES_BY_STATE[newState] ?? []) : [];
+
+  // ── Form screen ──────────────────────────────────────────────────────────
   return (
     <main className={s.main}>
       <div className={s.inner}>
 
         <div>
           <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
-          <h1 className={s.pageTitle}>Confirm Bill Details</h1>
+          <h1 className={s.pageTitle}>Confirm bill details</h1>
           <p className={s.pageSub}>
-            We need a few details to run the most accurate analysis — including checking
-            your insurer's exact contracted rates for each procedure.
+            We need your insurance information to check if your provider billed above
+            your insurer&apos;s contracted rate — often the largest source of overcharges.
           </p>
           <p className={s.fileName}>{fileName}</p>
         </div>
 
-        {phase === 'error' && errorMsg && (
-          <div className={s.errorNote}>
-            {errorMsg}
-          </div>
-        )}
+        {phase === 'error' && errorMsg && <div className={s.errorNote}>{errorMsg}</div>}
+        {formError && <div className={s.errorNote}>{formError}</div>}
 
-        {/* Step 1: Patient */}
-        <div className={s.stepCard} data-complete={String(Boolean(selectedMember))}>
-          <div className={s.stepHeader}>
-            <span className={s.stepNum}>1</span>
-            <span className={s.stepTitle}>Who is this bill for?</span>
-            {selectedMember && (
-              <span className={s.stepSummary}>{selectedMember.full_name}</span>
-            )}
+        {loadingMembers ? (
+          <div className={s.stepCard}><div className={s.stepBody} style={{ padding: '1.5rem' }}><p style={{ fontSize: '.84rem', color: 'var(--txt3)' }}>Loading your profile…</p></div></div>
+        ) : formMode === 'compact' && selectedMember && selectedPlan ? (
+          // ── COMPACT MODE (returning user) ──────────────────────────────
+          <div className={s.compactCard}>
+            <div className={s.compactRow}>
+              <div className={s.compactField}>
+                <span className={s.compactLabel}>Patient</span>
+                <span className={s.compactValue}>{selectedMember.full_name}</span>
+              </div>
+              <div className={s.compactDivider} />
+              <div className={s.compactField}>
+                <span className={s.compactLabel}>Insurance</span>
+                <span className={s.compactValue}>{selectedPlan.payer_name}</span>
+                <span className={s.compactSub}>{selectedPlan.plan_name}</span>
+              </div>
+            </div>
+            <div className={s.compactHospital}>
+              <label className={s.compactLabel}>Hospital / provider <span className={s.optionalTag}>(optional)</span></label>
+              <input
+                className={s.hospitalInput}
+                type="text"
+                placeholder="e.g. Cedars-Sinai Medical Center"
+                value={hospitalName}
+                onChange={(e) => setHospitalName(e.target.value)}
+              />
+              <p className={s.inputHint}>Helps find your provider&apos;s published price list for comparison.</p>
+            </div>
+            <button className={s.changeLink} onClick={() => setFormMode('expanded')}>
+              Change member or insurance →
+            </button>
           </div>
-          <div className={s.stepBody}>
-            {loadingMembers ? (
-              <p style={{ fontSize: '.84rem', color: 'var(--txt3)' }}>Loading members…</p>
-            ) : members.length === 0 ? (
-              <p className={s.noMembersNote}>
-                No members found on your profile.{' '}
-                <Link href="/dashboard/profile" className={s.profileLink}>Add yourself first →</Link>
-              </p>
-            ) : (
-              <div className={s.memberList}>
-                {members.map((member) => {
-                  const locationParts = [member.county, member.state].filter(Boolean);
-                  const dob = new Date(member.date_of_birth + 'T00:00:00').toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', year: 'numeric',
-                  });
-                  return (
-                    <div
-                      key={member.id}
-                      className={s.memberOption}
-                      data-selected={String(selectedMemberId === member.id)}
-                      onClick={() => handleSelectMember(member.id)}
-                      role="radio"
-                      aria-checked={selectedMemberId === member.id}
-                    >
-                      <div>
-                        <p className={s.memberOptionName}>{member.full_name}</p>
-                        <p className={s.memberOptionMeta}>
-                          DOB {dob}
-                          {locationParts.length > 0 && ` · ${locationParts.join(', ')}`}
-                        </p>
+        ) : (
+          // ── EXPANDED MODE (new user or changing details) ───────────────
+          <>
+            {/* Step 1: Patient */}
+            <div className={s.stepCard} data-complete={String(Boolean(selectedMember))}>
+              <div className={s.stepHeader}>
+                <span className={s.stepNum}>1</span>
+                <span className={s.stepTitle}>Who is this bill for?</span>
+                {selectedMember && <span className={s.stepSummary}>{selectedMember.full_name}</span>}
+              </div>
+              <div className={s.stepBody}>
+                {members.length > 0 && (
+                  <div className={s.memberList}>
+                    {members.map((m) => (
+                      <div
+                        key={m.id}
+                        className={s.memberOption}
+                        data-selected={String(selectedMemberId === m.id)}
+                        onClick={() => handleSelectMember(m.id)}
+                        role="radio"
+                        aria-checked={selectedMemberId === m.id}
+                      >
+                        <div>
+                          <p className={s.memberOptionName}>{m.full_name}</p>
+                          <p className={s.memberOptionMeta}>
+                            DOB {new Date(m.date_of_birth + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {m.state && ` · ${m.state}`}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!showAddMember ? (
+                  <button className={s.addInlineBtn} onClick={() => { setShowAddMember(true); setFormError(null); }}>
+                    {members.length === 0 ? '+ Add yourself' : '+ Add another member'}
+                  </button>
+                ) : (
+                  <div className={s.inlineFormBox}>
+                    <p className={s.inlineFormTitle}>New member</p>
+                    <div className={s.formRow}>
+                      <div className={s.formField} style={{ flex: 2 }}>
+                        <label className={s.formLabel}>Full name *</label>
+                        <input className={s.formInput} placeholder="Jane Smith" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+                      </div>
+                      <div className={s.formField}>
+                        <label className={s.formLabel}>Date of birth *</label>
+                        <input type="date" className={s.formInput} value={newDob} onChange={(e) => setNewDob(e.target.value)} />
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Step 2: Insurance Plan */}
-        <div className={s.stepCard} data-complete={String(Boolean(selectedPlan))}>
-          <div className={s.stepHeader}>
-            <span className={s.stepNum}>2</span>
-            <span className={s.stepTitle}>Which insurance plan?</span>
-            {selectedPlan && (
-              <span className={s.stepSummary}>
-                {selectedPlan.payer_name}<br />{selectedPlan.plan_name}
-              </span>
-            )}
-          </div>
-          <div className={s.stepBody}>
-            {!selectedMember ? (
-              <p style={{ fontSize: '.84rem', color: 'var(--txt3)' }}>Select a member above first.</p>
-            ) : selectedMember.insurance_plans.length === 0 ? (
-              <p className={s.noPlansNote}>
-                No insurance plans on file for {selectedMember.full_name}.{' '}
-                <Link href="/dashboard/profile" className={s.profileLink}>Add a plan →</Link>
-                <br />
-                <span style={{ fontSize: '.78rem' }}>
-                  Without an insurance plan we can't check if your provider billed above your contracted rate.
-                </span>
-              </p>
-            ) : (
-              <div className={s.planList}>
-                {selectedMember.insurance_plans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    className={s.planOption}
-                    data-selected={String(selectedPlanId === plan.id)}
-                    onClick={() => setSelectedPlanId(plan.id)}
-                    role="radio"
-                    aria-checked={selectedPlanId === plan.id}
-                  >
-                    <div>
-                      <p className={s.planPayer}>{plan.payer_name}</p>
-                      <p className={s.planName}>{plan.plan_name}</p>
+                    <div className={s.formRow}>
+                      <div className={s.formField}>
+                        <label className={s.formLabel}>State <span className={s.optionalTag}>(for rate lookup)</span></label>
+                        <select className={s.formSelect} value={newState} onChange={(e) => { setNewState(e.target.value); setNewCounty(''); }}>
+                          <option value="">Select state…</option>
+                          {US_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                        </select>
+                      </div>
+                      {newMemberCounties.length > 0 && (
+                        <div className={s.formField}>
+                          <label className={s.formLabel}>County <span className={s.optionalTag}>(optional)</span></label>
+                          <select className={s.formSelect} value={newCounty} onChange={(e) => setNewCounty(e.target.value)}>
+                            <option value="">Select county…</option>
+                            {newMemberCounties.map((c) => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <div className={s.formField}>
+                        <label className={s.formLabel}>ZIP <span className={s.optionalTag}>(optional)</span></label>
+                        <input className={s.formInput} placeholder="90210" maxLength={5} value={newZip} onChange={(e) => setNewZip(e.target.value.replace(/\D/g, ''))} />
+                      </div>
+                    </div>
+                    <div className={s.formActions}>
+                      <button className={s.cancelBtn} onClick={() => { setShowAddMember(false); setFormError(null); }}>Cancel</button>
+                      <button className={s.saveBtn} disabled={addingMember} onClick={() => void handleAddMember()}>
+                        {addingMember ? 'Saving…' : 'Save'}
+                      </button>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* Step 3: Hospital */}
-        <div className={s.stepCard} data-complete={String(hospitalName.trim().length > 0)}>
-          <div className={s.stepHeader}>
-            <span className={s.stepNum}>3</span>
-            <span className={s.stepTitle}>Which hospital or provider?</span>
-            {hospitalName.trim() && (
-              <span className={s.stepSummary}>{hospitalName.trim()}</span>
-            )}
-          </div>
-          <div className={s.stepBody}>
-            <input
-              className={s.hospitalInput}
-              type="text"
-              placeholder="e.g. Cedars-Sinai Medical Center"
-              value={hospitalName}
-              onChange={(e) => setHospitalName(e.target.value)}
-            />
-            <p className={s.inputHint}>
-              This helps us find your provider's published price list for comparison. Optional but recommended.
-            </p>
-          </div>
-        </div>
+            {/* Step 2: Insurance plan */}
+            <div className={s.stepCard} data-complete={String(Boolean(selectedPlan))}>
+              <div className={s.stepHeader}>
+                <span className={s.stepNum}>2</span>
+                <span className={s.stepTitle}>Which insurance plan?</span>
+                {selectedPlan && <span className={s.stepSummary}>{selectedPlan.payer_name} · {selectedPlan.plan_name}</span>}
+              </div>
+              <div className={s.stepBody}>
+                {!selectedMember ? (
+                  <p className={s.stepHint}>Select a member above first.</p>
+                ) : (
+                  <>
+                    {selectedMember.insurance_plans.length > 0 && (
+                      <div className={s.planList}>
+                        {selectedMember.insurance_plans.map((p) => (
+                          <div
+                            key={p.id}
+                            className={s.planOption}
+                            data-selected={String(selectedPlanId === p.id)}
+                            onClick={() => setSelectedPlanId(p.id)}
+                            role="radio"
+                            aria-checked={selectedPlanId === p.id}
+                          >
+                            <p className={s.planPayer}>{p.payer_name}</p>
+                            <p className={s.planName}>{p.plan_name}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-        {/* Step 4: Service Dates */}
-        <div className={s.stepCard} data-complete="true">
-          <div className={s.stepHeader}>
-            <span className={s.stepNum}>4</span>
-            <span className={s.stepTitle}>Service dates</span>
-            <span className={s.stepCheck}>✓ Extracted from bill</span>
-          </div>
-          <div className={s.stepBody}>
-            <p className={s.datesNote}>
-              We extract service dates directly from your bill. Our analysis automatically
-              selects the Medicare fee schedules and rates effective on your date of service —
-              so even historical bills are benchmarked against the correct rates.
-            </p>
-          </div>
-        </div>
+                    {!showAddPlan ? (
+                      <button className={s.addInlineBtn} onClick={() => { setShowAddPlan(true); setFormError(null); }}>
+                        {selectedMember.insurance_plans.length === 0 ? '+ Add insurance plan' : '+ Add another plan'}
+                      </button>
+                    ) : (
+                      <div className={s.inlineFormBox}>
+                        <p className={s.inlineFormTitle}>Insurance plan</p>
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>Insurance company *</label>
+                            <input className={s.formInput} placeholder="Blue Cross Blue Shield" value={newPayer} onChange={(e) => setNewPayer(e.target.value)} autoFocus />
+                          </div>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>Plan name *</label>
+                            <input className={s.formInput} placeholder="PPO Gold" value={newPlan} onChange={(e) => setNewPlan(e.target.value)} />
+                          </div>
+                        </div>
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>Plan type</label>
+                            <select className={s.formSelect} value={newPlanType} onChange={(e) => setNewPlanType(e.target.value)}>
+                              {PLAN_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <p className={s.planHint}>
+                          The plan name is used to match your insurer&apos;s contracted rate in hospital price transparency data.
+                          Use the name as it appears on your insurance card.
+                        </p>
+                        <div className={s.formActions}>
+                          <button className={s.cancelBtn} onClick={() => { setShowAddPlan(false); setFormError(null); }}>Cancel</button>
+                          <button className={s.saveBtn} disabled={addingPlan} onClick={() => void handleAddPlan()}>
+                            {addingPlan ? 'Saving…' : 'Save plan'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
 
-        {/* Run CTA */}
+            {/* Step 3: Hospital */}
+            <div className={s.stepCard} data-complete={String(hospitalName.trim().length > 0)}>
+              <div className={s.stepHeader}>
+                <span className={s.stepNum}>3</span>
+                <span className={s.stepTitle}>Hospital or provider <span className={s.optionalTag} style={{ textTransform: 'none', letterSpacing: 0 }}>(optional)</span></span>
+                {hospitalName.trim() && <span className={s.stepSummary}>{hospitalName.trim()}</span>}
+              </div>
+              <div className={s.stepBody}>
+                <input
+                  className={s.hospitalInput}
+                  type="text"
+                  placeholder="e.g. Cedars-Sinai Medical Center"
+                  value={hospitalName}
+                  onChange={(e) => setHospitalName(e.target.value)}
+                />
+                <p className={s.inputHint}>Helps us find your provider&apos;s published price list for comparison.</p>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* CTA */}
         <div className={s.ctaRow}>
-          <p className={s.ctaNote}>
-            {!canRun
-              ? 'Select a member and insurance plan to continue.'
-              : 'Ready to run 10 billing accuracy checks.'}
-          </p>
+          {!canRun && !loadingMembers && (
+            <p className={s.ctaNote}>
+              {members.length === 0
+                ? 'Add yourself above to continue.'
+                : !selectedMember
+                ? 'Select a member to continue.'
+                : 'Add an insurance plan to continue.'}
+            </p>
+          )}
           <button
             className={s.ctaBtn}
             disabled={!canRun}
             onClick={() => void handleRunAnalysis()}
+            style={{ marginLeft: canRun ? 'auto' : undefined }}
           >
             Run Analysis
           </button>

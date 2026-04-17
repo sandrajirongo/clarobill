@@ -90,6 +90,147 @@
 
 .stepBody { padding: 1.1rem 1.25rem 1.25rem; border-top: 1px solid var(--border); }
 
+/* Compact mode (returning user summary card) */
+.compactCard {
+  background: var(--white);
+  border: 1.5px solid rgba(45, 74, 42, .25);
+  border-radius: 1.25rem;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.compactRow {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+.compactDivider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  flex-shrink: 0;
+}
+@media (max-width: 480px) { .compactDivider { display: none; } }
+.compactField { display: flex; flex-direction: column; gap: .2rem; min-width: 140px; }
+.compactLabel {
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--txt3);
+}
+.compactValue { font-size: .9rem; font-weight: 600; color: var(--txt); }
+.compactSub { font-size: .8rem; color: var(--txt2); }
+.compactHospital { display: flex; flex-direction: column; gap: .4rem; }
+.changeLink {
+  align-self: flex-start;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--txt3);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: color .15s;
+}
+.changeLink:hover { color: var(--sage); }
+
+/* Inline form elements shared between steps */
+.inlineFormBox {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 1rem 1.1rem;
+  background: var(--cream);
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  margin-top: .5rem;
+}
+.inlineFormTitle {
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--txt3);
+}
+.formRow { display: flex; gap: .6rem; flex-wrap: wrap; }
+.formField { display: flex; flex-direction: column; gap: .3rem; flex: 1; min-width: 130px; }
+.formLabel { font-size: .72rem; font-weight: 600; color: var(--txt2); }
+.optionalTag { font-weight: 400; color: var(--txt3); }
+.formInput {
+  font-family: var(--fb);
+  font-size: .875rem;
+  color: var(--txt);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: .5rem .7rem;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color .15s;
+}
+.formInput:focus { border-color: var(--sage); }
+.formSelect {
+  font-family: var(--fb);
+  font-size: .875rem;
+  color: var(--txt);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: .5rem .7rem;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.formSelect:focus { border-color: var(--sage); }
+.formActions { display: flex; justify-content: flex-end; gap: .5rem; }
+.cancelBtn {
+  font-size: .82rem;
+  color: var(--txt2);
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: var(--r-full);
+  padding: .45rem .9rem;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: background .15s;
+}
+.cancelBtn:hover { background: var(--cream); }
+.saveBtn {
+  font-size: .82rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--sage);
+  border: none;
+  border-radius: var(--r-full);
+  padding: .45rem 1.1rem;
+  cursor: pointer;
+  font-family: var(--fb);
+  transition: background .15s;
+}
+.saveBtn:hover:not(:disabled) { background: var(--sage-l); }
+.saveBtn:disabled { opacity: .55; cursor: not-allowed; }
+
+.addInlineBtn {
+  align-self: flex-start;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--sage);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: .2rem 0;
+  font-family: var(--fb);
+  transition: color .15s;
+}
+.addInlineBtn:hover { color: var(--sage-l); }
+.stepHint { font-size: .82rem; color: var(--txt3); }
+.planHint { font-size: .75rem; color: var(--txt3); line-height: 1.55; }
+
 /* Member selector */
 .memberList {
   display: flex;
