@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useBillUpload } from '@/lib/hooks/use-bill-upload';
 import { useRouter } from 'next/navigation';
+import { UploadIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
 export function BillUploader(): JSX.Element {
@@ -63,7 +64,7 @@ export function BillUploader(): JSX.Element {
 
       {uploadState.status === 'idle' && (
         <>
-          <div className={s.uploadIcon}>📄</div>
+          <div className={s.uploadIcon}><UploadIcon size={28} /></div>
           <p className={s.uploadLabel}>Drop your bill here, or</p>
           <button onClick={() => inputRef.current?.click()} className={s.uploadBtn}>
             Choose file

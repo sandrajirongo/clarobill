@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import s from './page.module.css';
 import { Reveal } from '@/components/landing/reveal';
 import { FaqAccordion } from '@/components/landing/faq';
+import { ReportIcon, LetterIcon, SpeedIcon } from '@/components/icons';
 
 export const metadata: Metadata = {
   title: 'ClaroBill — Find Errors in Your Medical Bill',
@@ -158,17 +159,17 @@ export default function LandingPage(): JSX.Element {
           <h2 className={s.secH2}>Two things that actually move the needle</h2>
           <div className={s.whatGrid}>
             <div className={s.wcard}>
-              <div className={s.wi}>🔍</div>
+              <div className={s.wi}><ReportIcon size={20} /></div>
               <h4 className={s.wcardH4}>A detailed error report</h4>
               <p className={s.wcardP}>Every charge is reviewed and flagged — duplicate line items, upcoding, unbundled procedures, and charges for services not provided — explained clearly, without medical jargon.</p>
             </div>
             <div className={s.wcard}>
-              <div className={s.wi}>✉️</div>
+              <div className={s.wi}><LetterIcon size={20} /></div>
               <h4 className={s.wcardH4}>A ready-to-send dispute letter</h4>
               <p className={s.wcardP}>A professional letter citing every billing violation by name with regulatory references — the same documentation that compels billing departments to act.</p>
             </div>
             <div className={`${s.wcard} ${s.wcardFull}`}>
-              <div className={s.wi}>⚡</div>
+              <div className={s.wi}><SpeedIcon size={20} /></div>
               <h4 className={s.wcardH4}>Results in minutes, not weeks</h4>
               <p className={s.wcardP}>No waiting for a human advocate. No back-and-forth calls. Upload your bill and get your full report and dispute letter the same day — ready to send immediately.</p>
             </div>

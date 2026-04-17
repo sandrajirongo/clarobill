@@ -59,18 +59,14 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         />
       )}
 
-      {/* Onboarding nudge — only shown before first upload; points at the uploader.
-          Profile details (member + insurance) are collected during the verify step,
-          so we don't ask users to "set up a profile first" before they see value. */}
+      {/* Onboarding nudge — only shown before first upload */}
       {bills.length === 0 && (
         <div className={s.onboardingNudge}>
-          <div>
-            <p className={s.onboardingTitle}>Upload your first bill to get started</p>
-            <p className={s.onboardingText}>
-              Drop a medical bill, EOB, or superbill below. We&apos;ll check every charge
-              against Medicare benchmarks and your insurer&apos;s contracted rates.
-            </p>
-          </div>
+          <p className={s.onboardingTitle}>You have no bills yet</p>
+          <p className={s.onboardingText}>
+            Upload a medical bill below — we&apos;ll check every charge against Medicare
+            benchmarks and flag overcharges, duplicates, and coding errors.
+          </p>
         </div>
       )}
 

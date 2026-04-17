@@ -221,9 +221,16 @@
   line-height: 1.5;
 }
 .benefitIcon {
-  font-size: 1rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--sage);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  margin-top: -.05rem;
+  margin-top: .1rem;
 }
 
 /* ─── Footer note ─────────────────────────────────────────────────────────── */

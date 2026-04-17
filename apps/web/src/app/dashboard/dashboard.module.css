@@ -178,10 +178,10 @@
 .page {
   max-width: 760px;
   margin: 0 auto;
-  padding: 2.5rem clamp(1rem, 4vw, 2rem);
+  padding: 2rem clamp(1rem, 4vw, 2rem);
   display: flex;
   flex-direction: column;
-  gap: 2.5rem;
+  gap: 1.75rem;
   flex: 1;
 }
 .pageTitle {
@@ -332,40 +332,18 @@
 
 /* ─── Onboarding nudge ───────────────────────────────────────────────────── */
 .onboardingNudge {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  background: var(--white);
-  border: 1px solid rgba(45, 74, 42, .2);
-  border-left: 3px solid var(--sage);
+  background: rgba(200, 240, 96, .12);
+  border: 1px solid rgba(200, 240, 96, .4);
   border-radius: var(--r-xl);
-  padding: 1.1rem 1.25rem;
-  flex-wrap: wrap;
+  padding: 1rem 1.25rem;
 }
-.onboardingIcon { font-size: 1.25rem; flex-shrink: 0; padding-top: .05rem; }
 .onboardingTitle {
   font-size: .875rem;
   font-weight: 600;
-  color: var(--txt);
+  color: var(--sage-dark);
   margin-bottom: .2rem;
 }
 .onboardingText { font-size: .82rem; color: var(--txt2); line-height: 1.55; }
-.onboardingBtn {
-  flex-shrink: 0;
-  align-self: center;
-  margin-left: auto;
-  font-size: .82rem;
-  font-weight: 700;
-  color: #fff;
-  background: var(--sage);
-  border-radius: var(--r-full);
-  padding: .5rem 1.1rem;
-  text-decoration: none;
-  transition: background .15s;
-  white-space: nowrap;
-}
-.onboardingBtn:hover { background: var(--sage-l); }
-@media (max-width: 560px) { .onboardingBtn { margin-left: 0; } }
 
 /* ─── Status badges ──────────────────────────────────────────────────────── */
 .badge {
@@ -386,13 +364,24 @@
   background: var(--white);
   border: 2px dashed var(--border);
   border-radius: 1.5rem;
-  padding: 3rem 2rem;
+  padding: 2.25rem 2rem;
   text-align: center;
   transition: border-color .15s;
   cursor: default;
 }
 .uploadZone:hover { border-color: var(--sage); }
-.uploadIcon { font-size: 2.5rem; margin-bottom: 1rem; }
+.uploadIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  color: var(--sage);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
 .uploadLabel {
   font-size: .92rem;
   color: var(--txt2);

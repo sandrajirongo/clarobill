@@ -359,8 +359,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  color: #fff;
   margin-bottom: .9rem;
+  flex-shrink: 0;
 }
 .wcardH4 { font-size: .95rem; font-weight: 700; margin-bottom: .35rem; color: var(--txt); }
 .wcardP { font-size: .84rem; color: var(--txt2); line-height: 1.65; }

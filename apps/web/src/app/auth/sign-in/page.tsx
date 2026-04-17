@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { CheckIcon } from '@/components/icons';
 import s from './sign-in.module.css';
 
 type Mode = 'magic-link' | 'password';
@@ -49,15 +50,15 @@ export default function SignInPage(): JSX.Element {
 
         <div className={s.benefits}>
           <div className={s.benefitItem}>
-            <span className={s.benefitIcon}>🔍</span>
+            <span className={s.benefitIcon}><CheckIcon size={14} /></span>
             <span>Finds billing errors — duplicate charges, unbundled codes, inflated fees</span>
           </div>
           <div className={s.benefitItem}>
-            <span className={s.benefitIcon}>📊</span>
+            <span className={s.benefitIcon}><CheckIcon size={14} /></span>
             <span>Compares your charges against Medicare benchmarks in 30 seconds</span>
           </div>
           <div className={s.benefitItem}>
-            <span className={s.benefitIcon}>✉️</span>
+            <span className={s.benefitIcon}><CheckIcon size={14} /></span>
             <span>Generates a ready-to-send dispute letter with every report</span>
           </div>
         </div>
