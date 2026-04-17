@@ -956,6 +956,31 @@
   flex: 1;
   min-width: 140px;
 }
+/* Checkbox field — pushes content to bottom so it aligns with sibling inputs */
+.checkboxField {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 3px;
+  min-width: 140px;
+  flex: 1;
+}
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--txt2);
+  cursor: pointer;
+  user-select: none;
+}
+.checkboxLabel input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--sage);
+  cursor: pointer;
+  flex-shrink: 0;
+}
 .formLabel {
   font-size: .72rem;
   font-weight: 600;

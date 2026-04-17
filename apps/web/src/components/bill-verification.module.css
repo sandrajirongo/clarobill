@@ -323,18 +323,25 @@
 /* Highlight uncertain fields pre-filled by card scan */
 .formInputUncertain { border-color: #F59E0B !important; background: #FFFBEB !important; }
 
-/* Checkbox row for isPrimary toggle */
+/* Checkbox field — pushes content to bottom to align with sibling inputs */
+.checkboxField {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 3px;
+  flex: 1;
+  min-width: 130px;
+}
 .checkboxLabel {
   display: flex;
   align-items: center;
-  gap: .4rem;
-  font-size: .78rem;
-  font-weight: 600;
+  gap: .45rem;
+  font-size: .82rem;
+  font-weight: 500;
   color: var(--txt2);
   cursor: pointer;
-  padding-top: 1.65rem; /* align with input bottom edge */
+  user-select: none;
 }
-.checkboxLabel input[type="checkbox"] {
+.checkboxLabel input[type='checkbox'] {
   accent-color: var(--sage);
   width: 15px;
   height: 15px;

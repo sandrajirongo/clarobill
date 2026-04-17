@@ -7,7 +7,22 @@ export const metadata: Metadata = {
   description: 'Guides on reading medical bills, understanding CPT codes, and disputing billing errors. Plain English, no jargon.',
 };
 
+// Newest first
 const articles = [
+  {
+    slug: 'how-to-dispute-a-hospital-bill',
+    title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide',
+    description: 'A practical guide to disputing hospital billing errors — from requesting your itemized bill to writing a dispute letter that actually gets results.',
+    date: 'April 17, 2026',
+    readTime: '9 min read',
+  },
+  {
+    slug: 'medical-billing-advocates',
+    title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One',
+    description: 'Advocates can recover real money from billing errors — but they typically keep 25–35% of what they save you. Here is when hiring one makes sense.',
+    date: 'April 17, 2026',
+    readTime: '7 min read',
+  },
   {
     slug: 'how-to-read-an-itemized-medical-bill',
     title: 'How to Read an Itemized Medical Bill',
@@ -28,20 +43,6 @@ const articles = [
     description: 'The five-digit numbers on your bill determine what you pay. Here is how they work, why they get abused, and how to check whether yours are right.',
     date: 'April 7, 2026',
     readTime: '6 min read',
-  },
-  {
-    slug: 'how-to-dispute-a-hospital-bill',
-    title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide',
-    description: 'A practical guide to disputing hospital billing errors — from requesting your itemized bill to writing a dispute letter that actually gets results.',
-    date: 'April 17, 2026',
-    readTime: '9 min read',
-  },
-  {
-    slug: 'medical-billing-advocates',
-    title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One',
-    description: 'Advocates can recover real money from billing errors — but they typically keep 25–35% of what they save you. Here is when hiring one makes sense.',
-    date: 'April 17, 2026',
-    readTime: '7 min read',
   },
 ];
 

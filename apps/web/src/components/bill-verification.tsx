@@ -691,7 +691,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                               onChange={(e) => setNewMemberId(e.target.value)}
                             />
                           </div>
-                          <div className={s.formField}>
+                          <div className={s.checkboxField}>
                             <label className={s.checkboxLabel}>
                               <input
                                 type="checkbox"

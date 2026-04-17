@@ -489,7 +489,7 @@ export function MembersPanel(): JSX.Element {
                           onChange={(e) => setNewMemberId(e.target.value)}
                         />
                       </div>
-                      <div className={s.formField}>
+                      <div className={s.checkboxField}>
                         <label className={s.checkboxLabel}>
                           <input
                             type="checkbox"
