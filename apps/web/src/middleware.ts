@@ -23,7 +23,12 @@ export async function middleware(request: NextRequest) {
           );
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              // Persist auth cookies across browser restarts so users aren't
+              // logged out after idle periods shorter than the JWT lifetime.
+              maxAge: options.maxAge ?? 60 * 60 * 24 * 7,
+            })
           );
         },
       },

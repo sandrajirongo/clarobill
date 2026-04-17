@@ -18,7 +18,14 @@ export async function createSupabaseServerClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
+              // Ensure a minimum maxAge so auth cookies are not session cookies
+              // (session cookies disappear on browser close, causing spurious logouts).
+              // 7 days matches Supabase's default refresh token lifetime — the JWT
+              // itself is validated server-side so the longer cookie window is safe.
+              cookieStore.set(name, value, {
+                ...options,
+                maxAge: options.maxAge ?? 60 * 60 * 24 * 7,
+              });
             });
           } catch {
             // setAll is called from Server Components where cookies are read-only.
