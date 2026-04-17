@@ -7,24 +7,92 @@ import { US_STATES, COUNTIES_BY_STATE } from '@/lib/utils/county-data';
 import { useCardScan } from '@/lib/hooks/use-card-scan';
 import s from './bill-verification.module.css';
 
-const PLAN_TYPES = [
-  { value: 'commercial', label: 'Commercial' },
-  { value: 'medicare',   label: 'Medicare'   },
-  { value: 'medicaid',   label: 'Medicaid'   },
-  { value: 'tricare',    label: 'TRICARE'    },
-  { value: 'self_pay',   label: 'Self-Pay'   },
+// ─── Insurance plan type constants ────────────────────────────────────────────
+
+// Medicaid state brand names — states that have named their program differently.
+// For all other states we show "[State] Medicaid" in the plan type dropdown.
+const MEDICAID_STATE_BRANDS: Record<string, string> = {
+  'California':    'Medi-Cal',
+  'Tennessee':     'TennCare',
+  'Arizona':       'AHCCCS',
+  'Massachusetts': 'MassHealth',
+  'Oregon':        'Oregon Health Plan',
+  'Washington':    'Apple Health',
+  'Hawaii/Guam':   'Med-QUEST',
+  'Minnesota':     'Medical Assistance (MA)',
+  'Pennsylvania':  'Medical Assistance (MA)',
+  'Indiana':       'HIP / Indiana Medicaid',
+  'Colorado':      'Health First Colorado',
+  'Nevada':        'Nevada Medicaid',
+  'Kentucky':      'Kentucky Medicaid',
+};
+
+function getMedicaidBrandName(state: string | null | undefined): string {
+  if (!state) return 'Medicaid';
+  return MEDICAID_STATE_BRANDS[state] ?? `${state} Medicaid`;
+}
+
+// Medicaid program sub-types — delivery mechanism defines which rate schedule applies.
+// Fee-for-Service → published state Medicaid fee schedule.
+// Managed Care → MCO-specific contracted rates (varies by insurer + state).
+const MEDICAID_PLAN_TYPES = [
+  { value: 'Fee-for-Service Medicaid',         label: 'Fee-for-Service — state pays providers directly'       },
+  { value: 'Medicaid Managed Care',            label: 'Managed Care — private MCO manages your coverage'     },
+  { value: 'CHIP',                             label: 'CHIP — Children\'s Health Insurance Program'           },
+  { value: 'Dual Eligible (Medicare + Medicaid)', label: 'Dual Eligible — both Medicare and Medicaid cover you' },
+  { value: 'Long-Term Services and Supports',  label: 'Long-Term Care / LTSS waiver'                         },
+  { value: 'Medicaid Home & Community Waiver', label: 'Home & Community-Based Services waiver'               },
 ];
 
-// Medicaid sub-types — shown as a second dropdown when the user selects Medicaid.
-// Fee-for-Service uses published state fee schedules; Managed Care plans negotiate
-// their own rates with individual MCOs (Centene, Molina, UnitedHealthcare Community, etc.).
-const MEDICAID_PLAN_TYPES = [
-  { value: 'Fee-for-Service Medicaid',           label: 'Fee-for-Service (state pays providers directly)' },
-  { value: 'Medicaid Managed Care',              label: 'Managed Care (MCO covers your care)'             },
-  { value: 'CHIP',                               label: 'CHIP (Children\'s Health Insurance Program)'     },
-  { value: 'Dual Special Needs Plan (D-SNP)',    label: 'Dual Eligible (Medicare + Medicaid)'             },
-  { value: 'Long-Term Services and Supports',    label: 'Long-Term Care / LTSS'                           },
-  { value: 'Medicaid Waiver Program',            label: 'Home & Community-Based Waiver'                   },
+// State-specific MCO lists for Medicaid Managed Care — shown as autocomplete suggestions.
+// Users in states not listed fall back to the national list.
+const MEDICAID_MCOS_BY_STATE: Record<string, string[]> = {
+  'California':    ['L.A. Care Health Plan', 'Health Net Medi-Cal', 'Molina Healthcare of California', 'Anthem Blue Cross', 'Kaiser Permanente', 'IEHP (Inland Empire)', 'CalOptima', 'Alameda Alliance'],
+  'Texas':         ['Molina Healthcare', 'UnitedHealthcare Community Plan', 'Superior HealthPlan (Centene)', 'Aetna Better Health of Texas', 'BCBS of Texas'],
+  'New York':      ['Fidelis Care', 'Healthfirst', 'Amerigroup (Elevance)', 'WellCare Health Plans', 'Molina Healthcare', 'UnitedHealthcare Community Plan', 'MetroPlus'],
+  'Florida':       ['Simply Healthcare (Centene)', 'Molina Healthcare of Florida', 'Staywell (Centene)', 'Humana Medicaid', 'UnitedHealthcare Community Plan'],
+  'Pennsylvania':  ['Gateway Health (Highmark)', 'UPMC for You', 'Aetna Better Health of PA', 'Geisinger Health Plan', 'Molina Healthcare'],
+  'Ohio':          ['Buckeye Health Plan (Centene)', 'CareSource', 'Molina Healthcare', 'UnitedHealthcare Community Plan', 'Paramount Advantage'],
+  'Illinois':      ['CountyCare (Cook County)', 'Meridian Health Plan (Centene)', 'Molina Healthcare', 'BlueCross Community Options (BCBS IL)', 'IlliniCare Health'],
+  'Michigan':      ['Molina Healthcare', 'UnitedHealthcare Community Plan', 'Meridian Health Plan (Centene)', 'HAP Midwest Health Plan'],
+  'Georgia':       ['Amerigroup (Elevance)', 'Peach State Health (Centene)', 'UnitedHealthcare Community Plan', 'WellCare', 'CareSource Georgia'],
+  'North Carolina':['BCBS of NC', 'Aetna Better Health of NC', 'Healthy Blue (BCBS)', 'UnitedHealthcare Community Plan', 'WellCare of NC'],
+  'Washington':    ['Molina Healthcare of Washington', 'UnitedHealthcare Community Plan', 'Amerigroup Washington', 'Community Health Plan of WA'],
+  'Arizona':       ['Mercy Care (Cenpatico)', 'UnitedHealthcare Community Plan', 'Molina Healthcare of Arizona', 'Aetna Better Health of AZ', 'Health Choice Arizona'],
+  'Virginia':      ['Aetna Better Health of Virginia', 'Anthem HealthKeepers Plus', 'Molina Healthcare of Virginia', 'Optima Health Community Care', 'UnitedHealthcare Community Plan'],
+  'Indiana':       ['Anthem (Elevance)', 'MDwise (Centene)', 'Molina Healthcare', 'CareSource Indiana'],
+  'Massachusetts': ['Fallon Health', 'BMC HealthNet Plan', 'Tufts Health Together', 'UnitedHealthcare Community Plan', 'Aetna Better Health of MA'],
+  'Tennessee':     ['Amerigroup Tennessee (Elevance)', 'BlueCare Tennessee (BCBS)', 'United American Insurance (UHC)'],
+  'New Jersey':    ['Aetna Better Health', 'AmeriHealth Caritas NJ', 'Horizon NJ Health', 'UnitedHealthcare Community Plan', 'WellCare of NJ'],
+  'Colorado':      ['Colorado Access', 'Rocky Mountain Health Plans', 'Anthem (Elevance)', 'Denver Health Medical Plan', 'Bright Health Plan'],
+  'Oregon':        ['CareOregon', 'PacificSource Community Solutions', 'Trillium Community Health Plan', 'Umpqua Health Alliance', 'Yamhill Community Care'],
+  'Minnesota':     ['UCare', 'Blue Plus (BCBS MN)', 'Medica', 'HealthPartners', 'Hennepin Health'],
+};
+
+const MEDICAID_MCOS_NATIONAL = [
+  'Molina Healthcare', 'UnitedHealthcare Community Plan', 'Aetna Better Health',
+  'Centene / WellCare', 'Humana Medicaid', 'Anthem / Elevance Health',
+  'CareSource', 'AmeriHealth Caritas',
+];
+
+// Medicare sub-types — Original Medicare uses CMS fee schedules we have loaded.
+// Medicare Advantage (Part C) is a private plan with insurer-negotiated rates.
+const MEDICARE_PLAN_TYPES = [
+  { value: 'Original Medicare (Parts A + B)',      label: 'Original Medicare (Parts A + B) — government pays providers directly'  },
+  { value: 'Medicare Advantage (Part C)',           label: 'Medicare Advantage (Part C) — private HMO or PPO plan'                },
+  { value: 'Medicare + Medigap Supplement',         label: 'Medicare + Medigap Supplement — Original Medicare with gap coverage'  },
+  { value: 'Dual Eligible (Medicare + Medicaid)',   label: 'Dual Eligible — both Medicare and Medicaid cover you'                 },
+  { value: 'Medicare Part A Only',                  label: 'Part A Only — inpatient/hospital, no outpatient Part B'               },
+];
+
+// TRICARE sub-types — Prime uses MTF/PCM rates; For Life wraps Medicare; Select is PPO-like.
+const TRICARE_PLAN_TYPES = [
+  { value: 'TRICARE Prime',          label: 'TRICARE Prime — HMO-like, must use MTF or assigned PCM'    },
+  { value: 'TRICARE Select',         label: 'TRICARE Select — PPO-like, direct access to providers'     },
+  { value: 'TRICARE For Life',       label: 'TRICARE For Life — Medicare supplement for retired military' },
+  { value: 'TRICARE Reserve Select', label: 'TRICARE Reserve Select — Guard and Reserve members'        },
+  { value: 'TRICARE Overseas (TOP)', label: 'TRICARE Overseas Program'                                   },
+  { value: 'CHAMPVA',                label: 'CHAMPVA — VA coverage for veterans\' family members'        },
 ];
 
 interface InsurancePlan {
@@ -86,6 +154,10 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   const [newPlanType, setNewPlanType] = useState('commercial');
   const [newMemberId, setNewMemberId] = useState('');
   const [newMedicaidType, setNewMedicaidType] = useState('');
+  const [newMedicaidMCO, setNewMedicaidMCO]   = useState('');
+  const [newMedicareType, setNewMedicareType] = useState('');
+  const [newMedicareMAName, setNewMedicareMAName] = useState('');
+  const [newTricareType, setNewTricareType]   = useState('');
   const [newIsPrimary, setNewIsPrimary] = useState(false);
   const [addingPlan, setAddingPlan]   = useState(false);
 
@@ -185,16 +257,38 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
       return;
     }
     setAddingPlan(true); setFormError(null);
-    // For Medicaid, the plan name comes from the sub-type dropdown if the user didn't type one
-    const resolvedPlanName = newPlanType === 'medicaid' && !newPlan.trim()
-      ? newMedicaidType || null
-      : newPlan || null;
+
+    // Derive the most specific payer_name and plan_name from the sub-type selections.
+    // The backend fills defaults for anything left null, but these give better analysis context.
+    let resolvedPayerName = newPayer.trim() || null;
+    let resolvedPlanName  = newPlan.trim()  || null;
+
+    if (newPlanType === 'medicaid') {
+      const brand = getMedicaidBrandName(selectedMember?.state);
+      if (newMedicaidType === 'Medicaid Managed Care' && newMedicaidMCO.trim()) {
+        resolvedPayerName ??= newMedicaidMCO.trim();
+        resolvedPlanName  ??= newMedicaidType;
+      } else {
+        resolvedPayerName ??= brand;
+        resolvedPlanName  ??= newMedicaidType || null;
+      }
+    } else if (newPlanType === 'medicare') {
+      if (newMedicareType === 'Medicare Advantage (Part C)') {
+        resolvedPayerName ??= newMedicareMAName.trim() || 'Medicare Advantage';
+      } else {
+        resolvedPayerName ??= 'Medicare';
+      }
+      resolvedPlanName ??= newMedicareType || null;
+    } else if (newPlanType === 'tricare') {
+      resolvedPayerName ??= 'TRICARE';
+      resolvedPlanName  ??= newTricareType || null;
+    }
 
     const res = await fetch(`/api/profile/members/${selectedMemberId}/plans`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        payerName: newPayer || null,
+        payerName: resolvedPayerName,
         planName: resolvedPlanName,
         planType: newPlanType,
         memberId: newMemberId || null,
@@ -204,7 +298,10 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
     setAddingPlan(false);
     if (!res.ok) { setFormError('Could not save plan. Try again.'); return; }
     const { plan } = await res.json() as { plan: { id: string } };
-    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId(''); setNewMedicaidType(''); setNewIsPrimary(false);
+    setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId('');
+    setNewMedicaidType(''); setNewMedicaidMCO('');
+    setNewMedicareType(''); setNewMedicareMAName('');
+    setNewTricareType(''); setNewIsPrimary(false);
     setShowAddPlan(false);
     resetScan();
     await loadMembers();
@@ -507,26 +604,81 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                           <p className={s.scanNote}>{scanState.result.note}</p>
                         )}
 
-                        {/* Plan type — shown first because it affects which fields are required */}
+                        {/* Plan type — label shows state Medicaid brand name when known */}
                         <div className={s.formRow}>
                           <div className={s.formField}>
                             <label className={s.formLabel}>Plan type</label>
                             <select
                               className={s.formSelect}
                               value={newPlanType}
-                              onChange={(e) => { setNewPlanType(e.target.value); setNewMedicaidType(''); }}
+                              onChange={(e) => {
+                                setNewPlanType(e.target.value);
+                                setNewMedicaidType(''); setNewMedicaidMCO('');
+                                setNewMedicareType(''); setNewMedicareMAName('');
+                                setNewTricareType('');
+                              }}
                             >
-                              {PLAN_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                              <option value="commercial">Commercial Insurance</option>
+                              <option value="medicare">Medicare</option>
+                              <option value="medicaid">{getMedicaidBrandName(selectedMember?.state)} (Medicaid)</option>
+                              <option value="tricare">TRICARE / Military</option>
+                              <option value="self_pay">Self-Pay / Uninsured</option>
                             </select>
                           </div>
-                          {/* Medicaid sub-type — shown only for Medicaid */}
-                          {newPlanType === 'medicaid' && (
+                        </div>
+
+                        {/* Medicare sub-types — determines which rate schedule applies */}
+                        {newPlanType === 'medicare' && (
+                          <div className={s.formRow}>
                             <div className={s.formField}>
-                              <label className={s.formLabel}>Medicaid program <span className={s.optionalTag}>(optional)</span></label>
+                              <label className={s.formLabel}>Medicare type <span className={s.optionalTag}>(helps with analysis)</span></label>
+                              <select
+                                className={s.formSelect}
+                                value={newMedicareType}
+                                onChange={(e) => { setNewMedicareType(e.target.value); setNewMedicareMAName(''); }}
+                              >
+                                <option value="">Select type…</option>
+                                {MEDICARE_PLAN_TYPES.map(({ value, label }) => (
+                                  <option key={value} value={value}>{label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Medicare Advantage: need insurer name + specific plan for rate lookup */}
+                        {newPlanType === 'medicare' && newMedicareType === 'Medicare Advantage (Part C)' && (
+                          <div className={s.formRow}>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>MA insurer *</label>
+                              <input
+                                className={s.formInput}
+                                placeholder="e.g. Humana, Aetna, UnitedHealthcare, BCBS"
+                                value={newMedicareMAName}
+                                onChange={(e) => setNewMedicareMAName(e.target.value)}
+                              />
+                            </div>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>Plan name <span className={s.optionalTag}>(optional)</span></label>
+                              <input
+                                className={s.formInput}
+                                placeholder="e.g. HumanaChoice PPO, Aetna Gold"
+                                value={newPlan}
+                                onChange={(e) => setNewPlan(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Medicaid program sub-type */}
+                        {newPlanType === 'medicaid' && (
+                          <div className={s.formRow}>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>Program type <span className={s.optionalTag}>(helps with analysis)</span></label>
                               <select
                                 className={s.formSelect}
                                 value={newMedicaidType}
-                                onChange={(e) => setNewMedicaidType(e.target.value)}
+                                onChange={(e) => { setNewMedicaidType(e.target.value); setNewMedicaidMCO(''); }}
                               >
                                 <option value="">Select program…</option>
                                 {MEDICAID_PLAN_TYPES.map(({ value, label }) => (
@@ -534,49 +686,75 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                                 ))}
                               </select>
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
-                        {/* Payer name + plan name — optional for government programs */}
-                        <div className={s.formRow}>
-                          <div className={s.formField}>
-                            <label className={s.formLabel}>
-                              Insurance company
-                              {newPlanType === 'commercial' ? ' *' : <span className={s.optionalTag}> (optional)</span>}
-                            </label>
-                            <input
-                              className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.payerName ? s.formInputUncertain : ''}`}
-                              placeholder={
-                                newPlanType === 'medicare' ? 'Medicare (or leave blank)' :
-                                newPlanType === 'medicaid' ? 'Medicaid (or leave blank)' :
-                                newPlanType === 'tricare'  ? 'TRICARE (or leave blank)'  :
-                                newPlanType === 'self_pay' ? 'Self-Pay (or leave blank)' :
-                                'Blue Cross Blue Shield'
-                              }
-                              value={newPayer}
-                              onChange={(e) => setNewPayer(e.target.value)}
-                              autoFocus={newPlanType === 'commercial'}
-                            />
+                        {/* Managed Care: MCO name with state-specific autocomplete suggestions */}
+                        {newPlanType === 'medicaid' && newMedicaidType === 'Medicaid Managed Care' && (
+                          <div className={s.formRow}>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>Health plan / MCO <span className={s.optionalTag}>(optional)</span></label>
+                              <input
+                                className={s.formInput}
+                                list="mco-suggestions"
+                                placeholder={selectedMember?.state
+                                  ? `Plans in ${selectedMember.state} — start typing…`
+                                  : 'Start typing your plan name…'}
+                                value={newMedicaidMCO}
+                                onChange={(e) => setNewMedicaidMCO(e.target.value)}
+                              />
+                              <datalist id="mco-suggestions">
+                                {(MEDICAID_MCOS_BY_STATE[selectedMember?.state ?? ''] ?? MEDICAID_MCOS_NATIONAL).map((mco) => (
+                                  <option key={mco} value={mco} />
+                                ))}
+                              </datalist>
+                            </div>
                           </div>
-                          <div className={s.formField}>
-                            <label className={s.formLabel}>
-                              Plan name
-                              {newPlanType === 'commercial' ? ' *' : <span className={s.optionalTag}> (optional)</span>}
-                            </label>
-                            <input
-                              className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.planName ? s.formInputUncertain : ''}`}
-                              placeholder={
-                                newPlanType === 'medicare' ? 'e.g. Medicare Advantage' :
-                                newPlanType === 'medicaid' ? 'e.g. Managed Care'       :
-                                newPlanType === 'tricare'  ? 'e.g. TRICARE Select'     :
-                                newPlanType === 'self_pay' ? ''                         :
-                                'PPO Gold'
-                              }
-                              value={newPlan}
-                              onChange={(e) => setNewPlan(e.target.value)}
-                            />
+                        )}
+
+                        {/* TRICARE program sub-types */}
+                        {newPlanType === 'tricare' && (
+                          <div className={s.formRow}>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>TRICARE program <span className={s.optionalTag}>(optional)</span></label>
+                              <select
+                                className={s.formSelect}
+                                value={newTricareType}
+                                onChange={(e) => setNewTricareType(e.target.value)}
+                              >
+                                <option value="">Select program…</option>
+                                {TRICARE_PLAN_TYPES.map(({ value, label }) => (
+                                  <option key={value} value={value}>{label}</option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
-                        </div>
+                        )}
+
+                        {/* Commercial insurance: payer + plan name are required */}
+                        {newPlanType === 'commercial' && (
+                          <div className={s.formRow}>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>Insurance company *</label>
+                              <input
+                                className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.payerName ? s.formInputUncertain : ''}`}
+                                placeholder="Blue Cross Blue Shield"
+                                value={newPayer}
+                                onChange={(e) => setNewPayer(e.target.value)}
+                                autoFocus
+                              />
+                            </div>
+                            <div className={s.formField}>
+                              <label className={s.formLabel}>Plan name *</label>
+                              <input
+                                className={`${s.formInput} ${scanState.status === 'done' && !scanState.result.confident && scanState.result.planName ? s.formInputUncertain : ''}`}
+                                placeholder="PPO Gold"
+                                value={newPlan}
+                                onChange={(e) => setNewPlan(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Member ID + primary plan toggle */}
                         <div className={s.formRow}>
