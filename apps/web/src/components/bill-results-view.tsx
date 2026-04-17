@@ -165,7 +165,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
             <p className={s.paywallCtaSub}>
               Unlock all findings, a detailed PDF report, and a ready-to-send dispute letter.
             </p>
-            <p className={s.paywallCtaPrice}>$9.99</p>
+            <p className={s.paywallCtaPrice}>$19.99</p>
             {checkoutError && <p className={s.paywallError}>{checkoutError}</p>}
             <button
               onClick={handleGetFullReport}
