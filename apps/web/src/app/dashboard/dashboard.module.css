@@ -125,11 +125,11 @@
 .mobileNav {
   display: none;
 }
-@media (max-width: 639px) {
-  /* Hide desktop nav elements */
-  .navLinks   { display: none; }
+@media (max-width: 1023px) {
+  /* Hide desktop nav elements — phones and tablets use bottom tab bar */
+  .navLinks    { display: none; }
   .avatarEmail { display: none; }
-  .signOutBtn { display: none; }
+  .signOutBtn  { display: none; }
 
   /* Show bottom tab bar */
   .mobileNav {
