@@ -22,7 +22,14 @@
   border-bottom: 1px solid var(--border);
   justify-content: space-between;
 }
-.navLogo { text-decoration: none; }
+.navLogo {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  text-decoration: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .navCta {
   background: var(--sage);
   color: #fff;

@@ -20,7 +20,7 @@ export default function LegalLayout({
         background: 'rgba(244, 242, 236, .95)', backdropFilter: 'blur(14px)',
         borderBottom: '1px solid var(--border)',
       }}>
-        <Link href="/" style={{ textDecoration: 'none' }}>
+        <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '.55rem', textDecoration: 'none', flexShrink: 0, whiteSpace: 'nowrap' }}>
           <LogoWithMark size="sm" />
         </Link>
         <nav style={{ display: 'flex', gap: '1.5rem' }}>
