@@ -107,6 +107,16 @@ export function EyeOffIcon({ size = 16, className, 'aria-hidden': ariaHidden = t
   );
 }
 
+// ─── Person / profile ────────────────────────────────────────────────────────
+export function PersonIcon({ size = 16, className, 'aria-hidden': ariaHidden = true }: IconProps): JSX.Element {
+  return (
+    <svg {...base} width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden={ariaHidden}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+
 // ─── More / grid dots (mobile "More" tab) ────────────────────────────────────
 export function MoreIcon({ size = 20, className, 'aria-hidden': ariaHidden = true }: IconProps): JSX.Element {
   return (
