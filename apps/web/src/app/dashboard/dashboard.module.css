@@ -175,6 +175,95 @@
   .shell { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
 }
 
+/* ─── Bottom sheet drawer (More menu) ───────────────────────────────────── */
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 290;
+  background: rgba(26, 46, 24, .45);
+  backdrop-filter: blur(2px);
+  animation: drawerFadeIn .2s ease forwards;
+}
+.drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 291;
+  background: linear-gradient(160deg, #ffffff 0%, #F7F5EF 100%);
+  border-radius: 1.5rem 1.5rem 0 0;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 40px rgba(45, 74, 42, .14);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 1.5rem);
+  animation: drawerSlideUp .3s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+.drawerHandle {
+  width: 36px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 99px;
+  margin: .85rem auto .25rem;
+}
+.drawerLogoRow {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .75rem 1.5rem 1rem;
+}
+.drawerNav {
+  display: flex;
+  flex-direction: column;
+  padding: 0 .75rem;
+  gap: .25rem;
+}
+.drawerItem {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  padding: 1rem 1rem;
+  border-radius: var(--r-xl);
+  text-decoration: none;
+  color: var(--txt);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--fb);
+  font-size: .95rem;
+  font-weight: 500;
+  width: 100%;
+  text-align: left;
+  transition: background .15s;
+}
+.drawerItem:hover { background: var(--cream2, #ECEAE0); }
+.drawerItemIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sage);
+  flex-shrink: 0;
+}
+.drawerItemLabel { flex: 1; }
+.drawerChevron {
+  width: 16px;
+  height: 16px;
+  color: var(--txt3);
+  flex-shrink: 0;
+}
+
+@keyframes drawerSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes drawerFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ─── Page wrapper ───────────────────────────────────────────────────────── */
 .page {
   max-width: 760px;

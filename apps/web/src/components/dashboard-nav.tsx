@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogoWithMark } from '@/components/logo';
+import { BookOpenIcon, LogOutIcon, MoreIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
 interface DashboardNavProps {
@@ -56,8 +58,10 @@ const NAV_LINKS = [
 export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   async function handleSignOut(): Promise<void> {
+    setDrawerOpen(false);
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
     router.push('/');
@@ -132,17 +136,54 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
             </Link>
           );
         })}
+        {/* More button — opens bottom sheet with Resources + Sign out */}
         <button
-          onClick={handleSignOut}
-          className={`${s.mobileNavItem}`}
+          onClick={() => setDrawerOpen(true)}
+          className={`${s.mobileNavItem} ${drawerOpen ? s.mobileNavItemActive : ''}`}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--fb)' }}
+          aria-label="More options"
         >
-          <svg className={s.mobileNavIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
-          </svg>
-          Sign out
+          <MoreIcon size={22} aria-hidden />
+          More
         </button>
       </nav>
+
+      {/* Bottom sheet drawer — slides up over the tab bar */}
+      {drawerOpen && (
+        <>
+          <div
+            className={s.drawerBackdrop}
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <div className={s.drawer} role="dialog" aria-modal="true" aria-label="More options">
+            <div className={s.drawerHandle} />
+            <div className={s.drawerLogoRow}>
+              <LogoWithMark size="sm" />
+            </div>
+            <nav className={s.drawerNav}>
+              <a
+                href="/blog"
+                className={s.drawerItem}
+                onClick={() => setDrawerOpen(false)}
+              >
+                <span className={s.drawerItemIcon}><BookOpenIcon size={20} /></span>
+                <span className={s.drawerItemLabel}>Resources</span>
+                <svg className={s.drawerChevron} viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                  <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </a>
+              <button
+                className={s.drawerItem}
+                onClick={handleSignOut}
+              >
+                <span className={s.drawerItemIcon}><LogOutIcon size={20} /></span>
+                <span className={s.drawerItemLabel}>Sign out</span>
+              </button>
+            </nav>
+          </div>
+        </>
+      )}
     </>
   );
 }

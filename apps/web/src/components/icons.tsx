@@ -107,6 +107,38 @@ export function EyeOffIcon({ size = 16, className, 'aria-hidden': ariaHidden = t
   );
 }
 
+// ─── More / grid dots (mobile "More" tab) ────────────────────────────────────
+export function MoreIcon({ size = 20, className, 'aria-hidden': ariaHidden = true }: IconProps): JSX.Element {
+  return (
+    <svg {...base} width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden={ariaHidden}>
+      <circle cx="5"  cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// ─── Open book (Resources / blog) ────────────────────────────────────────────
+export function BookOpenIcon({ size = 20, className, 'aria-hidden': ariaHidden = true }: IconProps): JSX.Element {
+  return (
+    <svg {...base} width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden={ariaHidden}>
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  );
+}
+
+// ─── Log out (sign out) ───────────────────────────────────────────────────────
+export function LogOutIcon({ size = 20, className, 'aria-hidden': ariaHidden = true }: IconProps): JSX.Element {
+  return (
+    <svg {...base} width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden={ariaHidden}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 // ─── Camera (insurance card scan) ────────────────────────────────────────────
 export function CameraIcon({ size = 16, className, 'aria-hidden': ariaHidden = true }: IconProps): JSX.Element {
   return (
