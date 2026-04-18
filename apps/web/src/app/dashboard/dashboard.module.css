@@ -139,7 +139,8 @@
     left: 0;
     right: 0;
     z-index: 200;
-    height: 58px;
+    /* Height covers the tab items + iPhone home indicator safe area */
+    padding-bottom: env(safe-area-inset-bottom);
     background: rgba(244, 242, 236, .97);
     backdrop-filter: blur(14px);
     border-top: 1px solid var(--border);
@@ -159,7 +160,9 @@
     letter-spacing: .03em;
     text-transform: uppercase;
     transition: color .15s;
+    /* Fixed height for the visible tap area — safe area padding is on the container */
     padding: .5rem 0;
+    height: 58px;
   }
   .mobileNavItem:hover { color: var(--txt2); }
   .mobileNavItemActive { color: var(--sage); }
@@ -168,8 +171,8 @@
     height: 22px;
     stroke: currentColor;
   }
-  /* Push page content above the fixed tab bar */
-  .shell { padding-bottom: 58px; }
+  /* Push page content above tab bar + home indicator */
+  .shell { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
 }
 
 /* ─── Page wrapper ───────────────────────────────────────────────────────── */

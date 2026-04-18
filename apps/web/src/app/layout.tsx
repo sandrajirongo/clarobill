@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Fraunces, Syne } from 'next/font/google';
 import { Suspense } from 'react';
 import { PostHogProvider } from '@/components/posthog-provider';
@@ -19,10 +19,16 @@ const syne = Syne({
   display: 'swap',
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',       // lets content extend under iPhone home indicator
+  themeColor: '#2D4A2A',
+};
+
 export const metadata: Metadata = {
   title: 'ClaroBill — Find Errors in Your Medical Bill',
   description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
-  themeColor: '#2D4A2A',
   openGraph: {
     title: 'ClaroBill — Find Errors in Your Medical Bill',
     description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
