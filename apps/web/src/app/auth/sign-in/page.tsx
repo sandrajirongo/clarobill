@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { CheckIcon } from '@/components/icons';
+import { CheckIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
 import s from './sign-in.module.css';
 
 type Mode = 'magic-link' | 'password';
@@ -155,6 +155,8 @@ function PasswordForm(): JSX.Element {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<Msg | null>(null);
 
@@ -269,16 +271,26 @@ function PasswordForm(): JSX.Element {
         </div>
         <div>
           <label htmlFor="su-pw" className={s.label}>Password</label>
-          <input
-            id="su-pw"
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 8 characters"
-            className={s.input}
-          />
+          <div className={s.pwWrap}>
+            <input
+              id="su-pw"
+              type={showPassword ? 'text' : 'password'}
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              className={s.input}
+            />
+            <button
+              type="button"
+              className={s.eyeBtn}
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+            </button>
+          </div>
           {password.length > 0 && (() => {
             const st = getPasswordStrength(password);
             const color = STRENGTH_COLOR[st.level];
@@ -311,15 +323,25 @@ function PasswordForm(): JSX.Element {
         </div>
         <div>
           <label htmlFor="su-cpw" className={s.label}>Confirm password</label>
-          <input
-            id="su-cpw"
-            type="password"
-            required
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Re-enter password"
-            className={s.input}
-          />
+          <div className={s.pwWrap}>
+            <input
+              id="su-cpw"
+              type={showConfirm ? 'text' : 'password'}
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter password"
+              className={s.input}
+            />
+            <button
+              type="button"
+              className={s.eyeBtn}
+              onClick={() => setShowConfirm((v) => !v)}
+              aria-label={showConfirm ? 'Hide password' : 'Show password'}
+            >
+              {showConfirm ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+            </button>
+          </div>
         </div>
         {message && (
           <p role="alert" className={message.type === 'success' ? s.msgSuccess : s.msgError}>
@@ -356,15 +378,25 @@ function PasswordForm(): JSX.Element {
       </div>
       <div>
         <label htmlFor="si-pw" className={s.label}>Password</label>
-        <input
-          id="si-pw"
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Your password"
-          className={s.input}
-        />
+        <div className={s.pwWrap}>
+          <input
+            id="si-pw"
+            type={showPassword ? 'text' : 'password'}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Your password"
+            className={s.input}
+          />
+          <button
+            type="button"
+            className={s.eyeBtn}
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+          </button>
+        </div>
         <div className={s.forgotRow}>
           <button type="button" className={s.forgotLink} onClick={() => switchTo('forgot')}>
             Forgot password?
