@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Logo } from '@/components/logo';
+import { LogoWithMark } from '@/components/logo';
 
 export const metadata: Metadata = {
   robots: { index: true, follow: true },
@@ -21,7 +21,7 @@ export default function LegalLayout({
         borderBottom: '1px solid var(--border)',
       }}>
         <Link href="/" style={{ textDecoration: 'none' }}>
-          <Logo size="sm" />
+          <LogoWithMark size="sm" />
         </Link>
         <nav style={{ display: 'flex', gap: '1.5rem' }}>
           {(['terms', 'privacy', 'disclaimer'] as const).map((page) => (

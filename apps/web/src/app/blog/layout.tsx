@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Logo } from '@/components/logo';
+import { LogoWithMark } from '@/components/logo';
 import s from './blog.module.css';
 
 export default function BlogLayout({
@@ -11,7 +11,7 @@ export default function BlogLayout({
     <div className={s.shell}>
       <header className={s.nav}>
         <Link href="/" className={s.navLogo}>
-          <Logo size="sm" />
+          <LogoWithMark size="sm" />
         </Link>
         <Link href="/auth/sign-in" className={s.navCta}>
           Analyze my bill
