@@ -1146,6 +1146,28 @@
 }
 .scanBtn:hover:not(:disabled) { background: rgba(45, 74, 42, .12); }
 .scanBtn:disabled { opacity: .55; cursor: not-allowed; }
+.scanSuccess {
+  font-size: .75rem;
+  color: var(--sage);
+  font-weight: 500;
+}
+.scanWarn {
+  font-size: .75rem;
+  color: #92400E;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: var(--r-lg);
+  padding: .4rem .65rem;
+}
+.scanNote {
+  font-size: .72rem;
+  color: var(--txt3);
+  font-style: italic;
+}
+.scanError {
+  font-size: .75rem;
+  color: #DC2626;
+}
 .formRow {
   display: flex;
   gap: .75rem;

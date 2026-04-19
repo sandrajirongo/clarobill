@@ -304,16 +304,15 @@ export function MembersPanel(): JSX.Element {
                         disabled={scanState.status === 'scanning'}
                       >
                         <CameraIcon size={13} />
-                        {scanState.status === 'scanning' ? 'Reading card…' : 'Scan card'}
+                        {scanState.status === 'scanning' ? 'Reading card\u2026' : 'Scan or upload card'}
                       </button>
                     </div>
 
-                    {/* Hidden file input */}
+                    {/* No capture attribute — lets user choose between camera and gallery */}
                     <input
                       ref={cardInputRef}
                       type="file"
-                      accept="image/*"
-                      capture="environment"
+                      accept="image/*,application/pdf"
                       style={{ display: 'none' }}
                       onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }}
                     />
@@ -322,8 +321,10 @@ export function MembersPanel(): JSX.Element {
                     {scanState.status === 'error' && (
                       <p className={s.scanError}>{scanState.message}</p>
                     )}
-                    {scanState.status === 'done' && !scanState.result.confident && (
-                      <p className={s.scanWarn}>Some fields may be uncertain — please review before saving.</p>
+                    {scanState.status === 'done' && (
+                      scanState.result.confident
+                        ? <p className={s.scanSuccess}>Card read — fields auto-filled. Review before saving.</p>
+                        : <p className={s.scanWarn}>Card read with low confidence — please review all fields carefully.</p>
                     )}
                     {scanState.status === 'done' && scanState.result.note && (
                       <p className={s.scanNote}>{scanState.result.note}</p>
