@@ -90,14 +90,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .3rem;
-  padding: .85rem .5rem;
+  gap: .25rem;
+  padding: .9rem .5rem;
   border-radius: var(--r-xl);
   border: 1.5px solid var(--border);
   background: var(--cream);
   cursor: pointer;
   font-family: var(--fb);
   transition: border-color .15s, background .15s, box-shadow .15s;
+  min-height: 56px;
 }
 
 .langBtn:hover {
@@ -111,13 +112,8 @@
   box-shadow: 0 0 0 3px rgba(45, 74, 42, .12);
 }
 
-.langFlag {
-  font-size: 1.6rem;
-  line-height: 1;
-}
-
 .langNative {
-  font-size: .88rem;
+  font-size: .9rem;
   font-weight: 700;
   color: var(--txt);
 }
@@ -154,7 +150,6 @@
 .formRow {
   display: flex;
   gap: .75rem;
-  flex-wrap: wrap;
 }
 
 .formField {
@@ -162,7 +157,13 @@
   flex-direction: column;
   gap: .3rem;
   flex: 1;
-  min-width: 140px;
+  min-width: 0;
+}
+
+/* Stack name + DOB vertically on small screens so the date input is full-width
+   and reliably tappable on iOS / Android. */
+@media (max-width: 480px) {
+  .formRow { flex-direction: column; }
 }
 
 .formLabel {
@@ -370,7 +371,12 @@
   font-weight: 500;
 }
 
-.navHintIcon { font-size: 1rem; line-height: 1; flex-shrink: 0; }
+.navHintIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  stroke: currentColor;
+}
 
 /* ─── Save error ─────────────────────────────────────────────────────────────── */
 .saveError {

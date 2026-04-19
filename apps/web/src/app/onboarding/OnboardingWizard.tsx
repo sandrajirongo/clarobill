@@ -173,12 +173,12 @@ const T: Record<Locale, Messages> = {
 };
 
 // Language options shown on the first step
-const LANGUAGE_OPTIONS: { locale: Locale; flag: string; native: string; english: string }[] = [
-  { locale: 'en', flag: '🇺🇸', native: 'English', english: 'English' },
-  { locale: 'es', flag: '🇪🇸', native: 'Español', english: 'Spanish' },
-  { locale: 'zh', flag: '🇨🇳', native: '中文', english: 'Chinese' },
-  { locale: 'tl', flag: '🇵🇭', native: 'Filipino', english: 'Tagalog' },
-  { locale: 'vi', flag: '🇻🇳', native: 'Tiếng Việt', english: 'Vietnamese' },
+const LANGUAGE_OPTIONS: { locale: Locale; native: string; english: string }[] = [
+  { locale: 'en', native: 'English',     english: 'English'    },
+  { locale: 'es', native: 'Español',     english: 'Spanish'    },
+  { locale: 'zh', native: '中文',         english: 'Chinese'    },
+  { locale: 'tl', native: 'Filipino',    english: 'Tagalog'    },
+  { locale: 'vi', native: 'Tiếng Việt',  english: 'Vietnamese' },
 ];
 
 const INSURANCE_OPTIONS: {
@@ -282,7 +282,6 @@ export function OnboardingWizard(): JSX.Element {
                 onClick={() => setLocale(opt.locale)}
                 type="button"
               >
-                <span className={s.langFlag}>{opt.flag}</span>
                 <span className={s.langNative}>{opt.native}</span>
                 <span className={s.langEnglish}>{opt.english}</span>
               </button>
@@ -442,14 +441,20 @@ export function OnboardingWizard(): JSX.Element {
           ))}
         </div>
 
-        {/* Nav pointers */}
+        {/* Nav pointers — icons match the dashboard bottom tab bar */}
         <div className={s.navHints}>
           <div className={s.navHint}>
-            <span className={s.navHintIcon}>📋</span>
+            <svg className={s.navHintIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M9 21V9"/>
+            </svg>
             <span>{t.primer.nav.reports}</span>
           </div>
           <div className={s.navHint}>
-            <span className={s.navHintIcon}>💳</span>
+            <svg className={s.navHintIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="5" width="20" height="14" rx="2"/>
+              <path d="M2 10h20"/>
+            </svg>
             <span>{t.primer.nav.billing}</span>
           </div>
         </div>
