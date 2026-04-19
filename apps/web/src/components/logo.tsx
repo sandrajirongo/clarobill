@@ -54,7 +54,7 @@ export function LogoWithMark({ size = 'md', variant = 'light' }: LogoProps): JSX
   const fs = wordmarkFontSizes[size ?? 'md'];
 
   return (
-    <>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem' }}>
       <LogoMark size={size} />
       <span
         style={{
@@ -67,7 +67,7 @@ export function LogoWithMark({ size = 'md', variant = 'light' }: LogoProps): JSX
       >
         Claro<em style={{ fontStyle: 'italic', fontWeight: 700 }}>Bill</em>
       </span>
-    </>
+    </span>
   );
 }
 

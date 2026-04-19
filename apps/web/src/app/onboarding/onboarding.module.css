@@ -1,6 +1,6 @@
 /* ─── Layout ─────────────────────────────────────────────────────────────────── */
 .page {
-  min-height: 100vh;
+  min-height: 100svh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -19,12 +19,12 @@
   padding: 2.25rem 2rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 @media (max-width: 560px) {
   .card {
-    padding: 1.75rem 1.25rem;
+    padding: 1.5rem 1.25rem;
     border-radius: 1.25rem;
   }
 }
@@ -33,6 +33,7 @@
 .logoRow {
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 /* ─── Step dots ──────────────────────────────────────────────────────────────── */
@@ -55,22 +56,29 @@
   transform: scale(1.3);
 }
 
+/* ─── Shared step headings ───────────────────────────────────────────────────── */
+.stepTitle {
+  font-family: var(--fd);
+  font-size: clamp(1.3rem, 4vw, 1.6rem);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--txt);
+  margin-bottom: .3rem;
+}
+
+.stepSubtitle {
+  font-size: .875rem;
+  color: var(--txt2);
+  line-height: 1.6;
+}
+
 /* ─── Language step ──────────────────────────────────────────────────────────── */
-.langTitle {
-  font-family: var(--fb);
-  font-size: .78rem;
+.langPolyglot {
+  font-size: .75rem;
   font-weight: 600;
   letter-spacing: .04em;
   color: var(--txt3);
-  text-align: center;
-  line-height: 1.8;
-}
-
-.langSubtitle {
-  font-size: .82rem;
-  color: var(--txt3);
-  text-align: center;
-  margin-top: -.75rem;
+  margin-bottom: .25rem;
 }
 
 .langGrid {
@@ -79,26 +87,24 @@
   gap: .65rem;
 }
 
-@media (min-width: 420px) {
+@media (min-width: 400px) {
   .langGrid { grid-template-columns: repeat(3, 1fr); }
-  /* Last row: 2 items centred — use a trick with an empty pseudo element */
-  .langGrid > :nth-child(4) { grid-column: 1; }
-  .langGrid > :nth-child(5) { grid-column: 2; }
 }
 
 .langBtn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .25rem;
-  padding: .9rem .5rem;
+  justify-content: center;
+  gap: .2rem;
+  padding: .85rem .5rem;
+  min-height: 60px;
   border-radius: var(--r-xl);
   border: 1.5px solid var(--border);
   background: var(--cream);
   cursor: pointer;
   font-family: var(--fb);
   transition: border-color .15s, background .15s, box-shadow .15s;
-  min-height: 56px;
 }
 
 .langBtn:hover {
@@ -124,32 +130,18 @@
   letter-spacing: .02em;
 }
 
-/* ─── Profile + primer shared ────────────────────────────────────────────────── */
-.stepTitle {
-  font-family: var(--fd);
-  font-size: clamp(1.35rem, 4vw, 1.65rem);
-  font-weight: 700;
-  letter-spacing: -.02em;
-  color: var(--txt);
-}
-
-.stepSubtitle {
-  font-size: .875rem;
-  color: var(--txt2);
-  margin-top: -.75rem;
-  line-height: 1.6;
-}
-
 /* ─── Profile form ───────────────────────────────────────────────────────────── */
 .formSection {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .9rem;
 }
 
+/* State + ZIP sit side-by-side; wraps only on very narrow screens */
 .formRow {
   display: flex;
   gap: .75rem;
+  flex-wrap: wrap;
 }
 
 .formField {
@@ -158,12 +150,6 @@
   gap: .3rem;
   flex: 1;
   min-width: 0;
-}
-
-/* Stack name + DOB vertically on small screens so the date input is full-width
-   and reliably tappable on iOS / Android. */
-@media (max-width: 480px) {
-  .formRow { flex-direction: column; }
 }
 
 .formLabel {
@@ -181,17 +167,28 @@
   background: var(--cream);
   border: 1.5px solid var(--border);
   border-radius: var(--r-lg);
-  padding: .6rem .75rem;
+  padding: .65rem .75rem;
   outline: none;
   transition: border-color .15s, box-shadow .15s;
   width: 100%;
   box-sizing: border-box;
+  /* Prevent iOS from adding extra chrome that can overflow the container */
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .formInput:focus,
 .formSelect:focus {
   border-color: var(--sage);
   box-shadow: 0 0 0 3px rgba(45, 74, 42, .1);
+}
+
+/* Restore the select arrow that -webkit-appearance: none removes */
+.formSelect {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .75rem center;
+  padding-right: 2rem;
 }
 
 .formInputError { border-color: #DC2626 !important; }
@@ -209,10 +206,88 @@
   gap: .6rem;
 }
 
+.insuranceHeader {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
 .insuranceLabel {
   font-size: .8rem;
   font-weight: 600;
   color: var(--txt2);
+}
+
+.optionalBadge {
+  font-size: .65rem;
+  font-weight: 600;
+  color: var(--txt3);
+  background: var(--cream2, #eee);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: .1rem .45rem;
+  letter-spacing: .02em;
+}
+
+/* ─── Scan card button ───────────────────────────────────────────────────────── */
+.scanBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  width: 100%;
+  padding: .6rem 1rem;
+  border-radius: var(--r-lg);
+  border: 1.5px dashed var(--border);
+  background: transparent;
+  color: var(--txt2);
+  font-family: var(--fb);
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+
+.scanBtn:hover:not(:disabled) {
+  border-color: var(--sage);
+  color: var(--sage);
+  background: rgba(45, 74, 42, .04);
+}
+
+.scanBtn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.scanBtn svg { stroke: currentColor; flex-shrink: 0; }
+
+.hiddenInput { display: none; }
+
+.scanError {
+  font-size: .78rem;
+  color: #DC2626;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+
+.scanRetry {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #DC2626;
+  font-size: .78rem;
+  font-family: var(--fb);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.scanSuccess {
+  font-size: .78rem;
+  color: var(--sage);
+  font-weight: 500;
 }
 
 .insuranceGrid {
@@ -223,9 +298,6 @@
 
 @media (min-width: 480px) {
   .insuranceGrid { grid-template-columns: repeat(3, 1fr); }
-  /* 5 items: last two are centred in a 3-col grid */
-  .insuranceGrid > :nth-child(4) { grid-column: 1; }
-  .insuranceGrid > :nth-child(5) { grid-column: 2; }
 }
 
 .insuranceBtn {
@@ -233,7 +305,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: .2rem;
-  padding: .75rem .85rem;
+  padding: .7rem .8rem;
   border-radius: var(--r-xl);
   border: 1.5px solid var(--border);
   background: var(--cream);
@@ -255,15 +327,34 @@
 }
 
 .insuranceName {
-  font-size: .84rem;
+  font-size: .83rem;
   font-weight: 700;
   color: var(--txt);
 }
 
 .insuranceSub {
-  font-size: .68rem;
+  font-size: .67rem;
   color: var(--txt3);
   line-height: 1.3;
+}
+
+.insuranceSkip {
+  font-size: .78rem;
+  color: var(--txt3);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.skipLink {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--sage);
+  font-family: var(--fb);
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 /* ─── Form actions ───────────────────────────────────────────────────────────── */
@@ -272,7 +363,7 @@
   justify-content: space-between;
   align-items: center;
   gap: .75rem;
-  padding-top: .25rem;
+  padding-top: .1rem;
 }
 
 .primaryBtn {
@@ -313,13 +404,13 @@
 .primerSteps {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .9rem;
 }
 
 .primerStep {
   display: flex;
   align-items: flex-start;
-  gap: .9rem;
+  gap: .85rem;
 }
 
 .primerNum {
@@ -359,7 +450,7 @@
   background: rgba(200, 240, 96, .1);
   border: 1px solid rgba(200, 240, 96, .35);
   border-radius: var(--r-xl);
-  padding: .9rem 1rem;
+  padding: .85rem 1rem;
 }
 
 .navHint {
@@ -367,7 +458,7 @@
   align-items: center;
   gap: .6rem;
   font-size: .82rem;
-  color: var(--sage-dark);
+  color: var(--sage-dark, var(--sage));
   font-weight: 500;
 }
 

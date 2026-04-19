@@ -9,7 +9,7 @@ export type OnboardingData = {
   dateOfBirth: string;
   state: string;
   zipCode: string;
-  insuranceType: string;
+  insuranceType: string; // empty string means the user skipped insurance setup
   locale: string;
 };
 

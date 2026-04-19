@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogoWithMark } from '@/components/logo';
 import { US_STATES } from '@/lib/utils/county-data';
 import { saveOnboarding } from '@/lib/i18n/actions';
+import { useCardScan } from '@/lib/hooks/use-card-scan';
 import s from './onboarding.module.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -13,12 +14,14 @@ type Locale = 'en' | 'es' | 'zh' | 'tl' | 'vi';
 type Step = 'language' | 'profile' | 'primer';
 type InsuranceType = 'commercial' | 'medicare' | 'medicaid' | 'tricare' | 'self_pay';
 
+const VALID_INSURANCE_TYPES: InsuranceType[] = ['commercial', 'medicare', 'medicaid', 'tricare', 'self_pay'];
+
 interface InsuranceMessages {
   commercial: string; commercialSub: string;
-  medicare: string; medicareSub: string;
-  medicaid: string; medicaidSub: string;
-  tricare: string; tricareSub: string;
-  selfPay: string; selfPaySub: string;
+  medicare: string;   medicareSub: string;
+  medicaid: string;   medicaidSub: string;
+  tricare: string;    tricareSub: string;
+  selfPay: string;    selfPaySub: string;
 }
 
 interface ProfileErrors {
@@ -76,7 +79,7 @@ const T: Record<Locale, Messages> = {
       nav: { reports: 'Your reports live in Reports', billing: 'Payment receipts are in Billing' },
       cta: 'Upload my first bill', back: 'Back',
     },
-    saving: 'Setting up your account…', error: 'Something went wrong. Please try again.',
+    saving: 'Setting up your account\u2026', error: 'Something went wrong. Please try again.',
   },
   es: {
     language: { title: 'Elige tu idioma', subtitle: 'Puedes cambiarlo en cualquier momento en tu perfil', continue: 'Continuar' },
@@ -99,7 +102,7 @@ const T: Record<Locale, Messages> = {
       nav: { reports: 'Tus informes están en Informes', billing: 'Los recibos de pago están en Facturación' },
       cta: 'Subir mi primera factura', back: 'Atrás',
     },
-    saving: 'Configurando tu cuenta…', error: 'Algo salió mal. Por favor intenta de nuevo.',
+    saving: 'Configurando tu cuenta\u2026', error: 'Algo salió mal. Por favor intenta de nuevo.',
   },
   zh: {
     language: { title: '选择语言', subtitle: '您可以随时在个人资料中更改', continue: '继续' },
@@ -119,10 +122,10 @@ const T: Record<Locale, Messages> = {
       step1: { title: '上传您的账单', body: '上传医疗账单、EOB或superbill的PDF或照片' },
       step2: { title: '我们找出错误', body: '每项费用都与Medicare标准进行比对，并检查重复收费和编码错误' },
       step3: { title: '获取您的报告', body: '下载完整分析报告和可直接发送的争议信函' },
-      nav: { reports: '您的报告在\u201c报告\u201d中', billing: '付款收据在\u201c账单\u201d中' },
+      nav: { reports: '您的报告在「报告」中', billing: '付款收据在「账单」中' },
       cta: '上传我的第一张账单', back: '返回',
     },
-    saving: '正在设置您的账户…', error: '出现错误，请重试。',
+    saving: '正在设置您的账户\u2026', error: '出现错误，请重试。',
   },
   tl: {
     language: { title: 'Piliin ang iyong wika', subtitle: 'Maaari mo itong baguhin anumang oras sa iyong profile', continue: 'Magpatuloy' },
@@ -145,7 +148,7 @@ const T: Record<Locale, Messages> = {
       nav: { reports: 'Ang iyong mga ulat ay nasa Reports', billing: 'Ang mga resibo ng bayad ay nasa Billing' },
       cta: 'I-upload ang aking unang bill', back: 'Bumalik',
     },
-    saving: 'Ino-set up ang iyong account…', error: 'May nangyaring mali. Pakisubukan ulit.',
+    saving: 'Ino-set up ang iyong account\u2026', error: 'May nangyaring mali. Pakisubukan ulit.',
   },
   vi: {
     language: { title: 'Chọn ngôn ngữ của bạn', subtitle: 'Bạn có thể thay đổi điều này bất cứ lúc nào trong hồ sơ của bạn', continue: 'Tiếp tục' },
@@ -168,17 +171,17 @@ const T: Record<Locale, Messages> = {
       nav: { reports: 'Báo cáo của bạn nằm trong Reports', billing: 'Biên lai thanh toán nằm trong Billing' },
       cta: 'Tải lên hóa đơn đầu tiên của tôi', back: 'Quay lại',
     },
-    saving: 'Đang thiết lập tài khoản của bạn…', error: 'Đã xảy ra lỗi. Vui lòng thử lại.',
+    saving: 'Đang thiết lập tài khoản của bạn\u2026', error: 'Đã xảy ra lỗi. Vui lòng thử lại.',
   },
 };
 
 // Language options shown on the first step
 const LANGUAGE_OPTIONS: { locale: Locale; native: string; english: string }[] = [
-  { locale: 'en', native: 'English',     english: 'English'    },
-  { locale: 'es', native: 'Español',     english: 'Spanish'    },
-  { locale: 'zh', native: '中文',         english: 'Chinese'    },
-  { locale: 'tl', native: 'Filipino',    english: 'Tagalog'    },
-  { locale: 'vi', native: 'Tiếng Việt',  english: 'Vietnamese' },
+  { locale: 'en', native: 'English',    english: 'English'    },
+  { locale: 'es', native: 'Español',    english: 'Spanish'    },
+  { locale: 'zh', native: '中文',        english: 'Chinese'    },
+  { locale: 'tl', native: 'Filipino',   english: 'Tagalog'    },
+  { locale: 'vi', native: 'Tiếng Việt', english: 'Vietnamese' },
 ];
 
 const INSURANCE_OPTIONS: {
@@ -198,36 +201,45 @@ const INSURANCE_OPTIONS: {
 export function OnboardingWizard(): JSX.Element {
   const router = useRouter();
 
-  const [step, setStep] = useState<Step>('language');
+  const [step, setStep]     = useState<Step>('language');
   const [locale, setLocale] = useState<Locale>('en');
 
   // Profile form state
-  const [fullName, setFullName]         = useState('');
-  const [dateOfBirth, setDateOfBirth]   = useState('');
-  const [state, setState]               = useState('');
-  const [zipCode, setZipCode]           = useState('');
-  const [insurance, setInsurance]       = useState<InsuranceType | ''>('');
-  const [fieldErrors, setFieldErrors]   = useState<Record<string, string>>({});
+  const [fullName, setFullName]       = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [state, setState]             = useState('');
+  const [zipCode, setZipCode]         = useState('');
+  const [insurance, setInsurance]     = useState<InsuranceType | ''>('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [saving, setSaving]   = useState(false);
+  const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState('');
+
+  // Insurance card scan
+  const { scanState, inputRef, openFilePicker, handleFile, reset: resetScan } = useCardScan();
+
+  // Auto-select insurance type when scan returns a recognised plan type
+  useEffect(() => {
+    if (scanState.status === 'done') {
+      const scanned = scanState.result.planType;
+      if (scanned && (VALID_INSURANCE_TYPES as string[]).includes(scanned)) {
+        setInsurance(scanned as InsuranceType);
+      }
+    }
+  }, [scanState]);
 
   const t = T[locale];
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  function handleLanguageContinue() {
-    setStep('profile');
-  }
-
   function validateProfile(): boolean {
     const errors: Record<string, string> = {};
-    if (!fullName.trim())            errors.fullName     = t.profile.errors.nameRequired;
-    if (!dateOfBirth)                errors.dateOfBirth  = t.profile.errors.dobRequired;
-    if (!state)                      errors.state        = t.profile.errors.stateRequired;
-    if (!zipCode.trim())             errors.zipCode      = t.profile.errors.zipRequired;
+    if (!fullName.trim())   errors.fullName    = t.profile.errors.nameRequired;
+    if (!dateOfBirth)       errors.dateOfBirth = t.profile.errors.dobRequired;
+    if (!state)             errors.state       = t.profile.errors.stateRequired;
+    if (!zipCode.trim())    errors.zipCode     = t.profile.errors.zipRequired;
     else if (!/^\d{5}$/.test(zipCode.trim())) errors.zipCode = t.profile.errors.zipInvalid;
-    if (!insurance)                  errors.insurance    = t.profile.errors.insuranceRequired;
+    // Insurance is optional — user can add it later in profile
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   }
@@ -236,16 +248,29 @@ export function OnboardingWizard(): JSX.Element {
     if (validateProfile()) setStep('primer');
   }
 
+  function handleSkipInsurance() {
+    setInsurance('');
+    // Validate everything except insurance before proceeding
+    const errors: Record<string, string> = {};
+    if (!fullName.trim())   errors.fullName    = t.profile.errors.nameRequired;
+    if (!dateOfBirth)       errors.dateOfBirth = t.profile.errors.dobRequired;
+    if (!state)             errors.state       = t.profile.errors.stateRequired;
+    if (!zipCode.trim())    errors.zipCode     = t.profile.errors.zipRequired;
+    else if (!/^\d{5}$/.test(zipCode.trim())) errors.zipCode = t.profile.errors.zipInvalid;
+    setFieldErrors(errors);
+    if (Object.keys(errors).length === 0) setStep('primer');
+  }
+
   async function handleFinish() {
     setSaving(true);
     setSaveError('');
 
     const result = await saveOnboarding({
-      fullName: fullName.trim(),
+      fullName:      fullName.trim(),
       dateOfBirth,
       state,
-      zipCode: zipCode.trim(),
-      insuranceType: insurance as InsuranceType,
+      zipCode:       zipCode.trim(),
+      insuranceType: insurance,
       locale,
     });
 
@@ -258,7 +283,7 @@ export function OnboardingWizard(): JSX.Element {
     router.push('/dashboard');
   }
 
-  // ── Steps ───────────────────────────────────────────────────────────────────
+  // ── Language step ────────────────────────────────────────────────────────────
 
   if (step === 'language') {
     return (
@@ -268,11 +293,11 @@ export function OnboardingWizard(): JSX.Element {
             <LogoWithMark />
           </div>
 
-          <h1 className={s.langTitle}>
-            {/* Show all 5 language names simultaneously so everyone can find theirs */}
-            English · Español · 中文 · Filipino · Tiếng Việt
-          </h1>
-          <p className={s.langSubtitle}>{t.language.subtitle}</p>
+          <div>
+            <h1 className={s.stepTitle}>{t.language.title}</h1>
+            <p className={s.langPolyglot}>English · Español · 中文 · Filipino · Tiếng Việt</p>
+            <p className={s.stepSubtitle}>{t.language.subtitle}</p>
+          </div>
 
           <div className={s.langGrid}>
             {LANGUAGE_OPTIONS.map((opt) => (
@@ -288,7 +313,7 @@ export function OnboardingWizard(): JSX.Element {
             ))}
           </div>
 
-          <button className={s.primaryBtn} onClick={handleLanguageContinue} type="button">
+          <button className={s.primaryBtn} onClick={() => setStep('profile')} type="button">
             {t.language.continue}
           </button>
         </div>
@@ -302,6 +327,8 @@ export function OnboardingWizard(): JSX.Element {
     );
   }
 
+  // ── Profile step ─────────────────────────────────────────────────────────────
+
   if (step === 'profile') {
     return (
       <div className={s.page}>
@@ -310,41 +337,42 @@ export function OnboardingWizard(): JSX.Element {
             <LogoWithMark />
           </div>
 
-          <h1 className={s.stepTitle}>{t.profile.title}</h1>
-          <p className={s.stepSubtitle}>{t.profile.subtitle}</p>
+          <div>
+            <h1 className={s.stepTitle}>{t.profile.title}</h1>
+            <p className={s.stepSubtitle}>{t.profile.subtitle}</p>
+          </div>
 
           <div className={s.formSection}>
-            {/* Name + DOB row */}
-            <div className={s.formRow}>
-              <div className={s.formField}>
-                <label className={s.formLabel} htmlFor="ob-name">{t.profile.nameLabel}</label>
-                <input
-                  id="ob-name"
-                  className={`${s.formInput} ${fieldErrors.fullName ? s.formInputError : ''}`}
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder={t.profile.namePlaceholder}
-                  autoComplete="name"
-                />
-                {fieldErrors.fullName && <span className={s.fieldError}>{fieldErrors.fullName}</span>}
-              </div>
-
-              <div className={s.formField}>
-                <label className={s.formLabel} htmlFor="ob-dob">{t.profile.dobLabel}</label>
-                <input
-                  id="ob-dob"
-                  className={`${s.formInput} ${fieldErrors.dateOfBirth ? s.formInputError : ''}`}
-                  type="date"
-                  value={dateOfBirth}
-                  onChange={(e) => setDateOfBirth(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                />
-                {fieldErrors.dateOfBirth && <span className={s.fieldError}>{fieldErrors.dateOfBirth}</span>}
-              </div>
+            {/* Full name — full width */}
+            <div className={s.formField}>
+              <label className={s.formLabel} htmlFor="ob-name">{t.profile.nameLabel}</label>
+              <input
+                id="ob-name"
+                className={`${s.formInput} ${fieldErrors.fullName ? s.formInputError : ''}`}
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder={t.profile.namePlaceholder}
+                autoComplete="name"
+              />
+              {fieldErrors.fullName && <span className={s.fieldError}>{fieldErrors.fullName}</span>}
             </div>
 
-            {/* State + ZIP row */}
+            {/* Date of birth — full width, own row so it's always a large tap target */}
+            <div className={s.formField}>
+              <label className={s.formLabel} htmlFor="ob-dob">{t.profile.dobLabel}</label>
+              <input
+                id="ob-dob"
+                className={`${s.formInput} ${fieldErrors.dateOfBirth ? s.formInputError : ''}`}
+                type="date"
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+              />
+              {fieldErrors.dateOfBirth && <span className={s.fieldError}>{fieldErrors.dateOfBirth}</span>}
+            </div>
+
+            {/* State + ZIP — side by side, wraps on very small screens */}
             <div className={s.formRow}>
               <div className={s.formField}>
                 <label className={s.formLabel} htmlFor="ob-state">{t.profile.stateLabel}</label>
@@ -362,7 +390,7 @@ export function OnboardingWizard(): JSX.Element {
                 {fieldErrors.state && <span className={s.fieldError}>{fieldErrors.state}</span>}
               </div>
 
-              <div className={s.formField}>
+              <div className={s.formField} style={{ maxWidth: '140px' }}>
                 <label className={s.formLabel} htmlFor="ob-zip">{t.profile.zipLabel}</label>
                 <input
                   id="ob-zip"
@@ -381,7 +409,48 @@ export function OnboardingWizard(): JSX.Element {
 
             {/* Insurance type */}
             <div className={s.insuranceSection}>
-              <p className={s.insuranceLabel}>{t.profile.insuranceLabel}</p>
+              <div className={s.insuranceHeader}>
+                <p className={s.insuranceLabel}>{t.profile.insuranceLabel}</p>
+                <span className={s.optionalBadge}>Optional</span>
+              </div>
+
+              {/* Scan card button */}
+              <button
+                type="button"
+                className={s.scanBtn}
+                onClick={openFilePicker}
+                disabled={scanState.status === 'scanning'}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+                {scanState.status === 'scanning' ? 'Reading card\u2026' : 'Scan insurance card'}
+              </button>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className={s.hiddenInput}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+              />
+
+              {scanState.status === 'error' && (
+                <p className={s.scanError}>
+                  {scanState.message}
+                  {' '}
+                  <button type="button" className={s.scanRetry} onClick={resetScan}>Try again</button>
+                </p>
+              )}
+              {scanState.status === 'done' && (
+                <p className={s.scanSuccess}>
+                  {scanState.result.confident && insurance
+                    ? 'Card read — plan type pre-selected below'
+                    : 'Card read — select your plan type below'}
+                </p>
+              )}
+
               <div className={s.insuranceGrid}>
                 {INSURANCE_OPTIONS.map((opt) => (
                   <button
@@ -395,7 +464,14 @@ export function OnboardingWizard(): JSX.Element {
                   </button>
                 ))}
               </div>
-              {fieldErrors.insurance && <span className={s.fieldError}>{fieldErrors.insurance}</span>}
+
+              <p className={s.insuranceSkip}>
+                No insurance info yet?{' '}
+                <button type="button" className={s.skipLink} onClick={handleSkipInsurance}>
+                  Skip for now
+                </button>
+                {' '}— add it in your profile later.
+              </p>
             </div>
           </div>
 
@@ -418,7 +494,8 @@ export function OnboardingWizard(): JSX.Element {
     );
   }
 
-  // Primer step
+  // ── Primer step ──────────────────────────────────────────────────────────────
+
   return (
     <div className={s.page}>
       <div className={s.card}>
@@ -426,8 +503,10 @@ export function OnboardingWizard(): JSX.Element {
           <LogoWithMark />
         </div>
 
-        <h1 className={s.stepTitle}>{t.primer.title}</h1>
-        <p className={s.stepSubtitle}>{t.primer.subtitle}</p>
+        <div>
+          <h1 className={s.stepTitle}>{t.primer.title}</h1>
+          <p className={s.stepSubtitle}>{t.primer.subtitle}</p>
+        </div>
 
         <div className={s.primerSteps}>
           {[t.primer.step1, t.primer.step2, t.primer.step3].map((primerStep, i) => (
@@ -462,20 +541,10 @@ export function OnboardingWizard(): JSX.Element {
         {saveError && <p className={s.saveError}>{saveError}</p>}
 
         <div className={s.formActions}>
-          <button
-            className={s.ghostBtn}
-            onClick={() => setStep('profile')}
-            type="button"
-            disabled={saving}
-          >
+          <button className={s.ghostBtn} onClick={() => setStep('profile')} type="button" disabled={saving}>
             {t.primer.back}
           </button>
-          <button
-            className={s.primaryBtn}
-            onClick={handleFinish}
-            type="button"
-            disabled={saving}
-          >
+          <button className={s.primaryBtn} onClick={handleFinish} type="button" disabled={saving}>
             {saving ? t.saving : t.primer.cta}
           </button>
         </div>
