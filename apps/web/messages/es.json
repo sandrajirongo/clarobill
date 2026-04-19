@@ -1,0 +1,67 @@
+{
+  "onboarding": {
+    "language": {
+      "title": "Elige tu idioma",
+      "subtitle": "Puedes cambiarlo en cualquier momento en tu perfil",
+      "continue": "Continuar"
+    },
+    "profile": {
+      "title": "Cuéntanos sobre ti",
+      "subtitle": "Esto nos ayuda a comparar tus cargos con precisión",
+      "nameLabel": "Nombre completo",
+      "namePlaceholder": "Jane Smith",
+      "dobLabel": "Fecha de nacimiento",
+      "stateLabel": "Estado",
+      "statePlaceholder": "Selecciona tu estado",
+      "zipLabel": "Código postal",
+      "zipPlaceholder": "ej. 90210",
+      "insuranceLabel": "¿Qué tipo de seguro tienes?",
+      "insurance": {
+        "commercial": "Comercial",
+        "commercialSub": "Plan del empleador o mercado",
+        "medicare": "Medicare",
+        "medicareSub": "Seguro federal de salud (65+)",
+        "medicaid": "Medicaid",
+        "medicaidSub": "Seguro estatal de salud",
+        "tricare": "TRICARE",
+        "tricareSub": "Cobertura militar y veteranos",
+        "selfPay": "Pago directo",
+        "selfPaySub": "Sin seguro"
+      },
+      "continue": "Continuar",
+      "back": "Atrás",
+      "errors": {
+        "nameRequired": "Por favor ingresa tu nombre completo",
+        "dobRequired": "Por favor ingresa tu fecha de nacimiento",
+        "stateRequired": "Por favor selecciona tu estado",
+        "zipRequired": "Por favor ingresa tu código postal",
+        "zipInvalid": "El código postal debe tener 5 dígitos",
+        "insuranceRequired": "Por favor selecciona tu tipo de seguro"
+      }
+    },
+    "primer": {
+      "title": "Todo listo",
+      "subtitle": "Así funciona ClaroBill",
+      "step1": {
+        "title": "Sube tu factura",
+        "body": "Carga un PDF o foto de tu factura médica, EOB o superbill"
+      },
+      "step2": {
+        "title": "Encontramos los errores",
+        "body": "Cada cargo se compara con las tarifas de Medicare y se revisa en busca de duplicados y errores de codificación"
+      },
+      "step3": {
+        "title": "Obtén tu informe",
+        "body": "Descarga un análisis completo y una carta de disputa lista para enviar"
+      },
+      "nav": {
+        "reports": "Tus informes están en Informes",
+        "billing": "Los recibos de pago están en Facturación"
+      },
+      "cta": "Subir mi primera factura",
+      "back": "Atrás"
+    },
+    "saving": "Configurando tu cuenta\u2026",
+    "error": "Algo salió mal. Por favor intenta de nuevo."
+  }
+}

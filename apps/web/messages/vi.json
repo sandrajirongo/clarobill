@@ -1,0 +1,67 @@
+{
+  "onboarding": {
+    "language": {
+      "title": "Chọn ngôn ngữ của bạn",
+      "subtitle": "Bạn có thể thay đổi điều này bất cứ lúc nào trong hồ sơ của bạn",
+      "continue": "Tiếp tục"
+    },
+    "profile": {
+      "title": "Cho chúng tôi biết về bạn",
+      "subtitle": "Điều này giúp chúng tôi so sánh chính xác các khoản phí của bạn",
+      "nameLabel": "Họ và tên",
+      "namePlaceholder": "Nguyễn Văn A",
+      "dobLabel": "Ngày sinh",
+      "stateLabel": "Tiểu bang",
+      "statePlaceholder": "Chọn tiểu bang của bạn",
+      "zipLabel": "Mã ZIP",
+      "zipPlaceholder": "vd. 90210",
+      "insuranceLabel": "Bạn có loại bảo hiểm nào?",
+      "insurance": {
+        "commercial": "Thương mại",
+        "commercialSub": "Gói của nhà tuyển dụng hoặc thị trường",
+        "medicare": "Medicare",
+        "medicareSub": "Bảo hiểm y tế liên bang (65+)",
+        "medicaid": "Medicaid",
+        "medicaidSub": "Bảo hiểm y tế tiểu bang",
+        "tricare": "TRICARE",
+        "tricareSub": "Bảo hiểm quân nhân và cựu chiến binh",
+        "selfPay": "Tự chi trả",
+        "selfPaySub": "Không có bảo hiểm"
+      },
+      "continue": "Tiếp tục",
+      "back": "Quay lại",
+      "errors": {
+        "nameRequired": "Vui lòng nhập họ và tên đầy đủ của bạn",
+        "dobRequired": "Vui lòng nhập ngày sinh của bạn",
+        "stateRequired": "Vui lòng chọn tiểu bang của bạn",
+        "zipRequired": "Vui lòng nhập mã ZIP của bạn",
+        "zipInvalid": "Mã ZIP phải gồm 5 chữ số",
+        "insuranceRequired": "Vui lòng chọn loại bảo hiểm của bạn"
+      }
+    },
+    "primer": {
+      "title": "Bạn đã sẵn sàng",
+      "subtitle": "Đây là cách ClaroBill hoạt động",
+      "step1": {
+        "title": "Tải lên hóa đơn của bạn",
+        "body": "Tải lên PDF hoặc ảnh chụp hóa đơn y tế, EOB hoặc superbill của bạn"
+      },
+      "step2": {
+        "title": "Chúng tôi tìm ra lỗi",
+        "body": "Mỗi khoản phí được so sánh với mức giá Medicare và kiểm tra các khoản trùng lặp và lỗi mã hóa"
+      },
+      "step3": {
+        "title": "Nhận báo cáo của bạn",
+        "body": "Tải xuống báo cáo phân tích đầy đủ và thư khiếu nại sẵn sàng gửi đi"
+      },
+      "nav": {
+        "reports": "Báo cáo của bạn nằm trong Reports",
+        "billing": "Biên lai thanh toán nằm trong Billing"
+      },
+      "cta": "Tải lên hóa đơn đầu tiên của tôi",
+      "back": "Quay lại"
+    },
+    "saving": "Đang thiết lập tài khoản của bạn\u2026",
+    "error": "Đã xảy ra lỗi. Vui lòng thử lại."
+  }
+}

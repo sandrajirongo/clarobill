@@ -1,0 +1,67 @@
+{
+  "onboarding": {
+    "language": {
+      "title": "Piliin ang iyong wika",
+      "subtitle": "Maaari mo itong baguhin anumang oras sa iyong profile",
+      "continue": "Magpatuloy"
+    },
+    "profile": {
+      "title": "Sabihin sa amin ang tungkol sa iyo",
+      "subtitle": "Tinutulungan kami nito na maihambing nang tumpak ang iyong mga singil",
+      "nameLabel": "Buong pangalan",
+      "namePlaceholder": "Juan dela Cruz",
+      "dobLabel": "Petsa ng kapanganakan",
+      "stateLabel": "Estado",
+      "statePlaceholder": "Piliin ang iyong estado",
+      "zipLabel": "ZIP code",
+      "zipPlaceholder": "hal. 90210",
+      "insuranceLabel": "Anong uri ng insurance ang mayroon ka?",
+      "insurance": {
+        "commercial": "Komersyal",
+        "commercialSub": "Plano ng employer o marketplace",
+        "medicare": "Medicare",
+        "medicareSub": "Federal na health insurance (65+)",
+        "medicaid": "Medicaid",
+        "medicaidSub": "Health insurance ng estado",
+        "tricare": "TRICARE",
+        "tricareSub": "Coverage para sa militar at beterano",
+        "selfPay": "Self-Pay",
+        "selfPaySub": "Walang insurance"
+      },
+      "continue": "Magpatuloy",
+      "back": "Bumalik",
+      "errors": {
+        "nameRequired": "Pakiusap ilagay ang iyong buong pangalan",
+        "dobRequired": "Pakiusap ilagay ang iyong petsa ng kapanganakan",
+        "stateRequired": "Pakiusap pumili ng estado",
+        "zipRequired": "Pakiusap ilagay ang iyong ZIP code",
+        "zipInvalid": "Ang ZIP code ay dapat na 5 digit",
+        "insuranceRequired": "Pakiusap pumili ng uri ng insurance"
+      }
+    },
+    "primer": {
+      "title": "Handa ka na",
+      "subtitle": "Narito kung paano gumagana ang ClaroBill",
+      "step1": {
+        "title": "I-upload ang iyong bill",
+        "body": "Mag-upload ng PDF o larawan ng iyong medical bill, EOB, o superbill"
+      },
+      "step2": {
+        "title": "Hinahanap namin ang mga error",
+        "body": "Ang bawat singil ay inihahambing sa mga rate ng Medicare at sinusuri para sa mga duplicate at coding error"
+      },
+      "step3": {
+        "title": "Kunin ang iyong ulat",
+        "body": "I-download ang kumpletong ulat ng pagsusuri at isang dispute letter na handang ipadala"
+      },
+      "nav": {
+        "reports": "Ang iyong mga ulat ay nasa Reports",
+        "billing": "Ang mga resibo ng bayad ay nasa Billing"
+      },
+      "cta": "I-upload ang aking unang bill",
+      "back": "Bumalik"
+    },
+    "saving": "Ino-set up ang iyong account\u2026",
+    "error": "May nangyaring mali. Pakisubukan ulit."
+  }
+}

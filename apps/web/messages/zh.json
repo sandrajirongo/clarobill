@@ -1,0 +1,67 @@
+{
+  "onboarding": {
+    "language": {
+      "title": "选择语言",
+      "subtitle": "您可以随时在个人资料中更改",
+      "continue": "继续"
+    },
+    "profile": {
+      "title": "告诉我们关于您的信息",
+      "subtitle": "这有助于我们准确比对您的费用",
+      "nameLabel": "全名",
+      "namePlaceholder": "张三",
+      "dobLabel": "出生日期",
+      "stateLabel": "州",
+      "statePlaceholder": "选择您的州",
+      "zipLabel": "邮政编码",
+      "zipPlaceholder": "如：90210",
+      "insuranceLabel": "您有哪种类型的保险？",
+      "insurance": {
+        "commercial": "商业保险",
+        "commercialSub": "雇主或市场计划",
+        "medicare": "Medicare",
+        "medicareSub": "联邦医疗保险（65岁以上）",
+        "medicaid": "Medicaid",
+        "medicaidSub": "州医疗救助",
+        "tricare": "TRICARE",
+        "tricareSub": "军人及退伍军人保障",
+        "selfPay": "自费",
+        "selfPaySub": "无保险"
+      },
+      "continue": "继续",
+      "back": "返回",
+      "errors": {
+        "nameRequired": "请输入您的全名",
+        "dobRequired": "请输入您的出生日期",
+        "stateRequired": "请选择您的州",
+        "zipRequired": "请输入您的邮政编码",
+        "zipInvalid": "邮政编码必须为5位数字",
+        "insuranceRequired": "请选择您的保险类型"
+      }
+    },
+    "primer": {
+      "title": "一切就绪",
+      "subtitle": "以下是ClaroBill的使用方式",
+      "step1": {
+        "title": "上传您的账单",
+        "body": "上传医疗账单、EOB或superbill的PDF或照片"
+      },
+      "step2": {
+        "title": "我们找出错误",
+        "body": "每项费用都与Medicare标准进行比对，并检查重复收费和编码错误"
+      },
+      "step3": {
+        "title": "获取您的报告",
+        "body": "下载完整分析报告和可直接发送的争议信函"
+      },
+      "nav": {
+        "reports": "您的报告在"报告"中",
+        "billing": "付款收据在"账单"中"
+      },
+      "cta": "上传我的第一张账单",
+      "back": "返回"
+    },
+    "saving": "正在设置您的账户\u2026",
+    "error": "出现错误，请重试。"
+  }
+}

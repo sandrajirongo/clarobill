@@ -8,6 +8,8 @@
 -- Postgres core (no extension required) and is equally cryptographically secure
 -- for generating referral codes.
 
+alter table public.referral_codes enable row level security;
+
 create or replace function public.create_user_referral_code()
 returns trigger language plpgsql security definer
 set search_path = public

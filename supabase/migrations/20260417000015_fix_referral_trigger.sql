@@ -10,6 +10,10 @@
 -- any unique_violation. Also extends the code from 8 to 10 hex chars (~1T
 -- possible values) to make collisions negligible at scale.
 
+-- Idempotent: referral_codes already has RLS from migration 000002.
+-- Restated here so the Supabase linter doesn't flag the INSERT in the function body.
+alter table public.referral_codes enable row level security;
+
 create or replace function public.create_user_referral_code()
 returns trigger language plpgsql security definer
 set search_path = public
@@ -41,3 +45,4 @@ begin
   end loop;
 end;
 $$;
+

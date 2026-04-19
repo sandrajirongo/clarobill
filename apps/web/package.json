@@ -20,6 +20,7 @@
     "@vercel/oidc": "^3.2.0",
     "google-auth-library": "^10.6.2",
     "next": "14.2.35",
+    "next-intl": "4.9.1",
     "posthog-js": "1.240.4",
     "react": "^18",
     "react-dom": "^18",

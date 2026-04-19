@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogoWithMark } from '@/components/logo';
@@ -65,11 +65,38 @@ const NAV_LINKS: Array<{
   },
 ];
 
+// Routes that get a first-visit dot until the user navigates there once.
+const FIRST_VISIT_HINTS: Record<string, { storageKey: string; tip: string }> = {
+  '/dashboard/reports': { storageKey: 'cb_seen_reports', tip: 'Your reports live here' },
+  '/dashboard/billing': { storageKey: 'cb_seen_billing', tip: 'Payment receipts are here' },
+};
+
 export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  // Track which first-visit hints are still unseen. Starts empty (SSR-safe),
+  // populated from localStorage on mount.
+  const [unseenHints, setUnseenHints] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const unseen = new Set(
+      Object.entries(FIRST_VISIT_HINTS)
+        .filter(([, { storageKey }]) => !localStorage.getItem(storageKey))
+        .map(([href]) => href),
+    );
+    setUnseenHints(unseen);
+  }, []);
+
+  // Mark a hint as seen when the user navigates to that route.
+  useEffect(() => {
+    const hint = FIRST_VISIT_HINTS[pathname];
+    if (hint && unseenHints.has(pathname)) {
+      localStorage.setItem(hint.storageKey, '1');
+      setUnseenHints((prev) => { const next = new Set(prev); next.delete(pathname); return next; });
+    }
+  }, [pathname, unseenHints]);
 
   async function handleSignOut(): Promise<void> {
     setDrawerOpen(false);
@@ -94,13 +121,17 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
             const active = href === '/dashboard'
               ? pathname === '/dashboard'
               : pathname.startsWith(href);
+            const hint = FIRST_VISIT_HINTS[href];
+            const showDot = !!hint && unseenHints.has(href) && !active;
             return (
               <Link
                 key={href}
                 href={href}
-                className={`${s.navLink} ${active ? s.navLinkActive : ''}`}
+                className={`${s.navLink} ${active ? s.navLinkActive : ''} ${showDot ? s.navLinkHint : ''}`}
+                title={showDot ? hint?.tip : undefined}
               >
                 {label}
+                {showDot && <span className={s.navDot} aria-hidden="true" />}
               </Link>
             );
           })}
@@ -172,14 +203,18 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
           const active = href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname.startsWith(href);
+          const hint = FIRST_VISIT_HINTS[href];
+          const showDot = !!hint && unseenHints.has(href) && !active;
           return (
             <Link
               key={href}
               href={href}
               className={`${s.mobileNavItem} ${active ? s.mobileNavItemActive : ''}`}
+              style={{ position: 'relative' }}
             >
               {icon}
               {label}
+              {showDot && <span className={s.mobileNavDot} aria-hidden="true" />}
             </Link>
           );
         })}

@@ -42,7 +42,8 @@ class RulesEngine:
         self,
         ncci_edit_pairs: dict[str, set[str]],
         medicare_rates: dict[str, Decimal],
-        outlier_threshold: float = 1.1,
+        medicare_outlier_threshold: float = 1.8,
+        exact_price_threshold: float = 1.1,
         non_payable_codes: dict[str, str] | None = None,
         anesthesia_cf: Decimal | None = None,
         anesthesia_base_units: dict[str, int] | None = None,
@@ -54,39 +55,56 @@ class RulesEngine:
     ) -> None:
         """
         Args:
-            ncci_edit_pairs:           Map of column_one_code → set of column_two_codes.
-            medicare_rates:            Map of cpt_code → non_facility_rate.
-            outlier_threshold:         Flag charge when it exceeds the benchmark by this multiplier.
-                                       Default 1.1 = flag anything more than 10% over benchmark.
-            non_payable_codes:         Map of cpt_code → proc_stat for non-payable codes found on
-                                       the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
-                                       are critical; 'N' (non-covered) is a warning.
-            anesthesia_cf:             Locality-adjusted anesthesia conversion factor. When provided,
-                                       anesthesia outlier detection is enabled.
-            anesthesia_base_units:     Map of cpt_code → published base units from CMS tables.
-                                       When provided, enables exact base unit validation instead of
-                                       the generic plausibility ceiling.
-            opps_rates:                Map of hcpc → OPPS facility payment cap for the resolved
-                                       locality. When provided, enables facility charge outlier
-                                       detection for hospital outpatient bills.
-            ambulance_rates:           Map of hcpc → applicable Medicare ambulance rate (urban,
-                                       rural, or super-rural) for the patient's ZIP code. When
-                                       provided, enables ambulance charge outlier detection.
-            hcpcs_termination_dates:   Map of hcpc → last valid date from cms_hcpcs_codes.
-                                       When provided, enables detection of terminated HCPCS
-                                       Level II codes billed after their termination date.
-            hospital_charges:          Map of cpt_code → hospital's own published gross charge
-                                       from their MRF price transparency file. When provided,
-                                       enables hospital charge outlier detection.
-            negotiated_charges:        Map of cpt_code → the specific negotiated rate contracted
-                                       between the hospital and the patient's insurer/plan, from
-                                       the MRF price transparency file. When provided, enables
-                                       the negotiated rate exceeded detection — the strongest
-                                       price benchmark available.
+            ncci_edit_pairs:            Map of column_one_code → set of column_two_codes.
+            medicare_rates:             Map of cpt_code → non_facility_rate.
+            medicare_outlier_threshold: Flag charge when it exceeds the Medicare benchmark by this
+                                        multiplier. Default 1.8 = flag anything more than 80% over
+                                        Medicare. Used for PRICE_OUTLIER, FACILITY_CHARGE_OUTLIER,
+                                        and AMBULANCE_CHARGE_OUTLIER. Set higher than exact_price_
+                                        threshold because Medicare rates are a floor signal, not a
+                                        maximum — commercial payers routinely reimburse at 1.2–2.5×
+                                        Medicare, so a low threshold generates false positives on
+                                        every normal commercial bill. 1.8× exceeds the maximum
+                                        expected commercial markup (~1.5×) while still catching
+                                        egregious overcharges.
+            exact_price_threshold:      Flag charge when it exceeds an exact agreed/published price
+                                        by this multiplier. Default 1.1 = flag anything more than
+                                        10% over the benchmark. Used for HOSPITAL_CHARGE_OUTLIER
+                                        (hospital's own chargemaster) and NEGOTIATED_RATE_EXCEEDED
+                                        (insurer-specific contracted rate). These benchmarks are
+                                        the actual agreed or published price, so there is no
+                                        insurance-type ambiguity — 10% tolerance handles minor
+                                        rounding and unit-charge-vs-total-charge discrepancies.
+            non_payable_codes:          Map of cpt_code → proc_stat for non-payable codes found on
+                                        the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
+                                        are critical; 'N' (non-covered) is a warning.
+            anesthesia_cf:              Locality-adjusted anesthesia conversion factor. When provided,
+                                        anesthesia outlier detection is enabled.
+            anesthesia_base_units:      Map of cpt_code → published base units from CMS tables.
+                                        When provided, enables exact base unit validation instead of
+                                        the generic plausibility ceiling.
+            opps_rates:                 Map of hcpc → OPPS facility payment cap for the resolved
+                                        locality. When provided, enables facility charge outlier
+                                        detection for hospital outpatient bills.
+            ambulance_rates:            Map of hcpc → applicable Medicare ambulance rate (urban,
+                                        rural, or super-rural) for the patient's ZIP code. When
+                                        provided, enables ambulance charge outlier detection.
+            hcpcs_termination_dates:    Map of hcpc → last valid date from cms_hcpcs_codes.
+                                        When provided, enables detection of terminated HCPCS
+                                        Level II codes billed after their termination date.
+            hospital_charges:           Map of cpt_code → hospital's own published gross charge
+                                        from their MRF price transparency file. When provided,
+                                        enables hospital charge outlier detection.
+            negotiated_charges:         Map of cpt_code → the specific negotiated rate contracted
+                                        between the hospital and the patient's insurer/plan, from
+                                        the MRF price transparency file. When provided, enables
+                                        the negotiated rate exceeded detection — the strongest
+                                        price benchmark available.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
-        self._outlier_threshold = outlier_threshold
+        self._medicare_outlier_threshold = medicare_outlier_threshold
+        self._exact_price_threshold = exact_price_threshold
         self._non_payable_codes = non_payable_codes or {}
         self._anesthesia_cf = anesthesia_cf
         self._anesthesia_base_units = anesthesia_base_units or {}
@@ -153,7 +171,7 @@ class RulesEngine:
         """Flag charges that exceed the Medicare rate by the configured threshold.
 
         We compare against the Medicare non-facility rate as a benchmark.
-        Charges at 2x+ the Medicare rate warrant review — they may indicate
+        Charges at 1.8× the Medicare rate warrant review — they may indicate
         upcoding, billing for supplies bundled in the procedure, or simple error.
         """
         errors: list[DetectedError] = []
@@ -165,7 +183,7 @@ class RulesEngine:
                 continue
 
             charge = Decimal(str(item.total_charge))
-            if medicare_rate > 0 and charge > medicare_rate * Decimal(str(self._outlier_threshold)):
+            if medicare_rate > 0 and charge > medicare_rate * Decimal(str(self._medicare_outlier_threshold)):
                 overcharge = charge - medicare_rate
                 label = f" ({item.description})" if item.description else ""
                 errors.append(DetectedError(
@@ -217,7 +235,8 @@ class RulesEngine:
 
                 all_affected = cpt_to_indices[col1_code] + cpt_to_indices[col2_code]
                 overcharge = sum(
-                    Decimal(str(line_items[i].total_charge)) for i in cpt_to_indices[col2_code]
+                    (Decimal(str(line_items[i].total_charge)) for i in cpt_to_indices[col2_code]),
+                    Decimal("0"),
                 )
                 errors.append(DetectedError(
                     code="NCCI_UNBUNDLING",
@@ -428,7 +447,7 @@ class RulesEngine:
         based on the patient's ZIP code. When ZIP is unknown, the urban (lowest)
         rate is used as a conservative benchmark.
 
-        Uses the same outlier_threshold multiplier as price outlier detection.
+        Uses the medicare_outlier_threshold multiplier (1.8× by default).
         Disabled when ambulance_rates is not loaded (no AFS data for the locality).
         """
         if not self._ambulance_rates:
@@ -456,7 +475,7 @@ class RulesEngine:
                 billed = Decimal(str(item.total_charge))
                 charge_label = f"${billed:.2f}"
 
-            if billed > benchmark * Decimal(str(self._outlier_threshold)):
+            if billed > benchmark * Decimal(str(self._medicare_outlier_threshold)):
                 overcharge = (billed - benchmark) * Decimal(str(item.quantity))
                 label = f" ({item.description})" if item.description else ""
                 errors.append(DetectedError(
@@ -525,10 +544,9 @@ class RulesEngine:
         means the patient was charged more than the hospital's own list price —
         an unambiguous billing error regardless of insurance or payer.
 
-        Uses the same outlier_threshold multiplier as other outlier rules
-        (default 1.1 = flag anything more than 10% over the published price).
-        Disabled when hospital_charges is not loaded (hospital not in our database
-        or NPI/name could not be matched).
+        Uses the exact_price_threshold multiplier (1.1 by default = flag anything
+        more than 10% over the published price). Disabled when hospital_charges is
+        not loaded (hospital not in our database or NPI/name could not be matched).
         """
         if not self._hospital_charges:
             return []
@@ -541,7 +559,7 @@ class RulesEngine:
                 continue
 
             charge = Decimal(str(item.total_charge))
-            if charge > gross_charge * Decimal(str(self._outlier_threshold)):
+            if charge > gross_charge * Decimal(str(self._exact_price_threshold)):
                 overcharge = charge - gross_charge
                 label = f" ({item.description})" if item.description else ""
                 errors.append(DetectedError(
@@ -588,7 +606,7 @@ class RulesEngine:
                 continue
 
             charge = Decimal(str(item.total_charge))
-            if charge > negotiated_rate * Decimal(str(self._outlier_threshold)):
+            if charge > negotiated_rate * Decimal(str(self._exact_price_threshold)):
                 overcharge = charge - negotiated_rate
                 label = f" ({item.description})" if item.description else ""
                 errors.append(DetectedError(
@@ -615,7 +633,7 @@ class RulesEngine:
         The OPPS cap is the amount Medicare pays for a procedure in a hospital outpatient
         setting. Charges significantly above this cap warrant review — the patient's
         cost-sharing is based on the billed charge, not just the Medicare payment amount.
-        Uses the same outlier_threshold multiplier as price outlier detection.
+        Uses the medicare_outlier_threshold multiplier (1.8× by default).
         """
         if not self._opps_rates:
             return []
@@ -628,7 +646,7 @@ class RulesEngine:
                 continue
 
             charge = Decimal(str(item.total_charge))
-            if charge > opps_cap * Decimal(str(self._outlier_threshold)):
+            if charge > opps_cap * Decimal(str(self._medicare_outlier_threshold)):
                 overcharge = charge - opps_cap
                 label = f" ({item.description})" if item.description else ""
                 errors.append(DetectedError(

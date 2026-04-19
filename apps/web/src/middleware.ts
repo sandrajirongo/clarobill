@@ -54,9 +54,11 @@ export async function middleware(request: NextRequest) {
     callbackUrl.pathname = '/auth/callback';
     return NextResponse.redirect(callbackUrl);
   }
+
   // Authenticated users visiting the landing page or sign-in page go straight
-  // to their dashboard. This handles both the "open new tab → homepage" case
-  // and the "click blog CTA while already signed in" case.
+  // to their dashboard (or onboarding — the dashboard page handles that check).
+  // This handles both the "open new tab → homepage" case and the "click blog
+  // CTA while already signed in" case.
   const AUTH_ENTRY_POINTS = ['/', '/auth/sign-in', '/auth/sign-up'];
   if (user && AUTH_ENTRY_POINTS.includes(pathname)) {
     const dashboardUrl = request.nextUrl.clone();

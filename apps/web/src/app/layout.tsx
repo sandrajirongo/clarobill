@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Fraunces, Syne } from 'next/font/google';
 import { Suspense } from 'react';
+import { NextIntlClientProvider } from 'next-intl';
+import { getMessages, getLocale } from 'next-intl/server';
 import { PostHogProvider } from '@/components/posthog-provider';
 import './globals.css';
 
@@ -42,15 +44,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getLocale();
+  const messages = await getMessages();
+
   return (
-    <html lang="en" className={`${fraunces.variable} ${syne.variable}`}>
+    <html lang={locale} className={`${fraunces.variable} ${syne.variable}`}>
       <body>
-        <Suspense>
-          <PostHogProvider>{children}</PostHogProvider>
-        </Suspense>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <Suspense>
+            <PostHogProvider>{children}</PostHogProvider>
+          </Suspense>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

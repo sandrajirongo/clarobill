@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
 import { BillUploader } from '@/components/bill-uploader';
 import { SavingsTracker } from '@/components/savings-tracker';
@@ -17,6 +18,14 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 export default async function DashboardPage(): Promise<JSX.Element> {
   const user = await getAuthenticatedUser();
   const supabase = await createSupabaseServerClient();
+
+  // New users who haven't completed onboarding yet get the wizard.
+  const { count: memberCount } = await supabase
+    .from('profile_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user!.id);
+
+  if (!memberCount || memberCount === 0) redirect('/onboarding');
 
   const [billsResult, analysesResult, referralResult] = await Promise.all([
     supabase

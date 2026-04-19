@@ -1,0 +1,67 @@
+{
+  "onboarding": {
+    "language": {
+      "title": "Choose your language",
+      "subtitle": "You can change this anytime in your profile",
+      "continue": "Continue"
+    },
+    "profile": {
+      "title": "Tell us about yourself",
+      "subtitle": "This helps us accurately benchmark your charges",
+      "nameLabel": "Full name",
+      "namePlaceholder": "Jane Smith",
+      "dobLabel": "Date of birth",
+      "stateLabel": "State",
+      "statePlaceholder": "Select your state",
+      "zipLabel": "ZIP code",
+      "zipPlaceholder": "e.g. 90210",
+      "insuranceLabel": "What type of insurance do you have?",
+      "insurance": {
+        "commercial": "Commercial",
+        "commercialSub": "Employer or marketplace plan",
+        "medicare": "Medicare",
+        "medicareSub": "Federal health insurance (65+)",
+        "medicaid": "Medicaid",
+        "medicaidSub": "State health insurance",
+        "tricare": "TRICARE",
+        "tricareSub": "Military & veteran coverage",
+        "selfPay": "Self-Pay",
+        "selfPaySub": "No insurance"
+      },
+      "continue": "Continue",
+      "back": "Back",
+      "errors": {
+        "nameRequired": "Please enter your full name",
+        "dobRequired": "Please enter your date of birth",
+        "stateRequired": "Please select your state",
+        "zipRequired": "Please enter your ZIP code",
+        "zipInvalid": "ZIP code must be 5 digits",
+        "insuranceRequired": "Please select your insurance type"
+      }
+    },
+    "primer": {
+      "title": "You're all set",
+      "subtitle": "Here's how ClaroBill works",
+      "step1": {
+        "title": "Upload your bill",
+        "body": "Drop in a PDF or photo of your medical bill, EOB, or superbill"
+      },
+      "step2": {
+        "title": "We find the errors",
+        "body": "Every charge is benchmarked against Medicare rates and checked for duplicates and coding errors"
+      },
+      "step3": {
+        "title": "Get your report",
+        "body": "Download a full analysis report and a ready-to-send dispute letter"
+      },
+      "nav": {
+        "reports": "Your reports live in Reports",
+        "billing": "Payment receipts are in Billing"
+      },
+      "cta": "Upload my first bill",
+      "back": "Back"
+    },
+    "saving": "Setting up your account\u2026",
+    "error": "Something went wrong. Please try again."
+  }
+}
