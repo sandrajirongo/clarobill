@@ -1,25 +1,20 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
 import { BillUploader } from '@/components/bill-uploader';
 import { SavingsTracker } from '@/components/savings-tracker';
 import { ReferralCard } from '@/components/referral-card';
 import s from './dashboard.module.css';
 
-const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  uploading:      { label: 'Needs review', cls: 'badgePending'  },
-  pending:        { label: 'Pending',       cls: 'badgePending'  },
-  ocr_processing: { label: 'Reading…',      cls: 'badgeReading'  },
-  analyzing:      { label: 'Analyzing…',    cls: 'badgeReading'  },
-  complete:       { label: 'Ready',         cls: 'badgeReady'    },
-  failed:         { label: 'Failed',        cls: 'badgeFailed'   },
-};
-
 export default async function DashboardPage(): Promise<JSX.Element> {
-  const user = await getAuthenticatedUser();
+  const [t, locale, user] = await Promise.all([
+    getTranslations('dashboard'),
+    getLocale(),
+    getAuthenticatedUser(),
+  ]);
   const supabase = await createSupabaseServerClient();
 
-  // New users who haven't completed onboarding yet get the wizard.
   const { count: memberCount } = await supabase
     .from('profile_members')
     .select('id', { count: 'exact', head: true })
@@ -57,6 +52,24 @@ export default async function DashboardPage(): Promise<JSX.Element> {
 
   const convertedCount = (referrals ?? []).filter((r) => r.status === 'converted').length;
 
+  const STATUS_LABEL: Record<string, string> = {
+    uploading:      t('status.needsReview'),
+    pending:        t('status.pending'),
+    ocr_processing: t('status.reading'),
+    analyzing:      t('status.analyzing'),
+    complete:       t('status.ready'),
+    failed:         t('status.failed'),
+  };
+
+  const STATUS_CLS: Record<string, string> = {
+    uploading:      'badgePending',
+    pending:        'badgePending',
+    ocr_processing: 'badgeReading',
+    analyzing:      'badgeReading',
+    complete:       'badgeReady',
+    failed:         'badgeFailed',
+  };
+
   return (
     <main className={s.page}>
       {analyses.length > 0 && (
@@ -68,20 +81,16 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         />
       )}
 
-      {/* Onboarding nudge — only shown before first upload */}
       {bills.length === 0 && (
         <div className={s.onboardingNudge}>
-          <p className={s.onboardingTitle}>You have no bills yet</p>
-          <p className={s.onboardingText}>
-            Upload a medical bill below — we&apos;ll check every charge against Medicare
-            benchmarks and flag overcharges, duplicates, and coding errors.
-          </p>
+          <p className={s.onboardingTitle}>{t('noBillsTitle')}</p>
+          <p className={s.onboardingText}>{t('noBillsText')}</p>
         </div>
       )}
 
       <section>
-        <h1 className={s.pageTitle}>{bills.length > 0 ? 'Analyze a New Bill' : 'Analyze a Bill'}</h1>
-        <p className={s.pageSub}>Upload a medical bill, EOB, or superbill — PDF, JPEG, or PNG</p>
+        <h1 className={s.pageTitle}>{bills.length > 0 ? t('analyzeNewBill') : t('analyzeBill')}</h1>
+        <p className={s.pageSub}>{t('analyzeSub')}</p>
         <div style={{ marginTop: '1.25rem' }}>
           <BillUploader />
         </div>
@@ -89,15 +98,16 @@ export default async function DashboardPage(): Promise<JSX.Element> {
 
       {bills.length > 0 && (
         <section>
-          <p className={s.sectionLabel}>Previous Uploads</p>
+          <p className={s.sectionLabel}>{t('previousUploads')}</p>
           <ul className={s.billList}>
             {bills.map((bill) => {
-              const st = STATUS_BADGE[bill.status];
+              const statusLabel = STATUS_LABEL[bill.status] ?? bill.status;
+              const statusCls   = STATUS_CLS[bill.status] ?? 'badgePending';
               const isComplete   = bill.status === 'complete';
               const isUploading  = bill.status === 'uploading';
               const isProcessing = bill.status === 'ocr_processing' || bill.status === 'analyzing';
               const isFailed     = bill.status === 'failed';
-              const uploadedDate = new Date(bill.created_at).toLocaleDateString('en-US', {
+              const uploadedDate = new Date(bill.created_at).toLocaleDateString(locale, {
                 month: 'short', day: 'numeric', year: 'numeric',
               });
 
@@ -109,35 +119,33 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                       <p className={s.billFileName}>{bill.file_name}</p>
                     )}
                     {isFailed ? (
-                      <p className={s.billFailedNote}>
-                        We couldn&apos;t analyze this bill — retry or upload a clearer copy.
-                      </p>
+                      <p className={s.billFailedNote}>{t('failedNote')}</p>
                     ) : (
-                      <p className={s.billMeta}>Uploaded {uploadedDate}</p>
+                      <p className={s.billMeta}>{t('uploaded')} {uploadedDate}</p>
                     )}
                   </div>
                   <div className={s.billActions}>
-                    <span className={`${s.badge} ${s[st?.cls ?? 'badgePending']}`}>
-                      {st?.label ?? bill.status}
+                    <span className={`${s.badge} ${s[statusCls]}`}>
+                      {statusLabel}
                     </span>
                     {isComplete && (
                       <Link href={`/dashboard/bills/${bill.id}`} className={s.viewLink}>
-                        View →
+                        {t('view')}
                       </Link>
                     )}
                     {isUploading && (
                       <Link href={`/dashboard/bills/${bill.id}/verify`} className={s.verifyLink}>
-                        Analyze →
+                        {t('analyze')}
                       </Link>
                     )}
                     {isProcessing && (
                       <Link href={`/dashboard/bills/${bill.id}`} className={s.viewLink}>
-                        View →
+                        {t('view')}
                       </Link>
                     )}
                     {isFailed && (
                       <Link href={`/dashboard/bills/${bill.id}/verify`} className={s.verifyLink}>
-                        Retry →
+                        {t('retry')}
                       </Link>
                     )}
                   </div>

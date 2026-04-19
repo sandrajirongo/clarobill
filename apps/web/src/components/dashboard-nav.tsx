@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogoWithMark } from '@/components/logo';
 import { BookOpenIcon, LogOutIcon, MoreIcon, PersonIcon } from '@/components/icons';
@@ -12,16 +13,15 @@ interface DashboardNavProps {
   email: string;
 }
 
-// mobileTab: false = visible in desktop nav but not in the bottom tab bar
-const NAV_LINKS: Array<{
+const NAV_LINKS_CONFIG: Array<{
   href: string;
-  label: string;
+  labelKey: 'myBills' | 'reports' | 'billing' | 'profile';
   mobileTab: boolean;
   icon: JSX.Element;
 }> = [
   {
     href: '/dashboard',
-    label: 'My Bills',
+    labelKey: 'myBills',
     mobileTab: true,
     icon: (
       <svg className={s.mobileNavIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -32,7 +32,7 @@ const NAV_LINKS: Array<{
   },
   {
     href: '/dashboard/reports',
-    label: 'Reports',
+    labelKey: 'reports',
     mobileTab: true,
     icon: (
       <svg className={s.mobileNavIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -43,7 +43,7 @@ const NAV_LINKS: Array<{
   },
   {
     href: '/dashboard/billing',
-    label: 'Billing',
+    labelKey: 'billing',
     mobileTab: true,
     icon: (
       <svg className={s.mobileNavIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -54,8 +54,8 @@ const NAV_LINKS: Array<{
   },
   {
     href: '/dashboard/profile',
-    label: 'Profile',
-    mobileTab: false, // lives in More drawer on mobile
+    labelKey: 'profile',
+    mobileTab: false,
     icon: (
       <svg className={s.mobileNavIcon} viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="12" cy="8" r="4"/>
@@ -65,33 +65,30 @@ const NAV_LINKS: Array<{
   },
 ];
 
-// Routes that get a first-visit dot until the user navigates there once.
-const FIRST_VISIT_HINTS: Record<string, { storageKey: string; tip: string }> = {
-  '/dashboard/reports': { storageKey: 'cb_seen_reports', tip: 'Your reports live here' },
-  '/dashboard/billing': { storageKey: 'cb_seen_billing', tip: 'Payment receipts are here' },
+const FIRST_VISIT_HINT_KEYS: Record<string, { storageKey: string; tKey: 'hintReports' | 'hintBilling' }> = {
+  '/dashboard/reports': { storageKey: 'cb_seen_reports', tKey: 'hintReports' },
+  '/dashboard/billing': { storageKey: 'cb_seen_billing', tKey: 'hintBilling' },
 };
 
 export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
+  const t = useTranslations('nav');
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
-  // Track which first-visit hints are still unseen. Starts empty (SSR-safe),
-  // populated from localStorage on mount.
   const [unseenHints, setUnseenHints] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const unseen = new Set(
-      Object.entries(FIRST_VISIT_HINTS)
+      Object.entries(FIRST_VISIT_HINT_KEYS)
         .filter(([, { storageKey }]) => !localStorage.getItem(storageKey))
         .map(([href]) => href),
     );
     setUnseenHints(unseen);
   }, []);
 
-  // Mark a hint as seen when the user navigates to that route.
   useEffect(() => {
-    const hint = FIRST_VISIT_HINTS[pathname];
+    const hint = FIRST_VISIT_HINT_KEYS[pathname];
     if (hint && unseenHints.has(pathname)) {
       localStorage.setItem(hint.storageKey, '1');
       setUnseenHints((prev) => { const next = new Set(prev); next.delete(pathname); return next; });
@@ -117,18 +114,19 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
         </Link>
 
         <nav className={s.navLinks}>
-          {NAV_LINKS.map(({ href, label }) => {
+          {NAV_LINKS_CONFIG.map(({ href, labelKey }) => {
+            const label = t(labelKey);
             const active = href === '/dashboard'
               ? pathname === '/dashboard'
               : pathname.startsWith(href);
-            const hint = FIRST_VISIT_HINTS[href];
+            const hint = FIRST_VISIT_HINT_KEYS[href];
             const showDot = !!hint && unseenHints.has(href) && !active;
             return (
               <Link
                 key={href}
                 href={href}
                 className={`${s.navLink} ${active ? s.navLinkActive : ''} ${showDot ? s.navLinkHint : ''}`}
-                title={showDot ? hint?.tip : undefined}
+                title={showDot ? t(hint.tKey) : undefined}
               >
                 {label}
                 {showDot && <span className={s.navDot} aria-hidden="true" />}
@@ -141,19 +139,18 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
             rel="noopener noreferrer"
             className={s.navLinkExt}
           >
-            Resources
+            {t('resources')}
             <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
               <path d="M1 9L9 1M9 1H3M9 1V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </a>
         </nav>
 
-        {/* Avatar button — opens dropdown with Profile, Resources, Sign out */}
         <div className={s.navRight}>
           <button
             className={`${s.avatarBtn} ${avatarMenuOpen ? s.avatarBtnActive : ''}`}
             onClick={() => setAvatarMenuOpen((v) => !v)}
-            aria-label="Account menu"
+            aria-label={t('accountMenu')}
             aria-expanded={avatarMenuOpen}
           >
             <span className={s.avatar}>{initial}</span>
@@ -171,7 +168,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
                   role="menuitem"
                 >
                   <PersonIcon size={15} />
-                  Profile
+                  {t('profile')}
                 </Link>
                 <a
                   href="/blog"
@@ -180,7 +177,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
                   role="menuitem"
                 >
                   <BookOpenIcon size={15} />
-                  Resources
+                  {t('resources')}
                 </a>
                 <div className={s.avatarMenuDivider} />
                 <button
@@ -189,7 +186,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
                   role="menuitem"
                 >
                   <LogOutIcon size={15} />
-                  Sign out
+                  {t('signOut')}
                 </button>
               </div>
             </>
@@ -197,13 +194,13 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
         </div>
       </header>
 
-      {/* Mobile bottom tab bar — hidden on desktop via CSS */}
       <nav className={s.mobileNav}>
-        {NAV_LINKS.filter((l) => l.mobileTab).map(({ href, label, icon }) => {
+        {NAV_LINKS_CONFIG.filter((l) => l.mobileTab).map(({ href, labelKey, icon }) => {
+          const label = t(labelKey);
           const active = href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname.startsWith(href);
-          const hint = FIRST_VISIT_HINTS[href];
+          const hint = FIRST_VISIT_HINT_KEYS[href];
           const showDot = !!hint && unseenHints.has(href) && !active;
           return (
             <Link
@@ -218,19 +215,17 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
             </Link>
           );
         })}
-        {/* More — opens bottom sheet with Profile, Resources, Sign out */}
         <button
           onClick={() => setDrawerOpen(true)}
           className={`${s.mobileNavItem} ${drawerOpen ? s.mobileNavItemActive : ''}`}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--fb)' }}
-          aria-label="More options"
+          aria-label={t('moreOptions')}
         >
           <MoreIcon size={22} aria-hidden />
-          More
+          {t('more')}
         </button>
       </nav>
 
-      {/* Bottom sheet drawer */}
       {drawerOpen && (
         <>
           <div
@@ -238,7 +233,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
-          <div className={s.drawer} role="dialog" aria-modal="true" aria-label="More options">
+          <div className={s.drawer} role="dialog" aria-modal="true" aria-label={t('moreOptions')}>
             <div className={s.drawerHandle} />
             <div className={s.drawerLogoRow}>
               <LogoWithMark size="sm" />
@@ -250,7 +245,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
                 onClick={() => setDrawerOpen(false)}
               >
                 <span className={s.drawerItemIcon}><PersonIcon size={20} /></span>
-                <span className={s.drawerItemLabel}>Profile</span>
+                <span className={s.drawerItemLabel}>{t('profile')}</span>
                 <svg className={s.drawerChevron} viewBox="0 0 10 10" fill="none" aria-hidden="true">
                   <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
@@ -261,7 +256,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
                 onClick={() => setDrawerOpen(false)}
               >
                 <span className={s.drawerItemIcon}><BookOpenIcon size={20} /></span>
-                <span className={s.drawerItemLabel}>Resources</span>
+                <span className={s.drawerItemLabel}>{t('resources')}</span>
                 <svg className={s.drawerChevron} viewBox="0 0 10 10" fill="none" aria-hidden="true">
                   <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
@@ -269,7 +264,7 @@ export function DashboardNav({ email }: DashboardNavProps): JSX.Element {
               <div className={s.drawerDivider} />
               <button className={s.drawerItem} onClick={handleSignOut}>
                 <span className={s.drawerItemIcon}><LogOutIcon size={20} /></span>
-                <span className={s.drawerItemLabel}>Sign out</span>
+                <span className={s.drawerItemLabel}>{t('signOut')}</span>
               </button>
             </nav>
           </div>

@@ -1,9 +1,14 @@
 import Link from 'next/link';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import s from '../dashboard.module.css';
 
 export default async function ReportsPage(): Promise<JSX.Element> {
-  const supabase = await createSupabaseServerClient();
+  const [t, locale, supabase] = await Promise.all([
+    getTranslations('reports'),
+    getLocale(),
+    createSupabaseServerClient(),
+  ]);
 
   const { data: results } = await supabase
     .from('analysis_results')
@@ -30,17 +35,17 @@ export default async function ReportsPage(): Promise<JSX.Element> {
   return (
     <main className={s.page}>
       <div>
-        <h1 className={s.pageTitle}>Reports & Dispute Letters</h1>
-        <p className={s.pageSub}>Download your full analysis and ready-to-send dispute letter</p>
+        <h1 className={s.pageTitle}>{t('title')}</h1>
+        <p className={s.pageSub}>{t('subtitle')}</p>
       </div>
 
       {reportsWithDocs.length === 0 ? (
         <div className={s.emptyState}>
           <p className={s.emptyText}>
-            No reports generated yet.<br />
-            Reports and dispute letters appear here after you unlock a full analysis.
+            {t('emptyText')}<br />
+            {t('emptySubtext')}
           </p>
-          <Link href="/dashboard" className={s.emptyAction}>Analyze a bill</Link>
+          <Link href="/dashboard" className={s.emptyAction}>{t('analyzeBill')}</Link>
         </div>
       ) : (
         <ul style={{ display: 'flex', flexDirection: 'column', gap: '.75rem', listStyle: 'none', padding: 0, margin: 0 }}>
@@ -54,9 +59,9 @@ export default async function ReportsPage(): Promise<JSX.Element> {
             const fileName = bill?.file_name ?? 'Unknown bill';
             const payment = bill?.payments?.[0];
             const amountPaid = payment
-              ? payment.amount_cents === 0 ? 'Free' : `$${(payment.amount_cents / 100).toFixed(2)}`
-              : 'Free';
-            const generatedDate = new Date(result.created_at).toLocaleDateString('en-US', {
+              ? payment.amount_cents === 0 ? t('free') : `$${(payment.amount_cents / 100).toFixed(2)}`
+              : t('free');
+            const generatedDate = new Date(result.created_at).toLocaleDateString(locale, {
               month: 'short', day: 'numeric', year: 'numeric',
             });
 
@@ -70,16 +75,16 @@ export default async function ReportsPage(): Promise<JSX.Element> {
                     <p className={s.reportMeta}>{generatedDate} · {amountPaid}</p>
                     {Number(result.total_potential_savings) > 0 && (
                       <p className={s.reportSavings}>
-                        ${Number(result.total_potential_savings).toFixed(2)} potential savings identified
+                        {t('potentialSavings', { amount: `$${Number(result.total_potential_savings).toFixed(2)}` })}
                       </p>
                     )}
                   </div>
                   <div className={s.reportBtns}>
                     {result.report_url && (
-                      <DownloadButton billId={result.bill_id} type="report" label="Report" />
+                      <DownloadButton billId={result.bill_id} type="report" label={t('report')} />
                     )}
                     {result.dispute_letter_url && (
-                      <DownloadButton billId={result.bill_id} type="dispute-letter" label="Dispute Letter" />
+                      <DownloadButton billId={result.bill_id} type="dispute-letter" label={t('disputeLetter')} />
                     )}
                   </div>
                 </div>

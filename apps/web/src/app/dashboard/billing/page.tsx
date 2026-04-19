@@ -1,27 +1,45 @@
 import Link from 'next/link';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import s from '../dashboard.module.css';
 
 export default async function BillingPage(): Promise<JSX.Element> {
-  const supabase = await createSupabaseServerClient();
+  const [t, locale, supabase] = await Promise.all([
+    getTranslations('billing'),
+    getLocale(),
+    createSupabaseServerClient(),
+  ]);
 
   const { data: payments } = await supabase
     .from('payments')
     .select('id, bill_id, amount_cents, currency, status, created_at, bills(file_name)')
     .order('created_at', { ascending: false });
 
+  const statusLabel = (status: string): string => {
+    if (status === 'complete') return t('paid');
+    if (status === 'pending')  return t('pending');
+    if (status === 'failed')   return t('failed');
+    if (status === 'refunded') return t('refunded');
+    return status;
+  };
+
+  const statusCls = (status: string): string =>
+    status === 'complete' ? (s.badgeReady ?? '') :
+    status === 'failed'   ? (s.badgeFailed ?? '') :
+    (s.badgePending ?? '');
+
   return (
     <main className={s.page}>
       <div>
-        <h1 className={s.pageTitle}>Billing History</h1>
-        <p className={s.pageSub}>All payments and reports unlocked</p>
+        <h1 className={s.pageTitle}>{t('title')}</h1>
+        <p className={s.pageSub}>{t('subtitle')}</p>
       </div>
 
       {!payments || payments.length === 0 ? (
         <div className={s.emptyState}>
           <p className={s.emptyText}>
-            No payments yet.<br />
-            Your billing history will appear here after you unlock a full report.
+            {t('emptyText')}<br />
+            {t('emptySubtext')}
           </p>
         </div>
       ) : (
@@ -29,19 +47,19 @@ export default async function BillingPage(): Promise<JSX.Element> {
           <table className={s.table}>
             <thead className={s.tableHead}>
               <tr>
-                <th className={s.th}>Date</th>
-                <th className={s.th}>Bill</th>
-                <th className={`${s.th} ${s.tdRight}`}>Amount</th>
-                <th className={`${s.th} ${s.tdRight}`}>Status</th>
+                <th className={s.th}>{t('date')}</th>
+                <th className={s.th}>{t('bill')}</th>
+                <th className={`${s.th} ${s.tdRight}`}>{t('amount')}</th>
+                <th className={`${s.th} ${s.tdRight}`}>{t('status')}</th>
               </tr>
             </thead>
             <tbody>
               {payments.map((payment) => {
-                const billName = (payment.bills as unknown as { file_name: string } | null)?.file_name ?? 'Bill';
+                const billName = (payment.bills as unknown as { file_name: string } | null)?.file_name ?? t('bill');
                 const amount = payment.amount_cents === 0
-                  ? 'Free'
+                  ? t('free')
                   : `$${(payment.amount_cents / 100).toFixed(2)}`;
-                const date = new Date(payment.created_at).toLocaleDateString('en-US', {
+                const date = new Date(payment.created_at).toLocaleDateString(locale, {
                   month: 'short', day: 'numeric', year: 'numeric',
                 });
 
@@ -59,7 +77,9 @@ export default async function BillingPage(): Promise<JSX.Element> {
                     </td>
                     <td className={`${s.td} ${s.tdAmount}`}>{amount}</td>
                     <td className={`${s.td} ${s.tdRight}`}>
-                      <StatusBadge status={payment.status} />
+                      <span className={`${s.badge} ${statusCls(payment.status)}`}>
+                        {statusLabel(payment.status)}
+                      </span>
                     </td>
                   </tr>
                 );
@@ -69,25 +89,5 @@ export default async function BillingPage(): Promise<JSX.Element> {
         </div>
       )}
     </main>
-  );
-}
-
-function StatusBadge({ status }: { status: string }): JSX.Element {
-  const badgeCls =
-    status === 'complete' ? s.badgeReady :
-    status === 'failed'   ? s.badgeFailed :
-    s.badgePending;
-
-  const label =
-    status === 'complete' ? 'Paid' :
-    status === 'pending'  ? 'Pending' :
-    status === 'failed'   ? 'Failed' :
-    status === 'refunded' ? 'Refunded' :
-    status;
-
-  return (
-    <span className={`${s.badge} ${badgeCls}`}>
-      {label}
-    </span>
   );
 }

@@ -72,3 +72,14 @@ export async function saveOnboarding(
 
   return {};
 }
+
+// Updates the user's preferred locale cookie — called from the profile language switcher.
+export async function updateLocale(locale: string): Promise<void> {
+  const validLocale = (LOCALES as readonly string[]).includes(locale) ? locale : 'en';
+  const cookieStore = await cookies();
+  cookieStore.set('cb_locale', validLocale, {
+    maxAge: 60 * 60 * 24 * 365,
+    path: '/',
+    sameSite: 'lax',
+  });
+}

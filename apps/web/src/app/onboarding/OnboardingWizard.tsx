@@ -230,6 +230,13 @@ export function OnboardingWizard(): JSX.Element {
 
   const t = T[locale];
 
+  // Required fields are complete — gates the Continue button
+  const profileReady =
+    fullName.trim().length > 0 &&
+    dateOfBirth.length > 0 &&
+    state.length > 0 &&
+    /^\d{5}$/.test(zipCode.trim());
+
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function validateProfile(): boolean {
@@ -425,13 +432,13 @@ export function OnboardingWizard(): JSX.Element {
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                   <circle cx="12" cy="13" r="4"/>
                 </svg>
-                {scanState.status === 'scanning' ? 'Reading card\u2026' : 'Scan insurance card'}
+                {scanState.status === 'scanning' ? 'Reading card\u2026' : 'Scan or upload insurance card'}
               </button>
+              {/* No capture attribute — lets user choose between camera and gallery */}
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
-                capture="environment"
+                accept="image/*,application/pdf"
                 className={s.hiddenInput}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
@@ -445,9 +452,9 @@ export function OnboardingWizard(): JSX.Element {
               )}
               {scanState.status === 'done' && (
                 <p className={s.scanSuccess}>
-                  {scanState.result.confident && insurance
-                    ? 'Card read — plan type pre-selected below'
-                    : 'Card read — select your plan type below'}
+                  {insurance
+                    ? `Card read \u2014 ${INSURANCE_OPTIONS.find((o) => o.type === insurance)?.label(t.profile.insurance) ?? insurance} auto-selected`
+                    : 'Card read \u2014 select your plan type below'}
                 </p>
               )}
 
@@ -479,7 +486,12 @@ export function OnboardingWizard(): JSX.Element {
             <button className={s.ghostBtn} onClick={() => setStep('language')} type="button">
               {t.profile.back}
             </button>
-            <button className={s.primaryBtn} onClick={handleProfileContinue} type="button">
+            <button
+              className={s.primaryBtn}
+              onClick={handleProfileContinue}
+              type="button"
+              disabled={!profileReady}
+            >
               {t.profile.continue}
             </button>
           </div>
