@@ -32,6 +32,11 @@ export default function LandingPage(): JSX.Element {
         <a className={s.logo} href="#">
           <LogoWithMark size="md" />
         </a>
+        <div className={s.navLinks}>
+          <a className={s.navLink} href="#">Home</a>
+          <Link className={s.navLink} href="/pricing">Pricing</Link>
+          <Link className={s.navLink} href="/blog">Resources</Link>
+        </div>
         <Link className={s.navCta} href="/auth/sign-in">Get started</Link>
       </nav>
 

@@ -19,6 +19,27 @@
   text-decoration: none;
   flex-shrink: 0;
 }
+.navLinks {
+  display: none;
+  align-items: center;
+  gap: .15rem;
+}
+@media (min-width: 520px) {
+  .navLinks { display: flex; }
+}
+.navLink {
+  font-family: var(--fb);
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--txt2);
+  text-decoration: none;
+  padding: .45rem .75rem;
+  border-radius: 8px;
+  transition: color .15s, background .15s;
+  letter-spacing: .01em;
+}
+.navLink:hover { color: var(--txt); background: var(--cream2); }
+
 .navCta {
   background: var(--sage);
   color: #fff;
