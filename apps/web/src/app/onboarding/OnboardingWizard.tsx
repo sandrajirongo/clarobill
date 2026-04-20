@@ -31,6 +31,15 @@ interface ProfileErrors {
   zipInvalid: string; insuranceRequired: string;
 }
 
+interface ProfileScanMessages {
+  optional: string;
+  scanCard: string;
+  scanSuccessType: string;
+  scanSuccessNoType: string;
+  skipInsurance: string;
+  skipLink: string;
+}
+
 interface Messages {
   language: { title: string; subtitle: string; continue: string };
   profile: {
@@ -43,6 +52,7 @@ interface Messages {
     insurance: InsuranceMessages;
     continue: string; back: string;
     errors: ProfileErrors;
+    scan: ProfileScanMessages;
   };
   primer: {
     title: string; subtitle: string;
@@ -71,6 +81,7 @@ const T: Record<Locale, Messages> = {
       insurance: { commercial: 'Commercial', commercialSub: 'Employer or marketplace plan', medicare: 'Medicare', medicareSub: 'Federal health insurance (65+)', medicaid: 'Medicaid', medicaidSub: 'State health insurance', tricare: 'TRICARE', tricareSub: 'Military & veteran coverage', selfPay: 'Self-Pay', selfPaySub: 'No insurance' },
       continue: 'Continue', back: 'Back',
       errors: { nameRequired: 'Please enter your full name', dobRequired: 'Please enter your date of birth', stateRequired: 'Please select your state', zipRequired: 'Please enter your ZIP code', zipInvalid: 'ZIP code must be 5 digits', insuranceRequired: 'Please select your insurance type' },
+      scan: { optional: 'Optional', scanCard: 'Scan or upload insurance card', scanSuccessType: 'Card read \u2014 {type} auto-selected', scanSuccessNoType: 'Card read \u2014 select your plan type below', skipInsurance: 'No insurance info yet?', skipLink: 'Skip for now' },
     },
     primer: {
       title: "You're all set", subtitle: 'Here\'s how ClaroBill works',
@@ -94,6 +105,7 @@ const T: Record<Locale, Messages> = {
       insurance: { commercial: 'Comercial', commercialSub: 'Plan del empleador o mercado', medicare: 'Medicare', medicareSub: 'Seguro federal de salud (65+)', medicaid: 'Medicaid', medicaidSub: 'Seguro estatal de salud', tricare: 'TRICARE', tricareSub: 'Cobertura militar y veteranos', selfPay: 'Pago directo', selfPaySub: 'Sin seguro' },
       continue: 'Continuar', back: 'Atrás',
       errors: { nameRequired: 'Por favor ingresa tu nombre completo', dobRequired: 'Por favor ingresa tu fecha de nacimiento', stateRequired: 'Por favor selecciona tu estado', zipRequired: 'Por favor ingresa tu código postal', zipInvalid: 'El código postal debe tener 5 dígitos', insuranceRequired: 'Por favor selecciona tu tipo de seguro' },
+      scan: { optional: 'Opcional', scanCard: 'Escanear o subir tarjeta de seguro', scanSuccessType: 'Tarjeta le\u00edda \u2014 {type} seleccionado autom\u00e1ticamente', scanSuccessNoType: 'Tarjeta le\u00edda \u2014 selecciona tu tipo de plan abajo', skipInsurance: '\u00bfA\u00fan no tienes info del seguro?', skipLink: 'Omitir por ahora' },
     },
     primer: {
       title: 'Todo listo', subtitle: 'Así funciona ClaroBill',
@@ -117,6 +129,7 @@ const T: Record<Locale, Messages> = {
       insurance: { commercial: '商业保险', commercialSub: '雇主或市场计划', medicare: 'Medicare', medicareSub: '联邦医疗保险（65岁以上）', medicaid: 'Medicaid', medicaidSub: '州医疗救助', tricare: 'TRICARE', tricareSub: '军人及退伍军人保障', selfPay: '自费', selfPaySub: '无保险' },
       continue: '继续', back: '返回',
       errors: { nameRequired: '请输入您的全名', dobRequired: '请输入您的出生日期', stateRequired: '请选择您的州', zipRequired: '请输入您的邮政编码', zipInvalid: '邮政编码必须为5位数字', insuranceRequired: '请选择您的保险类型' },
+      scan: { optional: '可选', scanCard: '扫描或上传保险卡', scanSuccessType: '已读取卡片 \u2014 已自动选择 {type}', scanSuccessNoType: '已读取卡片 \u2014 请在下方选择您的计划类型', skipInsurance: '暂无保险信息？', skipLink: '稍后再说' },
     },
     primer: {
       title: '一切就绪', subtitle: '以下是ClaroBill的使用方式',
@@ -140,6 +153,7 @@ const T: Record<Locale, Messages> = {
       insurance: { commercial: 'Komersyal', commercialSub: 'Plano ng employer o marketplace', medicare: 'Medicare', medicareSub: 'Federal na health insurance (65+)', medicaid: 'Medicaid', medicaidSub: 'Health insurance ng estado', tricare: 'TRICARE', tricareSub: 'Coverage para sa militar at beterano', selfPay: 'Self-Pay', selfPaySub: 'Walang insurance' },
       continue: 'Magpatuloy', back: 'Bumalik',
       errors: { nameRequired: 'Pakiusap ilagay ang iyong buong pangalan', dobRequired: 'Pakiusap ilagay ang iyong petsa ng kapanganakan', stateRequired: 'Pakiusap pumili ng estado', zipRequired: 'Pakiusap ilagay ang iyong ZIP code', zipInvalid: 'Ang ZIP code ay dapat na 5 digit', insuranceRequired: 'Pakiusap pumili ng uri ng insurance' },
+      scan: { optional: 'Opsyonal', scanCard: 'I-scan o i-upload ang insurance card', scanSuccessType: 'Nabasa ang card \u2014 awtomatikong napili ang {type}', scanSuccessNoType: 'Nabasa ang card \u2014 piliin ang iyong uri ng plano sa ibaba', skipInsurance: 'Wala pang insurance info?', skipLink: 'Laktawan muna' },
     },
     primer: {
       title: 'Handa ka na', subtitle: 'Narito kung paano gumagana ang ClaroBill',
@@ -163,6 +177,7 @@ const T: Record<Locale, Messages> = {
       insurance: { commercial: 'Thương mại', commercialSub: 'Gói của nhà tuyển dụng hoặc thị trường', medicare: 'Medicare', medicareSub: 'Bảo hiểm y tế liên bang (65+)', medicaid: 'Medicaid', medicaidSub: 'Bảo hiểm y tế tiểu bang', tricare: 'TRICARE', tricareSub: 'Bảo hiểm quân nhân và cựu chiến binh', selfPay: 'Tự chi trả', selfPaySub: 'Không có bảo hiểm' },
       continue: 'Tiếp tục', back: 'Quay lại',
       errors: { nameRequired: 'Vui lòng nhập họ và tên đầy đủ của bạn', dobRequired: 'Vui lòng nhập ngày sinh của bạn', stateRequired: 'Vui lòng chọn tiểu bang của bạn', zipRequired: 'Vui lòng nhập mã ZIP của bạn', zipInvalid: 'Mã ZIP phải gồm 5 chữ số', insuranceRequired: 'Vui lòng chọn loại bảo hiểm của bạn' },
+      scan: { optional: 'T\u00f9y ch\u1ecdn', scanCard: 'Qu\u00e9t ho\u1eb7c t\u1ea3i l\u00ean th\u1ebb b\u1ea3o hi\u1ec3m', scanSuccessType: '\u0110\u00e3 \u0111\u1ecdc th\u1ebb \u2014 \u0111\u00e3 t\u1ef1 \u0111\u1ed9ng ch\u1ecdn {type}', scanSuccessNoType: '\u0110\u00e3 \u0111\u1ecdc th\u1ebb \u2014 vui l\u00f2ng ch\u1ecdn lo\u1ea1i g\u00f3i b\u00ean d\u01b0\u1edbi', skipInsurance: 'Ch\u01b0a c\u00f3 th\u00f4ng tin b\u1ea3o hi\u1ec3m?', skipLink: 'B\u1ecf qua b\u00e2y gi\u1edd' },
     },
     primer: {
       title: 'Bạn đã sẵn sàng', subtitle: 'Đây là cách ClaroBill hoạt động',
@@ -418,7 +433,7 @@ export function OnboardingWizard(): JSX.Element {
             <div className={s.insuranceSection}>
               <div className={s.insuranceHeader}>
                 <p className={s.insuranceLabel}>{t.profile.insuranceLabel}</p>
-                <span className={s.optionalBadge}>Optional</span>
+                <span className={s.optionalBadge}>{t.profile.scan.optional}</span>
               </div>
 
               {/* Scan card button */}
@@ -431,14 +446,14 @@ export function OnboardingWizard(): JSX.Element {
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                   <circle cx="12" cy="13" r="4"/>
                 </svg>
-                Scan or upload insurance card
+                {t.profile.scan.scanCard}
               </button>
 
               {lastScan !== null && (
                 <p className={s.scanSuccess}>
                   {insurance
-                    ? `Card read \u2014 ${INSURANCE_OPTIONS.find((o) => o.type === insurance)?.label(t.profile.insurance) ?? insurance} auto-selected`
-                    : 'Card read \u2014 select your plan type below'}
+                    ? t.profile.scan.scanSuccessType.replace('{type}', INSURANCE_OPTIONS.find((o) => o.type === insurance)?.label(t.profile.insurance) ?? insurance)
+                    : t.profile.scan.scanSuccessNoType}
                 </p>
               )}
 
@@ -457,11 +472,10 @@ export function OnboardingWizard(): JSX.Element {
               </div>
 
               <p className={s.insuranceSkip}>
-                No insurance info yet?{' '}
+                {t.profile.scan.skipInsurance}{' '}
                 <button type="button" className={s.skipLink} onClick={handleSkipInsurance}>
-                  Skip for now
+                  {t.profile.scan.skipLink}
                 </button>
-                {' '}— add it in your profile later.
               </p>
             </div>
           </div>

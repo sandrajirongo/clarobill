@@ -1,42 +1,42 @@
-"""Insurance card extraction endpoint.
+"""Insurance card extraction — GCV OCR + Claude text parsing.
 
-Accepts an image of an insurance card (JPEG, PNG, or PDF scan) and uses
-Claude's vision capability to extract structured plan data. Returns all
-identifiable fields with confidence indicators so the frontend can highlight
-any fields that need user review.
+Two-stage pipeline used by production document scanning systems:
+  1. Google Cloud Vision document_text_detection → raw OCR text (~0.5s)
+  2. Claude Sonnet text API → structured JSON from OCR text (~1-2s)
 
-Claude sees the card image directly — no intermediate OCR step. This is more
-accurate than Vision OCR + text parsing because Claude understands spatial
-layout and field labels in context (e.g. distinguishing "Member ID" from
-"Group #" from "Rx BIN" when they appear next to each other on the card).
+This is more reliable than sending the raw image to Claude Vision because:
+- GCV is purpose-built for dense printed text on cards (handles glare, plastic sheen)
+- The text API never fails due to image quality — only the OCR step sees the image
+- Combined latency ~2-3s vs 8-15s for vision inference on a high-res frame
 """
 
-import base64
 import json
 import logging
 import re
-from typing import Literal, cast
 
 import anthropic
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 
 from app.core.dependencies import get_async_anthropic_client
+from app.services.ocr import OcrExtractionError, OcrService
 
 router = APIRouter(prefix="/insurance-card", tags=["insurance-card"])
 logger = logging.getLogger(__name__)
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
-ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+# The frontend crops to the card region before sending, so images are small.
+# Keep the limit generous for upload-a-photo fallback.
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 class InsuranceCardExtraction(BaseModel):
-    """Structured fields extracted from an insurance card image.
+    """Structured fields extracted from an insurance card.
 
-    Each field is None when not found on the card. The 'confident' flag is
-    False when Claude found a plausible value but was uncertain. The frontend
-    should highlight low-confidence fields for user review.
+    Each field is None when not found. confident=False signals the frontend
+    to highlight fields for user review.
     """
+
     model_config = ConfigDict(strict=True)
 
     payer_name: str | None
@@ -48,39 +48,39 @@ class InsuranceCardExtraction(BaseModel):
     note: str | None
 
 
-# The user message instructs what to extract; the assistant prefill (`{`) forces
-# Claude to start its response as a JSON object — no markdown fences possible.
-_USER_PROMPT = """You are extracting structured data from a health insurance card photo.
+_PARSE_PROMPT = """\
+Parse the OCR text below from a health insurance card. Return ONLY a valid JSON object — \
+no explanation, no markdown fences.
 
-Return ONLY a valid JSON object with these exact keys (no explanation, no markdown):
-
-{
-  "payer_name": "Insurance company name printed on the card. Examples: Aetna, Blue Cross Blue Shield, UnitedHealthcare, Humana, Cigna, Molina Healthcare, Kaiser Permanente, Anthem, BCBS. null if not visible.",
-  "plan_name": "Specific plan or product name. Labels to look for: Plan, Product, Coverage, Network, Program. Examples: PPO Gold, HMO Select, Medicare Advantage Plus, Medicaid Managed Care, BlueCare. null if not labeled separately.",
-  "member_id": "Member or subscriber ID. Labels: Member ID, Member #, ID #, Subscriber ID, Mbr ID. NOT the Group #, NOT Rx BIN, NOT PCN, NOT phone number. null if not visible.",
-  "group_id": "Group or employer group number. Labels: Group, Group #, Grp #, Employer Group. null if not visible.",
-  "plan_type": "MUST be exactly one of: commercial, medicare, medicaid, tricare, self_pay. Choose using these rules: 'medicare' if card shows Medicare, CMS, or Medicare Advantage. 'medicaid' if card shows Medicaid, CHIP, Medi-Cal, Healthy Families, ACCESS, AHCCCS, TennCare, or any state Medicaid program name. 'tricare' if card shows TRICARE, Military Health System, VA, or DoD. 'self_pay' if the card has no insurer name. 'commercial' for all employer/marketplace/ACA plans including HMO, PPO, EPO, POS plans from private insurers.",
-  "confident": true,
-  "note": null
-}
+Required keys:
+  "payer_name"  — Insurance company name. e.g. Aetna, Blue Cross Blue Shield, UnitedHealthcare, \
+Humana, Cigna, Molina, Kaiser, Anthem, BCBS, Centene. null if not present.
+  "plan_name"   — Specific plan/product name. Look for Plan, Product, Coverage, Network labels. \
+null if not separately labeled.
+  "member_id"   — Member/subscriber ID. Labels: Member ID, Member #, ID #, Subscriber ID, Mbr ID. \
+NOT Group #, NOT Rx BIN, NOT PCN, NOT RxGrp. null if not present.
+  "group_id"    — Group/employer number. Labels: Group, Group #, Grp #. null if not present.
+  "plan_type"   — Exactly one of: commercial, medicare, medicaid, tricare, self_pay.
+                  medicare  → card mentions Medicare, CMS, or Medicare Advantage
+                  medicaid  → card mentions Medicaid, CHIP, Medi-Cal, TennCare, AHCCCS, or any state Medicaid brand
+                  tricare   → card mentions TRICARE, Military Health System, DoD
+                  self_pay  → no insurer name
+                  commercial → all employer/marketplace/ACA plans from private insurers
+  "confident"   — true if all values are clear and unambiguous, false if any were uncertain
+  "note"        — brief description of ambiguity, or null
 
 Rules:
-- Use null (not empty string "") for any field not found on the card
-- Set "confident" to false if ANY field value was uncertain or ambiguous
-- "plan_type" must be exactly one of the 5 values — never null
-- "note" should describe any ambiguity or explain why confident is false"""
+- Use null (never empty string) for fields not found in the text
+- "plan_type" is always one of the 5 values, never null
+
+OCR text extracted from card:
+{ocr_text}"""
 
 _ASSISTANT_PREFILL = "{"
 
 
 def _normalise_plan_type(raw: str) -> str:
-    """Map Claude's plan_type output to one of our 5 canonical values.
-
-    Claude is instructed to return exact values but may deviate, especially
-    when card text is ambiguous. We use substring matching as a fallback.
-    """
     s = raw.lower().strip()
-
     exact: dict[str, str] = {
         "commercial": "commercial",
         "medicare": "medicare",
@@ -92,8 +92,6 @@ def _normalise_plan_type(raw: str) -> str:
     }
     if s in exact:
         return exact[s]
-
-    # Substring fallback — handles "medicare advantage", "medicaid hmo", "tricare prime", etc.
     if "medicare" in s:
         return "medicare"
     if "medicaid" in s or "chip" in s or "medi-cal" in s or "tenncare" in s or "ahcccs" in s:
@@ -111,63 +109,58 @@ def _normalise_plan_type(raw: str) -> str:
     status_code=status.HTTP_200_OK,
 )
 async def extract_insurance_card(
-    image: UploadFile = File(..., description="Insurance card image (JPEG, PNG, or WebP)"),
+    image: UploadFile = File(..., description="Cropped insurance card image (JPEG, PNG, or WebP)"),
     client: anthropic.AsyncAnthropic = Depends(get_async_anthropic_client),
 ) -> InsuranceCardExtraction:
     """Extract structured insurance plan data from a card photo.
 
-    The image is sent directly to Claude's vision API. No PHI is stored —
-    this endpoint is stateless and returns only the extracted fields.
+    Uses Google Cloud Vision for OCR, then Claude text API for field parsing.
+    No PHI is stored — this endpoint is stateless.
     """
     content_type = image.content_type or ""
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported image type '{content_type}'. Use JPEG, PNG, or WebP.",
+            detail="Unsupported image type. Use JPEG, PNG, or WebP.",
         )
 
     image_bytes = await image.read()
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Image exceeds 5 MB limit. Please use a photo under 5 MB.",
+            detail="Image exceeds 10 MB limit.",
         )
 
-    image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-
     logger.info(
-        "Extracting insurance card data from %s (%d bytes)",
+        "Insurance card extraction: %s (%d bytes)",
         image.filename or "upload",
         len(image_bytes),
     )
 
+    # ── Stage 1: Google Cloud Vision OCR ─────────────────────────────────────
+    try:
+        ocr = OcrService()
+        raw_text = await ocr.extract_text(image_bytes, content_type)
+    except OcrExtractionError as exc:
+        logger.error("GCV OCR failed for insurance card: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not read text from the card. Ensure the card is well-lit, flat, and in focus.",
+        ) from exc
+
+    logger.info("GCV extracted %d characters from card", len(raw_text))
+    logger.debug("Card OCR text: %.400s", raw_text)
+
+    # ── Stage 2: Claude text API parses the OCR output ────────────────────────
     try:
         message = await client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=512,
             messages=[
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": cast(
-                                    Literal["image/jpeg", "image/png", "image/gif", "image/webp"],
-                                    content_type,
-                                ),
-                                "data": image_b64,
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": _USER_PROMPT,
-                        },
-                    ],
+                    "content": _PARSE_PROMPT.format(ocr_text=raw_text),
                 },
-                # Prefill forces Claude to begin its response as a JSON object,
-                # eliminating any risk of markdown fences or explanatory prose.
                 {
                     "role": "assistant",
                     "content": _ASSISTANT_PREFILL,
@@ -175,25 +168,20 @@ async def extract_insurance_card(
             ],
         )
     except anthropic.APIError as exc:
-        logger.error("Claude API error during card extraction: %s", exc)
+        logger.error("Claude API error parsing card OCR text: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Card extraction service unavailable. Please try again.",
+            detail="Card parsing service unavailable. Please try again.",
         ) from exc
 
-    # Claude continues from the prefill "{" — prepend it back before parsing
     first_block = message.content[0] if message.content else None
     continuation = first_block.text if isinstance(first_block, anthropic.types.TextBlock) else ""
-    raw_text = _ASSISTANT_PREFILL + (continuation or "}")
-    logger.debug("Claude raw extraction response: %s", raw_text[:600])
-
-    # Strip any trailing markdown fences Claude might still add after the JSON
-    json_text = re.sub(r"\s*```\s*$", "", raw_text.strip())
+    raw_json = re.sub(r"\s*```\s*$", "", (_ASSISTANT_PREFILL + (continuation or "}")).strip())
 
     try:
-        data = json.loads(json_text)
+        data = json.loads(raw_json)
     except json.JSONDecodeError:
-        logger.warning("Claude returned non-JSON during card extraction: %s", raw_text[:300])
+        logger.warning("Claude returned non-JSON for card: %.200s", raw_json)
         return InsuranceCardExtraction(
             payer_name=None,
             plan_name=None,
@@ -201,18 +189,16 @@ async def extract_insurance_card(
             group_id=None,
             plan_type="commercial",
             confident=False,
-            note="Could not read the card clearly. Please fill in the fields manually.",
+            note="Could not parse fields automatically. Please fill in manually.",
         )
 
     raw_type = str(data.get("plan_type") or "")
-    plan_type: str | None = _normalise_plan_type(raw_type) if raw_type else None
-
     return InsuranceCardExtraction(
         payer_name=data.get("payer_name") or None,
         plan_name=data.get("plan_name") or None,
         member_id=data.get("member_id") or None,
         group_id=data.get("group_id") or None,
-        plan_type=plan_type,
+        plan_type=_normalise_plan_type(raw_type) if raw_type else None,
         confident=bool(data.get("confident", True)),
         note=data.get("note") or None,
     )
