@@ -1,12 +1,14 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useBillUpload } from '@/lib/hooks/use-bill-upload';
 import { useRouter } from 'next/navigation';
 import { UploadIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
 export function BillUploader(): JSX.Element {
+  const t = useTranslations('dashboard.uploader');
   const { uploadState, stage, upload, reset } = useBillUpload();
   const [editedName, setEditedName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,9 +30,7 @@ export function BillUploader(): JSX.Element {
     if (file) void stage(file);
   }
 
-  // When stage() completes and sets 'staged' status, sync the editable name
   if (uploadState.status === 'staged' && editedName !== uploadState.displayName) {
-    // Only sync on first entry to 'staged' — don't override user edits
     if (editedName === '') setEditedName(uploadState.displayName);
   }
 
@@ -65,57 +65,55 @@ export function BillUploader(): JSX.Element {
       {uploadState.status === 'idle' && (
         <>
           <div className={s.uploadIcon}><UploadIcon size={28} /></div>
-          <p className={s.uploadLabel}>Drop your bill here, or</p>
+          <p className={s.uploadLabel}>{t('dropLabel')}</p>
           <button onClick={() => inputRef.current?.click()} className={s.uploadBtn}>
-            Choose file
+            {t('chooseFile')}
           </button>
-          <p className={s.uploadHint}>PDF, JPEG, or PNG — max 20MB</p>
+          <p className={s.uploadHint}>{t('hint')}</p>
         </>
       )}
 
       {uploadState.status === 'validating' && (
-        <p className={s.uploadStatusText}>Checking file…</p>
+        <p className={s.uploadStatusText}>{t('checking')}</p>
       )}
 
       {uploadState.status === 'staged' && (
         <div className={s.uploadStagedWrap}>
           <p className={s.uploadStagedFile}>{uploadState.file.name}</p>
           <div className={s.uploadNameRow}>
-            <label className={s.uploadNameLabel}>Name this bill</label>
+            <label className={s.uploadNameLabel}>{t('nameBill')}</label>
             <input
               className={s.uploadNameInput}
               type="text"
               value={editedName}
               onChange={(e) => setEditedName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleUpload(); }}
-              placeholder="e.g. January ER Visit"
+              placeholder={t('namePlaceholder')}
               autoFocus
             />
           </div>
           <div className={s.uploadStagedActions}>
-            <button onClick={handleReset} className={s.uploadCancelBtn}>Cancel</button>
-            <button onClick={handleUpload} className={s.uploadBtn}>
-              Upload & Analyze →
-            </button>
+            <button onClick={handleReset} className={s.uploadCancelBtn}>{t('cancel')}</button>
+            <button onClick={handleUpload} className={s.uploadBtn}>{t('uploadAnalyze')}</button>
           </div>
         </div>
       )}
 
       {uploadState.status === 'uploading' && (
-        <p className={s.uploadStatusText}>Uploading…</p>
+        <p className={s.uploadStatusText}>{t('uploading')}</p>
       )}
 
       {uploadState.status === 'ready' && (
         <>
           <div className={s.uploadSpinner} />
-          <p className={s.uploadStatusText}>Upload complete — preparing analysis…</p>
+          <p className={s.uploadStatusText}>{t('uploadComplete')}</p>
         </>
       )}
 
       {uploadState.status === 'error' && (
         <>
           <p className={s.uploadError}>{uploadState.error.detail}</p>
-          <button onClick={handleReset} className={s.retryBtn}>Try again</button>
+          <button onClick={handleReset} className={s.retryBtn}>{t('tryAgain')}</button>
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import s from '@/app/dashboard/dashboard.module.css';
 
 interface ReferralCardProps {
@@ -9,11 +10,8 @@ interface ReferralCardProps {
   creditsEarned: number;
 }
 
-export function ReferralCard({
-  referralCode,
-  convertedCount,
-  creditsEarned,
-}: ReferralCardProps): JSX.Element {
+export function ReferralCard({ referralCode, convertedCount, creditsEarned }: ReferralCardProps): JSX.Element {
+  const t = useTranslations('dashboard.referral');
   const [copied, setCopied] = useState(false);
 
   const referralUrl =
@@ -31,15 +29,13 @@ export function ReferralCard({
     <section className={s.referralCard}>
       <div className={s.referralTop}>
         <div>
-          <h2 className={s.referralH}>Give $5, Get $5</h2>
-          <p className={s.referralSub}>
-            Share your link — your friend gets $5 off their first report, and you earn $5 credit when they purchase.
-          </p>
+          <h2 className={s.referralH}>{t('heading')}</h2>
+          <p className={s.referralSub}>{t('sub')}</p>
         </div>
         {creditsEarned > 0 && (
           <div className={s.creditsBadge}>
             <p className={s.creditsAmt}>${(creditsEarned / 100).toFixed(0)}</p>
-            <p className={s.creditsLbl}>Earned</p>
+            <p className={s.creditsLbl}>{t('earned')}</p>
           </div>
         )}
       </div>
@@ -50,13 +46,13 @@ export function ReferralCard({
           onClick={handleCopy}
           className={`${s.copyBtn} ${copied ? s.copyBtnCopied : ''}`}
         >
-          {copied ? 'Copied!' : 'Copy link'}
+          {copied ? t('copied') : t('copyLink')}
         </button>
       </div>
 
       {convertedCount > 0 && (
         <p className={s.referralStats}>
-          {convertedCount} friend{convertedCount > 1 ? 's' : ''} referred · ${(convertedCount * 5).toFixed(0)} total earned
+          {t('referralStats', { count: convertedCount, amount: `$${(convertedCount * 5).toFixed(0)}` })}
         </p>
       )}
     </section>

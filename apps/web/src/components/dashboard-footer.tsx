@@ -1,16 +1,15 @@
+import { getTranslations } from 'next-intl/server';
 import s from '@/app/dashboard/dashboard.module.css';
 
-export function DashboardFooter(): JSX.Element {
+export async function DashboardFooter(): Promise<JSX.Element> {
+  const t = await getTranslations('dashboard.footer');
   return (
     <footer className={s.footer}>
       <div className={s.footerInner}>
-        <p className={s.footerNote}>
-          Your bills are encrypted at rest (AES-256) and in transit (TLS 1.3).
-          Raw files are permanently deleted after 60 days. We never sell or share your data.
-        </p>
+        <p className={s.footerNote}>{t('security')}</p>
         <div className={s.footerLinks}>
-          <a href="/legal/privacy" className={s.footerLink}>Privacy</a>
-          <a href="/legal/terms" className={s.footerLink}>Terms</a>
+          <a href="/legal/privacy" className={s.footerLink}>{t('privacy')}</a>
+          <a href="/legal/terms" className={s.footerLink}>{t('terms')}</a>
           <span className={s.footerLink}>© {new Date().getFullYear()} Claro<em style={{ fontStyle: 'italic' }}>Bill</em></span>
         </div>
       </div>

@@ -1,152 +1,132 @@
 {
   "onboarding": {
-    "language": {
-      "title": "Chọn ngôn ngữ của bạn",
-      "subtitle": "Bạn có thể thay đổi điều này bất cứ lúc nào trong hồ sơ của bạn",
-      "continue": "Tiếp tục"
-    },
+    "language": { "title": "Chọn ngôn ngữ của bạn", "subtitle": "Bạn có thể thay đổi điều này bất cứ lúc nào trong hồ sơ của bạn", "continue": "Tiếp tục" },
     "profile": {
-      "title": "Cho chúng tôi biết về bạn",
-      "subtitle": "Điều này giúp chúng tôi so sánh chính xác các khoản phí của bạn",
-      "nameLabel": "Họ và tên",
-      "namePlaceholder": "Nguyễn Văn A",
-      "dobLabel": "Ngày sinh",
-      "stateLabel": "Tiểu bang",
-      "statePlaceholder": "Chọn tiểu bang của bạn",
-      "zipLabel": "Mã ZIP",
-      "zipPlaceholder": "vd. 90210",
+      "title": "Cho chúng tôi biết về bạn", "subtitle": "Điều này giúp chúng tôi so sánh chính xác các khoản phí của bạn",
+      "nameLabel": "Họ và tên", "namePlaceholder": "Nguyễn Văn A",
+      "dobLabel": "Ngày sinh", "stateLabel": "Tiểu bang", "statePlaceholder": "Chọn tiểu bang của bạn",
+      "zipLabel": "Mã ZIP", "zipPlaceholder": "vd. 90210",
       "insuranceLabel": "Bạn có loại bảo hiểm nào?",
-      "insurance": {
-        "commercial": "Thương mại",
-        "commercialSub": "Gói của nhà tuyển dụng hoặc thị trường",
-        "medicare": "Medicare",
-        "medicareSub": "Bảo hiểm y tế liên bang (65+)",
-        "medicaid": "Medicaid",
-        "medicaidSub": "Bảo hiểm y tế tiểu bang",
-        "tricare": "TRICARE",
-        "tricareSub": "Bảo hiểm quân nhân và cựu chiến binh",
-        "selfPay": "Tự chi trả",
-        "selfPaySub": "Không có bảo hiểm"
-      },
-      "continue": "Tiếp tục",
-      "back": "Quay lại",
-      "errors": {
-        "nameRequired": "Vui lòng nhập họ và tên đầy đủ của bạn",
-        "dobRequired": "Vui lòng nhập ngày sinh của bạn",
-        "stateRequired": "Vui lòng chọn tiểu bang của bạn",
-        "zipRequired": "Vui lòng nhập mã ZIP của bạn",
-        "zipInvalid": "Mã ZIP phải gồm 5 chữ số",
-        "insuranceRequired": "Vui lòng chọn loại bảo hiểm của bạn"
-      }
+      "insurance": { "commercial": "Thương mại", "commercialSub": "Gói của nhà tuyển dụng hoặc thị trường", "medicare": "Medicare", "medicareSub": "Bảo hiểm y tế liên bang (65+)", "medicaid": "Medicaid", "medicaidSub": "Bảo hiểm y tế tiểu bang", "tricare": "TRICARE", "tricareSub": "Bảo hiểm quân nhân và cựu chiến binh", "selfPay": "Tự chi trả", "selfPaySub": "Không có bảo hiểm" },
+      "continue": "Tiếp tục", "back": "Quay lại",
+      "errors": { "nameRequired": "Vui lòng nhập họ và tên đầy đủ của bạn", "dobRequired": "Vui lòng nhập ngày sinh của bạn", "stateRequired": "Vui lòng chọn tiểu bang của bạn", "zipRequired": "Vui lòng nhập mã ZIP của bạn", "zipInvalid": "Mã ZIP phải gồm 5 chữ số", "insuranceRequired": "Vui lòng chọn loại bảo hiểm của bạn" }
     },
     "primer": {
-      "title": "Bạn đã sẵn sàng",
-      "subtitle": "Đây là cách ClaroBill hoạt động",
-      "step1": {
-        "title": "Tải lên hóa đơn của bạn",
-        "body": "Tải lên PDF hoặc ảnh chụp hóa đơn y tế, EOB hoặc superbill của bạn"
-      },
-      "step2": {
-        "title": "Chúng tôi tìm ra lỗi",
-        "body": "Mỗi khoản phí được so sánh với mức giá Medicare và kiểm tra các khoản trùng lặp và lỗi mã hóa"
-      },
-      "step3": {
-        "title": "Nhận báo cáo của bạn",
-        "body": "Tải xuống báo cáo phân tích đầy đủ và thư khiếu nại sẵn sàng gửi đi"
-      },
-      "nav": {
-        "reports": "Báo cáo của bạn nằm trong Reports",
-        "billing": "Biên lai thanh toán nằm trong Billing"
-      },
-      "cta": "Tải lên hóa đơn đầu tiên của tôi",
-      "back": "Quay lại"
+      "title": "Bạn đã sẵn sàng", "subtitle": "Đây là cách ClaroBill hoạt động",
+      "step1": { "title": "Tải lên hóa đơn của bạn", "body": "Tải lên PDF hoặc ảnh chụp hóa đơn y tế, EOB hoặc superbill của bạn" },
+      "step2": { "title": "Chúng tôi tìm ra lỗi", "body": "Mỗi khoản phí được so sánh với mức giá Medicare và kiểm tra các khoản trùng lặp và lỗi mã hóa" },
+      "step3": { "title": "Nhận báo cáo của bạn", "body": "Tải xuống báo cáo phân tích đầy đủ và thư khiếu nại sẵn sàng gửi đi" },
+      "nav": { "reports": "Báo cáo của bạn nằm trong Reports", "billing": "Biên lai thanh toán nằm trong Billing" },
+      "cta": "Tải lên hóa đơn đầu tiên của tôi", "back": "Quay lại"
     },
-    "saving": "Đang thiết lập tài khoản của bạn\u2026",
-    "error": "Đã xảy ra lỗi. Vui lòng thử lại."
+    "saving": "Đang thiết lập tài khoản của bạn\u2026", "error": "Đã xảy ra lỗi. Vui lòng thử lại."
   },
   "nav": {
-    "myBills": "Hóa đơn của tôi",
-    "reports": "Báo cáo",
-    "billing": "Thanh toán",
-    "profile": "Hồ sơ",
-    "resources": "Tài nguyên",
-    "more": "Thêm",
-    "signOut": "Đăng xuất",
-    "accountMenu": "Menu tài khoản",
-    "moreOptions": "Thêm tùy chọn",
-    "hintReports": "Báo cáo của bạn ở đây",
-    "hintBilling": "Biên lai thanh toán ở đây"
+    "myBills": "Hóa đơn của tôi", "reports": "Báo cáo", "billing": "Thanh toán", "profile": "Hồ sơ",
+    "resources": "Tài nguyên", "more": "Thêm", "signOut": "Đăng xuất",
+    "accountMenu": "Menu tài khoản", "moreOptions": "Thêm tùy chọn",
+    "hintReports": "Báo cáo của bạn ở đây", "hintBilling": "Biên lai thanh toán ở đây"
   },
   "dashboard": {
     "noBillsTitle": "Bạn chưa có hóa đơn nào",
-    "noBillsText": "Tải lên hóa đơn y tế bên dưới \u2014 chúng tôi sẽ kiểm tra từng khoản phí với mức chuẩn Medicare và gắn cờ các khoản phí quá mức, trùng lặp và lỗi mã hóa.",
-    "analyzeBill": "Phân tích hóa đơn",
-    "analyzeNewBill": "Phân tích hóa đơn mới",
+    "noBillsText": "Tải lên hóa đơn y tế bên dưới \u2014 chúng tôi sẽ kiểm tra từng khoản phí với các tiêu chuẩn Medicare và gắn cờ các khoản thu quá mức, trùng lặp và lỗi mã hóa.",
+    "analyzeBill": "Phân tích hóa đơn", "analyzeNewBill": "Phân tích hóa đơn mới",
     "analyzeSub": "Tải lên hóa đơn y tế, EOB hoặc superbill \u2014 PDF, JPEG hoặc PNG",
-    "previousUploads": "Các lần tải lên trước",
-    "uploaded": "Đã tải lên",
-    "failedNote": "Chúng tôi không thể phân tích hóa đơn này \u2014 hãy thử lại hoặc tải lên bản sao rõ hơn.",
-    "view": "Xem \u2192",
-    "analyze": "Phân tích \u2192",
-    "retry": "Thử lại \u2192",
-    "status": {
-      "needsReview": "Cần xem xét",
-      "pending": "Đang chờ",
-      "reading": "Đang đọc\u2026",
-      "analyzing": "Đang phân tích\u2026",
-      "ready": "Sẵn sàng",
-      "failed": "Thất bại"
+    "previousUploads": "Lần tải lên trước", "uploaded": "Đã tải lên",
+    "failedNote": "Chúng tôi không thể phân tích hóa đơn này \u2014 thử lại hoặc tải lên bản sao rõ hơn.",
+    "view": "Xem \u2192", "analyze": "Phân tích \u2192", "retry": "Thử lại \u2192",
+    "status": { "needsReview": "Cần xem xét", "pending": "Đang chờ", "reading": "Đang đọc\u2026", "analyzing": "Đang phân tích\u2026", "ready": "Sẵn sàng", "failed": "Thất bại" },
+    "uploader": {
+      "dropLabel": "Kéo thả hóa đơn vào đây, hoặc",
+      "chooseFile": "Chọn tệp",
+      "hint": "PDF, JPEG hoặc PNG \u2014 tối đa 20MB",
+      "checking": "Đang kiểm tra tệp\u2026",
+      "nameBill": "Đặt tên cho hóa đơn này",
+      "namePlaceholder": "vd. Khám cấp cứu tháng 1",
+      "cancel": "Hủy",
+      "uploadAnalyze": "Tải lên và Phân tích \u2192",
+      "uploading": "Đang tải lên\u2026",
+      "uploadComplete": "Tải lên hoàn tất \u2014 đang chuẩn bị phân tích\u2026",
+      "tryAgain": "Thử lại"
+    },
+    "referral": {
+      "heading": "Chia sẻ $5, Nhận $5",
+      "sub": "Chia sẻ liên kết của bạn \u2014 bạn của bạn được giảm $5 cho báo cáo đầu tiên, và bạn kiếm được $5 tín dụng khi họ mua.",
+      "earned": "Đã kiếm", "copyLink": "Sao chép liên kết", "copied": "Đã sao chép!",
+      "referralStats": "Đã giới thiệu {count} bạn \u00b7 Tổng cộng kiếm được {amount}"
+    },
+    "footer": {
+      "security": "Hóa đơn của bạn được mã hóa khi lưu trữ (AES-256) và khi truyền tải (TLS 1.3). Các tệp gốc được xóa vĩnh viễn sau 60 ngày. Chúng tôi không bao giờ bán hoặc chia sẻ dữ liệu của bạn.",
+      "privacy": "Quyền riêng tư", "terms": "Điều khoản"
     }
   },
   "reports": {
-    "title": "Báo cáo & Thư khiếu nại",
-    "subtitle": "Tải xuống bản phân tích đầy đủ và thư khiếu nại sẵn sàng gửi đi",
+    "title": "Báo cáo và Thư khiếu nại",
+    "subtitle": "Tải xuống phân tích đầy đủ và thư khiếu nại sẵn sàng gửi đi của bạn",
     "emptyText": "Chưa có báo cáo nào được tạo.",
-    "emptySubtext": "Báo cáo và thư khiếu nại sẽ xuất hiện ở đây sau khi bạn mở khóa phân tích đầy đủ.",
+    "emptySubtext": "Báo cáo và thư khiếu nại xuất hiện ở đây sau khi bạn mở khóa phân tích đầy đủ.",
     "analyzeBill": "Phân tích hóa đơn",
-    "potentialSavings": "Đã xác định {amount} tiết kiệm tiềm năng",
-    "report": "Báo cáo",
-    "disputeLetter": "Thư khiếu nại"
+    "potentialSavings": "Đã xác định được {amount} tiết kiệm tiềm năng",
+    "report": "Báo cáo", "disputeLetter": "Thư Khiếu Nại"
   },
   "billing": {
-    "title": "Lịch sử thanh toán",
-    "subtitle": "Tất cả các khoản thanh toán và báo cáo đã mở khóa",
-    "emptyText": "Chưa có khoản thanh toán nào.",
-    "emptySubtext": "Lịch sử thanh toán của bạn sẽ xuất hiện ở đây sau khi bạn mở khóa một báo cáo đầy đủ.",
-    "date": "Ngày",
-    "bill": "Hóa đơn",
-    "amount": "Số tiền",
-    "status": "Trạng thái",
-    "paid": "Đã thanh toán",
-    "pending": "Đang chờ",
-    "failed": "Thất bại",
-    "refunded": "Đã hoàn tiền",
-    "free": "Miễn phí"
+    "title": "Lịch sử Thanh toán", "subtitle": "Tất cả thanh toán và báo cáo đã mở khóa",
+    "emptyText": "Chưa có thanh toán nào.", "emptySubtext": "Lịch sử thanh toán của bạn sẽ xuất hiện ở đây sau khi bạn mở khóa báo cáo đầy đủ.",
+    "date": "Ngày", "bill": "Hóa đơn", "amount": "Số tiền", "status": "Trạng thái",
+    "paid": "Đã thanh toán", "pending": "Đang chờ", "failed": "Thất bại", "refunded": "Đã hoàn tiền", "free": "Miễn phí"
   },
   "profile": {
-    "title": "Hồ sơ",
-    "subtitle": "Quản lý tài khoản và cài đặt quyền riêng tư của bạn",
-    "account": "Tài khoản",
-    "memberSince": "Thành viên từ {date}",
-    "dataPrivacy": "Dữ liệu & Quyền riêng tư",
-    "dataStorage": "Lưu trữ dữ liệu",
+    "title": "Hồ sơ", "subtitle": "Quản lý tài khoản và cài đặt quyền riêng tư của bạn",
+    "account": "Tài khoản", "memberSince": "Thành viên từ {date}",
+    "dataPrivacy": "Dữ liệu & Quyền riêng tư", "dataStorage": "Lưu trữ dữ liệu",
     "dataStorageValue": "Mã hóa AES-256 khi lưu trữ, TLS 1.3 khi truyền tải",
     "fileRetention": "Lưu giữ tệp hóa đơn",
-    "fileRetentionValue": "Các tệp gốc tự động bị xóa sau 60 ngày",
+    "fileRetentionValue": "Các tệp gốc được tự động xóa sau 60 ngày",
     "analysisResults": "Kết quả phân tích",
     "analysisResultsValue": "Được lưu giữ vô thời hạn \u2014 có thể truy cập trong Báo cáo",
-    "dataSharing": "Chia sẻ dữ liệu",
-    "dataSharingValue": "Không bao giờ bán hoặc chia sẻ với bên thứ ba",
-    "language": "Ngôn ngữ",
-    "languageSubtitle": "Thay đổi ngôn ngữ ưa thích của bạn",
-    "dangerZone": "Vùng nguy hiểm",
-    "deleteAccount": "Xóa tài khoản của tôi",
-    "deleteAccountDesc": "Xóa vĩnh viễn tài khoản, tất cả hóa đơn đã tải lên và kết quả phân tích của bạn. Không thể hoàn tác.",
+    "dataSharing": "Chia sẻ dữ liệu", "dataSharingValue": "Không bao giờ bán hoặc chia sẻ với bên thứ ba",
+    "language": "Ngôn ngữ", "languageSubtitle": "Thay đổi ngôn ngữ ưa thích của bạn",
+    "dangerZone": "Vùng nguy hiểm", "deleteAccount": "Xóa tài khoản của tôi",
+    "deleteAccountDesc": "Xóa vĩnh viễn tài khoản của bạn, tất cả hóa đơn đã tải lên và kết quả phân tích. Điều này không thể hoàn tác.",
     "deleteBtn": "Xóa tài khoản",
-    "deleteConfirm": "Điều này sẽ xóa vĩnh viễn tất cả hóa đơn, phân tích và báo cáo của bạn. Bạn có chắc không?",
-    "cancel": "Hủy",
-    "confirmDelete": "Có, xóa tất cả",
-    "deleting": "Đang xóa\u2026",
-    "deleteError": "Đã xảy ra lỗi. Vui lòng thử lại hoặc liên hệ hỗ trợ."
+    "deleteConfirm": "Thao tác này sẽ xóa vĩnh viễn tất cả hóa đơn, phân tích và báo cáo của bạn. Bạn có chắc không?",
+    "cancel": "Hủy", "confirmDelete": "Có, xóa tất cả",
+    "deleting": "Đang xóa\u2026", "deleteError": "Đã xảy ra lỗi. Vui lòng thử lại hoặc liên hệ hỗ trợ.",
+    "members": {
+      "title": "Thành viên & Bảo hiểm",
+      "subtitle": "Thêm bản thân và bất kỳ người phụ thuộc nào. Chúng tôi sử dụng thông tin bảo hiểm của bạn để tìm mức giá hợp đồng chính xác của công ty bảo hiểm.",
+      "addMember": "+ Thêm thành viên",
+      "noMembers": "Chưa có thành viên nào. Hãy thêm bản thân để bật phân tích mức giá đã đàm phán.",
+      "loading": "Đang tải\u2026", "deleteConfirm": "Xóa thành viên này và tất cả các kế hoạch bảo hiểm của họ?",
+      "dob": "Ngày sinh", "primary": "Chính", "secondary": "Phụ",
+      "noPlans": "Chưa có kế hoạch bảo hiểm", "addPlan": "+ Thêm kế hoạch bảo hiểm",
+      "addMemberTitle": "Thêm thành viên", "addPlanTitle": "Thêm kế hoạch bảo hiểm",
+      "scanCard": "Quét hoặc tải lên thẻ",
+      "scanSuccess": "Đã đọc thẻ \u2014 các trường đã được điền tự động. Xem lại trước khi lưu.",
+      "scanWarn": "Đọc thẻ với độ tin cậy thấp \u2014 vui lòng xem lại tất cả các trường cẩn thận.",
+      "planType": "Loại kế hoạch",
+      "commercial": "Bảo hiểm Thương mại", "medicare": "Medicare", "tricare": "TRICARE / Quân sự", "selfPay": "Tự chi trả / Không có bảo hiểm",
+      "medicareType": "Loại Medicare", "analysisHint": "(giúp ích cho phân tích)",
+      "maInsurer": "Công ty bảo hiểm MA *", "maInsurerPlaceholder": "vd. Humana, Aetna, UnitedHealthcare, BCBS",
+      "planName": "Tên kế hoạch", "optional": "(tùy chọn)", "planNamePlaceholder": "vd. HumanaChoice PPO, Aetna Gold",
+      "medicaidProgram": "Loại chương trình", "medicaidMCO": "Kế hoạch y tế / MCO", "tricareProgram": "Chương trình TRICARE",
+      "insurer": "Công ty bảo hiểm *", "insurerPlaceholder": "vd. Blue Cross Blue Shield",
+      "memberId": "Mã thành viên", "memberIdHint": "(cho thư khiếu nại)", "memberIdPlaceholder": "vd. XYZ123456789",
+      "primaryInsurance": "Bảo hiểm chính", "cancel": "Hủy", "savePlan": "Lưu kế hoạch", "saving": "Đang lưu\u2026",
+      "fullName": "Họ và tên *", "fullNamePlaceholder": "vd. Nguyễn Thị Lan",
+      "dateOfBirth": "Ngày sinh *",
+      "state": "Tiểu bang", "stateHint": "(để tra cứu mức giá)", "selectState": "Chọn tiểu bang\u2026",
+      "county": "Quận", "countyOptional": "(tùy chọn)", "selectCounty": "Chọn quận\u2026",
+      "zip": "Mã ZIP", "zipPlaceholder": "Mã ZIP 5 chữ số", "saveMember": "Lưu thành viên",
+      "errorNameRequired": "Yêu cầu họ tên và ngày sinh.",
+      "errorPlanRequired": "Yêu cầu tên công ty bảo hiểm và tên kế hoạch.",
+      "errorMemberFailed": "Không thêm được thành viên. Vui lòng thử lại.",
+      "errorPlanFailed": "Không thêm được kế hoạch. Vui lòng thử lại."
+    }
+  },
+  "resources": {
+    "title": "Tài nguyên về Hóa đơn Y tế",
+    "subtitle": "Hướng dẫn bằng ngôn ngữ đơn giản để hiểu và khiếu nại hóa đơn y tế của bạn.",
+    "analyzeBtn": "Phân tích hóa đơn của tôi", "minRead": "{n} phút đọc", "team": "Nhóm Clarobill"
   }
 }
