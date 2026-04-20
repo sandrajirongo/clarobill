@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { US_STATES, COUNTIES_BY_STATE } from '@/lib/utils/county-data';
 import {
   getMedicaidBrandName,
@@ -37,6 +38,7 @@ interface ProfileMember {
 }
 
 export function MembersPanel(): JSX.Element {
+  const t = useTranslations('profile.members');
   const [members, setMembers] = useState<ProfileMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -114,7 +116,7 @@ export function MembersPanel(): JSX.Element {
 
   async function handleAddMember(): Promise<void> {
     if (!newName.trim() || !newDob) {
-      setError('Name and date of birth are required.');
+      setError(t('errorNameRequired'));
       return;
     }
     setSaving(true);
@@ -133,7 +135,7 @@ export function MembersPanel(): JSX.Element {
     });
     setSaving(false);
     if (!res.ok) {
-      setError('Failed to add member. Please try again.');
+      setError(t('errorMemberFailed'));
       return;
     }
     setNewName(''); setNewDob(''); setNewState(''); setNewCounty(''); setNewZip('');
@@ -142,7 +144,7 @@ export function MembersPanel(): JSX.Element {
   }
 
   async function handleDeleteMember(memberId: string): Promise<void> {
-    if (!confirm('Delete this member and all their insurance plans?')) return;
+    if (!confirm(t('deleteConfirm'))) return;
     await fetch(`/api/profile/members/${memberId}`, { method: 'DELETE' });
     void loadMembers();
   }
@@ -150,7 +152,7 @@ export function MembersPanel(): JSX.Element {
   async function handleAddPlan(memberId: string): Promise<void> {
     const isGovPlan = newPlanType !== 'commercial';
     if (!isGovPlan && (!newPayer.trim() || !newPlan.trim())) {
-      setError('Insurer name and plan name are required.');
+      setError(t('errorPlanRequired'));
       return;
     }
     setSaving(true);
@@ -196,7 +198,7 @@ export function MembersPanel(): JSX.Element {
     });
     setSaving(false);
     if (!res.ok) {
-      setError('Failed to add plan. Please try again.');
+      setError(t('errorPlanFailed'));
       return;
     }
     resetPlanForm();
@@ -214,8 +216,8 @@ export function MembersPanel(): JSX.Element {
   if (loading) {
     return (
       <div className={s.card}>
-        <div className={s.cardHeader}><p className={s.cardTitle}>Members & Insurance</p></div>
-        <div className={s.cardBody}><p className={s.emptyText}>Loading…</p></div>
+        <div className={s.cardHeader}><p className={s.cardTitle}>{t('title')}</p></div>
+        <div className={s.cardBody}><p className={s.emptyText}>{t('loading')}</p></div>
       </div>
     );
   }
@@ -224,15 +226,15 @@ export function MembersPanel(): JSX.Element {
     <div className={s.card}>
       <div className={s.cardHeader}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <p className={s.cardTitle}>Members & Insurance</p>
+          <p className={s.cardTitle}>{t('title')}</p>
           {!showAddMember && (
             <button onClick={() => { setShowAddMember(true); setError(null); }} className={s.addBtn}>
-              + Add member
+              {t('addMember')}
             </button>
           )}
         </div>
         <p style={{ fontSize: '.78rem', color: 'var(--txt3)', marginTop: '.3rem' }}>
-          Add yourself and any dependents. We use your insurance details to find your insurer's exact contracted rates.
+          {t('subtitle')}
         </p>
       </div>
 
@@ -240,7 +242,7 @@ export function MembersPanel(): JSX.Element {
         {error && <p className={s.formError}>{error}</p>}
 
         {members.length === 0 && !showAddMember && (
-          <p className={s.emptyText}>No members yet. Add yourself to enable negotiated-rate analysis.</p>
+          <p className={s.emptyText}>{t('noMembers')}</p>
         )}
 
         {members.map((member) => {
@@ -256,10 +258,10 @@ export function MembersPanel(): JSX.Element {
                 <div style={{ minWidth: 0 }}>
                   <p className={s.memberName}>
                     {member.full_name}
-                    {member.is_primary && <span className={s.primaryBadge}>Primary</span>}
+                    {member.is_primary && <span className={s.primaryBadge}>{t('primary')}</span>}
                   </p>
                   <p className={s.memberMeta}>
-                    DOB {dobFormatted}
+                    {t('dob')} {dobFormatted}
                     {locationParts.length > 0 && ` · ${locationParts.join(', ')}`}
                     {member.zip_code && ` ${member.zip_code}`}
                   </p>
@@ -281,9 +283,9 @@ export function MembersPanel(): JSX.Element {
                           <span className={s.planPayer}>{plan.payer_name}</span>
                           <span className={s.planName}> · {plan.plan_name}</span>
                           {plan.is_primary_plan
-                            ? <span className={s.planPrimaryBadge}>Primary</span>
+                            ? <span className={s.planPrimaryBadge}>{t('primary')}</span>
                             : member.insurance_plans.length > 1
-                            ? <span className={s.planSecondaryBadge}>Secondary</span>
+                            ? <span className={s.planSecondaryBadge}>{t('secondary')}</span>
                             : null}
                           {plan.member_id && <span className={s.planMemberId}>ID: {plan.member_id}</span>}
                         </div>
@@ -296,7 +298,7 @@ export function MembersPanel(): JSX.Element {
                     ))}
                   </div>
                 ) : (
-                  <p className={s.noPlansText}>No insurance plans yet</p>
+                  <p className={s.noPlansText}>{t('noPlans')}</p>
                 )}
 
                 {/* ── Add plan form ──────────────────────────────────────── */}
@@ -309,28 +311,28 @@ export function MembersPanel(): JSX.Element {
                     }}
                     className={s.addPlanBtn}
                   >
-                    + Add insurance plan
+                    {t('addPlan')}
                   </button>
                 ) : (
                   <div className={s.inlineForm}>
                     {/* Header: title + scan button */}
                     <div className={s.inlineFormHeader}>
-                      <p className={s.inlineFormTitle}>Add insurance plan</p>
+                      <p className={s.inlineFormTitle}>{t('addPlanTitle')}</p>
                       <button
                         type="button"
                         className={s.scanBtn}
                         onClick={() => setShowScanner(true)}
                       >
                         <CameraIcon size={13} />
-                        Scan or upload card
+                        {t('scanCard')}
                       </button>
                     </div>
 
                     {/* Scan status */}
                     {lastScan !== null && (
                       lastScan.confident
-                        ? <p className={s.scanSuccess}>Card read — fields auto-filled. Review before saving.</p>
-                        : <p className={s.scanWarn}>Card read with low confidence — please review all fields carefully.</p>
+                        ? <p className={s.scanSuccess}>{t('scanSuccess')}</p>
+                        : <p className={s.scanWarn}>{t('scanWarn')}</p>
                     )}
                     {lastScan?.note && (
                       <p className={s.scanNote}>{lastScan.note}</p>
@@ -339,7 +341,7 @@ export function MembersPanel(): JSX.Element {
                     {/* Plan type — label shows state Medicaid brand name when known */}
                     <div className={s.formRow}>
                       <div className={s.formField}>
-                        <label className={s.formLabel}>Plan type</label>
+                        <label className={s.formLabel}>{t('planType')}</label>
                         <select
                           className={s.formSelect}
                           value={newPlanType}
@@ -350,11 +352,11 @@ export function MembersPanel(): JSX.Element {
                             setNewTricareType('');
                           }}
                         >
-                          <option value="commercial">Commercial Insurance</option>
-                          <option value="medicare">Medicare</option>
+                          <option value="commercial">{t('commercial')}</option>
+                          <option value="medicare">{t('medicare')}</option>
                           <option value="medicaid">{getMedicaidBrandName(member.state)} (Medicaid)</option>
-                          <option value="tricare">TRICARE / Military</option>
-                          <option value="self_pay">Self-Pay / Uninsured</option>
+                          <option value="tricare">{t('tricare')}</option>
+                          <option value="self_pay">{t('selfPay')}</option>
                         </select>
                       </div>
                     </div>
@@ -363,7 +365,7 @@ export function MembersPanel(): JSX.Element {
                     {newPlanType === 'medicare' && (
                       <div className={s.formRow}>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>Medicare type <span className={s.optionalTag}>(helps with analysis)</span></label>
+                          <label className={s.formLabel}>{t('medicareType')} <span className={s.optionalTag}>{t('analysisHint')}</span></label>
                           <select
                             className={s.formSelect}
                             value={newMedicareType}
@@ -382,19 +384,19 @@ export function MembersPanel(): JSX.Element {
                     {newPlanType === 'medicare' && newMedicareType === 'Medicare Advantage (Part C)' && (
                       <div className={s.formRow}>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>MA insurer *</label>
+                          <label className={s.formLabel}>{t('maInsurer')}</label>
                           <input
                             className={s.formInput}
-                            placeholder="e.g. Humana, Aetna, UnitedHealthcare, BCBS"
+                            placeholder={t('maInsurerPlaceholder')}
                             value={newMedicareMAName}
                             onChange={(e) => setNewMedicareMAName(e.target.value)}
                           />
                         </div>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>Plan name <span className={s.optionalTag}>(optional)</span></label>
+                          <label className={s.formLabel}>{t('planName')} <span className={s.optionalTag}>{t('optional')}</span></label>
                           <input
                             className={s.formInput}
-                            placeholder="e.g. HumanaChoice PPO, Aetna Gold"
+                            placeholder={t('planNamePlaceholder')}
                             value={newPlan}
                             onChange={(e) => setNewPlan(e.target.value)}
                           />
@@ -406,7 +408,7 @@ export function MembersPanel(): JSX.Element {
                     {newPlanType === 'medicaid' && (
                       <div className={s.formRow}>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>Program type <span className={s.optionalTag}>(helps with analysis)</span></label>
+                          <label className={s.formLabel}>{t('medicaidProgram')} <span className={s.optionalTag}>{t('analysisHint')}</span></label>
                           <select
                             className={s.formSelect}
                             value={newMedicaidType}
@@ -425,7 +427,7 @@ export function MembersPanel(): JSX.Element {
                     {newPlanType === 'medicaid' && newMedicaidType === 'Medicaid Managed Care' && (
                       <div className={s.formRow}>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>Health plan / MCO <span className={s.optionalTag}>(optional)</span></label>
+                          <label className={s.formLabel}>{t('medicaidMCO')} <span className={s.optionalTag}>{t('optional')}</span></label>
                           <input
                             className={s.formInput}
                             list="panel-mco-suggestions"
@@ -446,7 +448,7 @@ export function MembersPanel(): JSX.Element {
                     {newPlanType === 'tricare' && (
                       <div className={s.formRow}>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>TRICARE program <span className={s.optionalTag}>(optional)</span></label>
+                          <label className={s.formLabel}>{t('tricareProgram')} <span className={s.optionalTag}>{t('optional')}</span></label>
                           <select
                             className={s.formSelect}
                             value={newTricareType}
@@ -465,16 +467,16 @@ export function MembersPanel(): JSX.Element {
                     {newPlanType === 'commercial' && (
                       <div className={s.formRow}>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>Insurance company *</label>
+                          <label className={s.formLabel}>{t('insurer')}</label>
                           <input
                             className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPayer ? ` ${s.formInputUncertain}` : ''}`}
-                            placeholder="e.g. Blue Cross Blue Shield"
+                            placeholder={t('insurerPlaceholder')}
                             value={newPayer}
                             onChange={(e) => setNewPayer(e.target.value)}
                           />
                         </div>
                         <div className={s.formField}>
-                          <label className={s.formLabel}>Plan name *</label>
+                          <label className={s.formLabel}>{t('planName')} *</label>
                           <input
                             className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPlan ? ` ${s.formInputUncertain}` : ''}`}
                             placeholder="e.g. PPO Gold"
@@ -488,10 +490,10 @@ export function MembersPanel(): JSX.Element {
                     {/* Member ID + isPrimary */}
                     <div className={s.formRow}>
                       <div className={s.formField}>
-                        <label className={s.formLabel}>Member ID <span className={s.optionalTag}>(for dispute letters)</span></label>
+                        <label className={s.formLabel}>{t('memberId')} <span className={s.optionalTag}>{t('memberIdHint')}</span></label>
                         <input
                           className={`${s.formInput}${lastScan !== null && !lastScan.confident && newMemberId ? ` ${s.formInputUncertain}` : ''}`}
-                          placeholder="e.g. XYZ123456789"
+                          placeholder={t('memberIdPlaceholder')}
                           value={newMemberId}
                           onChange={(e) => setNewMemberId(e.target.value)}
                         />
@@ -503,7 +505,7 @@ export function MembersPanel(): JSX.Element {
                             checked={newIsPrimary}
                             onChange={(e) => setNewIsPrimary(e.target.checked)}
                           />
-                          Primary insurance
+                          {t('primaryInsurance')}
                         </label>
                       </div>
                     </div>
@@ -513,14 +515,14 @@ export function MembersPanel(): JSX.Element {
                         onClick={() => { setAddingPlanFor(null); resetPlanForm(); setError(null); }}
                         className={s.cancelBtn}
                       >
-                        Cancel
+                        {t('cancel')}
                       </button>
                       <button
                         onClick={() => void handleAddPlan(member.id)}
                         disabled={saving}
                         className={s.saveBtn}
                       >
-                        {saving ? 'Saving…' : 'Save plan'}
+                        {saving ? t('saving') : t('savePlan')}
                       </button>
                     </div>
                   </div>
@@ -533,20 +535,20 @@ export function MembersPanel(): JSX.Element {
         {/* Add member form */}
         {showAddMember && (
           <div className={s.inlineForm}>
-            <p className={s.inlineFormTitle}>Add member</p>
+            <p className={s.inlineFormTitle}>{t('addMemberTitle')}</p>
             <div className={s.formRow}>
               <div className={s.formField} style={{ flex: 2 }}>
-                <label className={s.formLabel}>Full name *</label>
+                <label className={s.formLabel}>{t('fullName')}</label>
                 <input
                   className={s.formInput}
-                  placeholder="e.g. Jane Smith"
+                  placeholder={t('fullNamePlaceholder')}
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   autoFocus
                 />
               </div>
               <div className={s.formField}>
-                <label className={s.formLabel}>Date of birth *</label>
+                <label className={s.formLabel}>{t('dateOfBirth')}</label>
                 <input
                   type="date"
                   className={s.formInput}
@@ -557,34 +559,34 @@ export function MembersPanel(): JSX.Element {
             </div>
             <div className={s.formRow}>
               <div className={s.formField}>
-                <label className={s.formLabel}>State <span className={s.optionalTag}>(for rate lookup)</span></label>
+                <label className={s.formLabel}>{t('state')} <span className={s.optionalTag}>{t('stateHint')}</span></label>
                 <select
                   className={s.formSelect}
                   value={newState}
                   onChange={(e) => { setNewState(e.target.value); setNewCounty(''); }}
                 >
-                  <option value="">Select state…</option>
+                  <option value="">{t('selectState')}</option>
                   {US_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
                 </select>
               </div>
               {countiesForNewState.length > 0 && (
                 <div className={s.formField}>
-                  <label className={s.formLabel}>County <span className={s.optionalTag}>(optional)</span></label>
+                  <label className={s.formLabel}>{t('county')} <span className={s.optionalTag}>{t('countyOptional')}</span></label>
                   <select
                     className={s.formSelect}
                     value={newCounty}
                     onChange={(e) => setNewCounty(e.target.value)}
                   >
-                    <option value="">Select county…</option>
+                    <option value="">{t('selectCounty')}</option>
                     {countiesForNewState.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               )}
               <div className={s.formField}>
-                <label className={s.formLabel}>ZIP code <span className={s.optionalTag}>(optional)</span></label>
+                <label className={s.formLabel}>{t('zip')} <span className={s.optionalTag}>{t('countyOptional')}</span></label>
                 <input
                   className={s.formInput}
-                  placeholder="5-digit ZIP"
+                  placeholder={t('zipPlaceholder')}
                   maxLength={5}
                   value={newZip}
                   onChange={(e) => setNewZip(e.target.value.replace(/\D/g, ''))}
@@ -596,10 +598,10 @@ export function MembersPanel(): JSX.Element {
                 onClick={() => { setShowAddMember(false); setNewName(''); setNewDob(''); setNewState(''); setNewCounty(''); setNewZip(''); setError(null); }}
                 className={s.cancelBtn}
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button onClick={handleAddMember} disabled={saving} className={s.saveBtn}>
-                {saving ? 'Saving…' : 'Save member'}
+                {saving ? t('saving') : t('saveMember')}
               </button>
             </div>
           </div>
