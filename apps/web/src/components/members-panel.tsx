@@ -210,7 +210,7 @@ export function MembersPanel(): JSX.Element {
     setError(null);
   }
 
-  async function handleSavePlan(planId: string, memberId: string): Promise<void> {
+  async function handleSavePlan(planId: string): Promise<void> {
     setSaving(true);
     setError(null);
     const res = await fetch(`/api/profile/plans/${planId}`, {
@@ -519,7 +519,7 @@ export function MembersPanel(): JSX.Element {
                                   {t('cancel')}
                                 </button>
                                 <button
-                                  onClick={() => void handleSavePlan(plan.id, member.id)}
+                                  onClick={() => void handleSavePlan(plan.id)}
                                   disabled={saving}
                                   className={s.saveBtn}
                                 >
