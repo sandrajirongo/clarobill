@@ -23,14 +23,13 @@ export default async function ReportsPage(): Promise<JSX.Element> {
       bills (
         id,
         file_name,
+        display_name,
         payments ( amount_cents, status )
       )
     `)
     .order('created_at', { ascending: false });
 
-  const reportsWithDocs = (results ?? []).filter(
-    (r) => r.report_url || r.dispute_letter_url
-  );
+  const allResults = results ?? [];
 
   return (
     <main className={s.page}>
@@ -39,7 +38,7 @@ export default async function ReportsPage(): Promise<JSX.Element> {
         <p className={s.pageSub}>{t('subtitle')}</p>
       </div>
 
-      {reportsWithDocs.length === 0 ? (
+      {allResults.length === 0 ? (
         <div className={s.emptyState}>
           <p className={s.emptyText}>
             {t('emptyText')}<br />
@@ -49,14 +48,15 @@ export default async function ReportsPage(): Promise<JSX.Element> {
         </div>
       ) : (
         <ul style={{ display: 'flex', flexDirection: 'column', gap: '.75rem', listStyle: 'none', padding: 0, margin: 0 }}>
-          {reportsWithDocs.map((result) => {
+          {allResults.map((result) => {
             const bill = result.bills as unknown as {
               id: string;
               file_name: string;
+              display_name: string | null;
               payments: Array<{ amount_cents: number; status: string }>;
             } | null;
 
-            const fileName = bill?.file_name ?? 'Unknown bill';
+            const fileName = bill?.display_name ?? bill?.file_name ?? 'Unknown bill';
             const payment = bill?.payments?.[0];
             const amountPaid = payment
               ? payment.amount_cents === 0 ? t('free') : `$${(payment.amount_cents / 100).toFixed(2)}`
@@ -64,6 +64,7 @@ export default async function ReportsPage(): Promise<JSX.Element> {
             const generatedDate = new Date(result.created_at).toLocaleDateString(locale, {
               month: 'short', day: 'numeric', year: 'numeric',
             });
+            const isClean = !result.report_url && !result.dispute_letter_url;
 
             return (
               <li key={result.id} className={s.reportItem}>
@@ -78,6 +79,9 @@ export default async function ReportsPage(): Promise<JSX.Element> {
                         {t('potentialSavings', { amount: `$${Number(result.total_potential_savings).toFixed(2)}` })}
                       </p>
                     )}
+                    {isClean && (
+                      <p className={s.reportSavings}>{t('cleanBill')}</p>
+                    )}
                   </div>
                   <div className={s.reportBtns}>
                     {result.report_url && (
@@ -85,6 +89,11 @@ export default async function ReportsPage(): Promise<JSX.Element> {
                     )}
                     {result.dispute_letter_url && (
                       <DownloadButton billId={result.bill_id} type="dispute-letter" label={t('disputeLetter')} />
+                    )}
+                    {isClean && (
+                      <Link href={`/dashboard/bills/${result.bill_id}`} className={s.dlBtn}>
+                        {t('viewResults')}
+                      </Link>
                     )}
                   </div>
                 </div>

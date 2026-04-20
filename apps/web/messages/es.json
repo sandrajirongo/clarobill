@@ -132,7 +132,10 @@
     "analyzeBill": "Analizar una factura",
     "potentialSavings": "{amount} en posibles ahorros identificados",
     "report": "Informe",
-    "disputeLetter": "Carta de Disputa"
+    "disputeLetter": "Carta de Disputa",
+    "cleanBill": "Sin errores encontrados",
+    "viewResults": "Ver Resultados",
+    "free": "Gratis"
   },
   "billing": {
     "title": "Historial de Pagos",

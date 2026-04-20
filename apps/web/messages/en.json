@@ -132,7 +132,10 @@
     "analyzeBill": "Analyze a bill",
     "potentialSavings": "{amount} potential savings identified",
     "report": "Report",
-    "disputeLetter": "Dispute Letter"
+    "disputeLetter": "Dispute Letter",
+    "cleanBill": "No errors found",
+    "viewResults": "View Results",
+    "free": "Free"
   },
   "billing": {
     "title": "Billing History",

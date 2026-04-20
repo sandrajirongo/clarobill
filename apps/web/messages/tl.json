@@ -132,7 +132,10 @@
     "analyzeBill": "Suriin ang isang bill",
     "potentialSavings": "{amount} na potensyal na ipon ang natukoy",
     "report": "Ulat",
-    "disputeLetter": "Dispute Letter"
+    "disputeLetter": "Dispute Letter",
+    "cleanBill": "Walang mga error na natagpuan",
+    "viewResults": "Tingnan ang Mga Resulta",
+    "free": "Libre"
   },
   "billing": {
     "title": "Kasaysayan ng Pagsingil",

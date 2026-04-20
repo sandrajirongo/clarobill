@@ -33,38 +33,46 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
     .select('id, bill_id, cpt_code, description, service_date, quantity, unit_charge, total_charge, modifier, diagnosis_pointers')
     .eq('bill_id', billId);
 
+  // Use the most recent analysis row. .single() would silently return null if the
+  // bill was analyzed more than once (retry), so we take the latest row explicitly.
   const { data: analysis } = await supabase
     .from('analysis_results')
     .select('id, bill_id, errors, total_charges, estimated_fair_value, total_potential_savings, ai_summary, dispute_letter_url, report_url, created_at')
     .eq('bill_id', billId)
-    .single();
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const billProps = {
+    id: bill.id,
+    userId: bill.user_id,
+    displayName: bill.display_name ?? null,
+    fileName: bill.file_name,
+    filePath: bill.file_path,
+    fileSize: bill.file_size,
+    mimeType: bill.mime_type,
+    status: bill.status,
+    hospitalNpi: bill.hospital_npi ?? null,
+    hospitalName: bill.hospital_name ?? null,
+    profileMemberId: bill.profile_member_id ?? null,
+    payerName: bill.payer_name ?? null,
+    planName: bill.plan_name ?? null,
+    planType: (bill.plan_type ?? null) as import('@clarobill/shared').PlanType | null,
+    confirmedAt: bill.confirmed_at ?? null,
+    createdAt: bill.created_at,
+    updatedAt: bill.updated_at,
+  };
 
   // Analysis not ready yet — show a processing state instead of a broken redirect.
   // This handles: navigating directly to the URL while the engine is still running,
   // or refreshing the page mid-analysis.
   if (!analysis) {
+    const isComplete = bill.status === 'complete';
     const inProgress = bill.status === 'ocr_processing' || bill.status === 'analyzing';
+
     if (inProgress) {
       return <BillResultsView
-        bill={{
-          id: bill.id,
-          userId: bill.user_id,
-          displayName: bill.display_name ?? null,
-          fileName: bill.file_name,
-          filePath: bill.file_path,
-          fileSize: bill.file_size,
-          mimeType: bill.mime_type,
-          status: bill.status,
-          hospitalNpi: bill.hospital_npi ?? null,
-          hospitalName: bill.hospital_name ?? null,
-          profileMemberId: bill.profile_member_id ?? null,
-          payerName: bill.payer_name ?? null,
-          planName: bill.plan_name ?? null,
-          planType: (bill.plan_type ?? null) as import('@clarobill/shared').PlanType | null,
-          confirmedAt: bill.confirmed_at ?? null,
-          createdAt: bill.created_at,
-          updatedAt: bill.updated_at,
-        }}
+        bill={billProps}
         lineItems={[]}
         analysis={null}
         hiddenErrorCount={0}
@@ -72,6 +80,43 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
         paymentStatus={payment ?? null}
       />;
     }
+
+    // Bill is complete but analysis row is missing (engine wrote status before results,
+    // or analysis was run twice and .maybeSingle() got confused). Show a no-errors
+    // state rather than silently redirecting to the dashboard and losing the user.
+    if (isComplete) {
+      return <BillResultsView
+        bill={billProps}
+        lineItems={(lineItems ?? []).map((item) => ({
+          id: item.id,
+          billId: item.bill_id,
+          cptCode: item.cpt_code,
+          description: item.description,
+          serviceDate: item.service_date,
+          quantity: item.quantity,
+          unitCharge: Number(item.unit_charge),
+          totalCharge: Number(item.total_charge),
+          modifier: item.modifier,
+          diagnosisPointers: item.diagnosis_pointers,
+        }))}
+        analysis={{
+          id: '',
+          billId: billId,
+          errors: [],
+          totalCharges: 0,
+          estimatedFairValue: 0,
+          totalPotentialSavings: 0,
+          aiSummary: '',
+          disputeLetterUrl: null,
+          reportUrl: null,
+          createdAt: bill.updated_at,
+        }}
+        hiddenErrorCount={0}
+        hasPaid={false}
+        paymentStatus={payment ?? null}
+      />;
+    }
+
     redirect('/dashboard');
   }
 
@@ -95,25 +140,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
 
   return (
     <BillResultsView
-      bill={{
-        id: bill.id,
-        userId: bill.user_id,
-        displayName: bill.display_name ?? null,
-        fileName: bill.file_name,
-        filePath: bill.file_path,
-        fileSize: bill.file_size,
-        mimeType: bill.mime_type,
-        status: bill.status,
-        hospitalNpi: bill.hospital_npi ?? null,
-        hospitalName: bill.hospital_name ?? null,
-        profileMemberId: bill.profile_member_id ?? null,
-        payerName: bill.payer_name ?? null,
-        planName: bill.plan_name ?? null,
-        planType: (bill.plan_type ?? null) as import('@clarobill/shared').PlanType | null,
-        confirmedAt: bill.confirmed_at ?? null,
-        createdAt: bill.created_at,
-        updatedAt: bill.updated_at,
-      }}
+      bill={billProps}
       lineItems={(lineItems ?? []).map((item) => ({
         id: item.id,
         billId: item.bill_id,

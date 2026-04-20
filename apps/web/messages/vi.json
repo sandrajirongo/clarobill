@@ -132,7 +132,10 @@
     "analyzeBill": "Phân tích hóa đơn",
     "potentialSavings": "Đã xác định được {amount} tiết kiệm tiềm năng",
     "report": "Báo cáo",
-    "disputeLetter": "Thư Khiếu Nại"
+    "disputeLetter": "Thư Khiếu Nại",
+    "cleanBill": "Không tìm thấy lỗi",
+    "viewResults": "Xem Kết Quả",
+    "free": "Miễn phí"
   },
   "billing": {
     "title": "Lịch sử Thanh toán",

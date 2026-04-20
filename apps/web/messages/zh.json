@@ -132,7 +132,10 @@
     "analyzeBill": "分析账单",
     "potentialSavings": "已识别 {amount} 的潜在节省",
     "report": "报告",
-    "disputeLetter": "争议信函"
+    "disputeLetter": "争议信函",
+    "cleanBill": "未发现错误",
+    "viewResults": "查看结果",
+    "free": "免费"
   },
   "billing": {
     "title": "账单历史",
