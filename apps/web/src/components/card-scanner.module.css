@@ -313,3 +313,21 @@
   transition: background .15s;
 }
 .confirmBtn:hover { background: #3a5e36; }
+
+.confirmInput {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: .3rem .5rem;
+  font-family: var(--fb);
+  font-size: .82rem;
+  color: #111827;
+  background: #f9fafb;
+  outline: none;
+  transition: border-color .15s, background .15s;
+  box-sizing: border-box;
+}
+.confirmInput:focus {
+  border-color: #2D4A2A;
+  background: #fff;
+}

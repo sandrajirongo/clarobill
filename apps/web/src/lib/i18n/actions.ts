@@ -11,6 +11,10 @@ export type OnboardingData = {
   zipCode: string;
   insuranceType: string; // empty string means the user skipped insurance setup
   locale: string;
+  // Optional scanned details from the card scanner confirmation step
+  scannedPayerName?: string | null;
+  scannedPlanName?: string | null;
+  scannedMemberId?: string | null;
 };
 
 // Saves profile member + primary insurance plan and persists the user's chosen
@@ -39,23 +43,27 @@ export async function saveOnboarding(
 
   if (memberError) return { error: memberError.message };
 
-  // Pre-fill known plan names for government/standardised payer types so the
-  // user doesn't have to type them. Commercial is left blank — too many plans.
-  const planDefaults: Record<string, { payerName: string; planName: string }> =
-    {
-      medicare: { payerName: 'Medicare', planName: 'Medicare Fee-for-Service' },
-      medicaid: { payerName: 'Medicaid', planName: 'State Medicaid' },
-      tricare: { payerName: 'TRICARE', planName: 'TRICARE Standard' },
-      self_pay: { payerName: 'Self-Pay', planName: 'Self-Pay' },
-    };
+  // Pre-fill known payer/plan names for government plan types; commercial is
+  // left blank since there are too many plans to enumerate.
+  const planDefaults: Record<string, { payerName: string; planName: string }> = {
+    medicare: { payerName: 'Medicare', planName: 'Medicare Fee-for-Service' },
+    medicaid: { payerName: 'Medicaid', planName: 'State Medicaid' },
+    tricare:  { payerName: 'TRICARE',  planName: 'TRICARE Standard' },
+    self_pay: { payerName: 'Self-Pay', planName: 'Self-Pay' },
+  };
 
+  // Scanned details override defaults; for commercial, scanned data is the only source.
   const defaults = planDefaults[data.insuranceType];
-  if (defaults) {
+  const resolvedPayerName = data.scannedPayerName ?? defaults?.payerName ?? null;
+  const resolvedPlanName  = data.scannedPlanName  ?? defaults?.planName  ?? null;
+
+  if (resolvedPayerName || resolvedPlanName) {
     await supabase.from('insurance_plans').insert({
       profile_member_id: member.id,
-      payer_name: defaults.payerName,
-      plan_name: defaults.planName,
-      plan_type: data.insuranceType,
+      payer_name:      resolvedPayerName ?? 'Unknown',
+      plan_name:       resolvedPlanName  ?? 'Unknown',
+      plan_type:       data.insuranceType || 'commercial',
+      member_id:       data.scannedMemberId ?? null,
       is_primary_plan: true,
     });
   }

@@ -252,12 +252,14 @@ export function OnboardingWizard(): JSX.Element {
 
   const [showScanner, setShowScanner] = useState(false);
   const [lastScan, setLastScan] = useState<{ confident: boolean } | null>(null);
+  const [scanDetails, setScanDetails] = useState<InsuranceCardExtraction | null>(null);
 
   function handleScanExtracted(result: InsuranceCardExtraction): void {
     const scanned = result.planType;
     if (scanned && (VALID_INSURANCE_TYPES as string[]).includes(scanned)) {
       setInsurance(scanned as InsuranceType);
     }
+    setScanDetails(result);
     setLastScan({ confident: result.confident });
     setShowScanner(false);
   }
@@ -307,12 +309,15 @@ export function OnboardingWizard(): JSX.Element {
     setSaveError('');
 
     const result = await saveOnboarding({
-      fullName:      fullName.trim(),
+      fullName:           fullName.trim(),
       dateOfBirth,
       state,
-      zipCode:       zipCode.trim(),
-      insuranceType: insurance,
+      zipCode:            zipCode.trim(),
+      insuranceType:      insurance,
       locale,
+      scannedPayerName:   scanDetails?.payerName ?? null,
+      scannedPlanName:    scanDetails?.planName  ?? null,
+      scannedMemberId:    scanDetails?.memberId  ?? null,
     });
 
     if (result.error) {

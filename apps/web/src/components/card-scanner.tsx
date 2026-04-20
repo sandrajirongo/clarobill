@@ -131,6 +131,94 @@ async function toJpeg(file: File): Promise<Blob> {
   });
 }
 
+interface ConfirmStepProps {
+  result: InsuranceCardExtraction;
+  labels: CardScannerLabels;
+  onConfirm: (result: InsuranceCardExtraction) => void;
+  onRetake: () => void;
+  onClose: () => void;
+}
+
+const PLAN_TYPE_OPTIONS = [
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'medicare',   label: 'Medicare'   },
+  { value: 'medicaid',   label: 'Medicaid'   },
+  { value: 'tricare',    label: 'TRICARE'    },
+  { value: 'self_pay',   label: 'Self-Pay'   },
+] as const;
+
+function ConfirmStep({ result, labels, onConfirm, onRetake, onClose }: ConfirmStepProps): JSX.Element {
+  const [payerName, setPayerName] = useState(result.payerName ?? '');
+  const [planName,  setPlanName]  = useState(result.planName  ?? '');
+  const [memberId,  setMemberId]  = useState(result.memberId  ?? '');
+  const [groupId,   setGroupId]   = useState(result.groupId   ?? '');
+  const [planType,  setPlanType]  = useState(result.planType  ?? 'commercial');
+  const [rxBin,     setRxBin]     = useState(result.rxBin     ?? '');
+
+  function handleConfirm(): void {
+    onConfirm({
+      ...result,
+      payerName: payerName.trim() || null,
+      planName:  planName.trim()  || null,
+      memberId:  memberId.trim()  || null,
+      groupId:   groupId.trim()   || null,
+      planType:  planType         || null,
+      rxBin:     rxBin.trim()     || null,
+    });
+  }
+
+  return (
+    <div className={s.overlay}>
+      <button className={s.closeBtn} onClick={onClose} aria-label="Close">✕</button>
+      <div className={s.confirmCard}>
+        <p className={s.confirmTitle}>{labels.confirmTitle}</p>
+        <p className={s.confirmSubtitle}>{labels.confirmSubtitle}</p>
+        {!result.confident && result.note && (
+          <p className={s.confirmWarn}>{labels.lowConfidence}</p>
+        )}
+        <dl className={s.confirmFields}>
+          <dt>{labels.confirmInsurer}</dt>
+          <dd>
+            <input className={s.confirmInput} value={payerName} onChange={(e) => setPayerName(e.target.value)} />
+          </dd>
+          <dt>{labels.confirmPlan}</dt>
+          <dd>
+            <input className={s.confirmInput} value={planName} onChange={(e) => setPlanName(e.target.value)} />
+          </dd>
+          <dt>{labels.confirmMemberId}</dt>
+          <dd>
+            <input className={s.confirmInput} value={memberId} onChange={(e) => setMemberId(e.target.value)} />
+          </dd>
+          <dt>{labels.confirmGroupId}</dt>
+          <dd>
+            <input className={s.confirmInput} value={groupId} onChange={(e) => setGroupId(e.target.value)} />
+          </dd>
+          <dt>{labels.confirmPlanType}</dt>
+          <dd>
+            <select className={s.confirmInput} value={planType} onChange={(e) => setPlanType(e.target.value)}>
+              {PLAN_TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </dd>
+          {(result.rxBin || rxBin) && (
+            <>
+              <dt>{labels.confirmRxBin}</dt>
+              <dd>
+                <input className={s.confirmInput} value={rxBin} onChange={(e) => setRxBin(e.target.value)} />
+              </dd>
+            </>
+          )}
+        </dl>
+        <div className={s.confirmActions}>
+          <button className={s.retryBtn} onClick={onRetake}>{labels.retakeBtn}</button>
+          <button className={s.confirmBtn} onClick={handleConfirm}>{labels.confirmBtn}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CardScanner({ onExtracted, onClose, labels: labelOverrides }: CardScannerProps): JSX.Element {
   const labels: CardScannerLabels = { ...DEFAULT_LABELS, ...labelOverrides };
 
@@ -256,48 +344,14 @@ export function CardScanner({ onExtracted, onClose, labels: labelOverrides }: Ca
 
   // ── Confirmation: user reviews extracted data then confirms ───────────────
   if (state.phase === 'confirming') {
-    const { result } = state;
-    const field = (v: string | null) => v ?? labels.notDetected;
     return (
-      <div className={s.overlay}>
-        <button className={s.closeBtn} onClick={onClose} aria-label="Close">✕</button>
-        <div className={s.confirmCard}>
-          <p className={s.confirmTitle}>{labels.confirmTitle}</p>
-          <p className={s.confirmSubtitle}>{labels.confirmSubtitle}</p>
-          {!result.confident && result.note && (
-            <p className={s.confirmWarn}>{labels.lowConfidence}</p>
-          )}
-          <dl className={s.confirmFields}>
-            <dt>{labels.confirmInsurer}</dt>
-            <dd className={result.confident || result.payerName ? '' : s.confirmMissing}>{field(result.payerName)}</dd>
-            <dt>{labels.confirmPlan}</dt>
-            <dd>{field(result.planName)}</dd>
-            <dt>{labels.confirmMemberId}</dt>
-            <dd className={result.confident || result.memberId ? '' : s.confirmMissing}>{field(result.memberId)}</dd>
-            <dt>{labels.confirmGroupId}</dt>
-            <dd>{field(result.groupId)}</dd>
-            <dt>{labels.confirmPlanType}</dt>
-            <dd>{field(result.planType)}</dd>
-            {result.rxBin && (
-              <>
-                <dt>{labels.confirmRxBin}</dt>
-                <dd>{result.rxBin}</dd>
-              </>
-            )}
-          </dl>
-          <div className={s.confirmActions}>
-            <button className={s.retryBtn} onClick={() => setState({ phase: 'ready' })}>
-              {labels.retakeBtn}
-            </button>
-            <button
-              className={s.confirmBtn}
-              onClick={() => { onExtracted(result); onClose(); }}
-            >
-              {labels.confirmBtn}
-            </button>
-          </div>
-        </div>
-      </div>
+      <ConfirmStep
+        result={state.result}
+        labels={labels}
+        onConfirm={(edited) => { onExtracted(edited); onClose(); }}
+        onRetake={() => setState({ phase: 'ready' })}
+        onClose={onClose}
+      />
     );
   }
 

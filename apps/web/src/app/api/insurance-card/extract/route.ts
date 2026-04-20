@@ -23,10 +23,10 @@ const EXTRACT_PROMPT = `
 Extract all insurance card fields from this image.
 Return ONLY a JSON object with these exact keys:
 
-- payer_name: insurance company name (string or null)
-- plan_name: plan or product name such as "Choice POS I", "HMO Gold" (string or null)
-- member_id: member or subscriber ID number (string or null)
-- group_id: group number (string or null)
+- payer_name: The INSURANCE COMPANY brand name (e.g. "Aetna", "Blue Cross Blue Shield", "UnitedHealthcare", "Cigna", "Humana"). This is the health insurer that pays claims — NOT the employer, group sponsor, or company name printed as the group. Look for the insurance brand logo or brand mark. (string or null)
+- plan_name: plan or product name such as "Choice POS I", "HMO Gold", "PPO Plus" (string or null)
+- member_id: The COMPLETE member or subscriber ID exactly as printed on the card, including any letter prefix or internal spaces (e.g. "W2607 46886", "XYZ123456789"). Do NOT truncate, strip letter prefixes, or remove spaces. Copy character-for-character. (string or null)
+- group_id: group number printed on the card (string or null)
 - plan_type: one of "commercial", "medicare", "medicaid", "tricare", "self_pay"
 - rx_bin: pharmacy BIN number, labeled BIN or RxBIN (string or null)
 - rx_pcn: pharmacy PCN number (string or null)
