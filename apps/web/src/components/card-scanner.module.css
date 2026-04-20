@@ -16,7 +16,6 @@
   position: relative;
   width: 100%;
   max-width: 560px;
-  /* 16:9 aspect ratio container */
   aspect-ratio: 16 / 9;
   background: #111;
   overflow: hidden;
@@ -28,7 +27,6 @@
   object-fit: cover;
 }
 
-/* Semi-opaque surround mask to highlight the card zone */
 .mask {
   position: absolute;
   inset: 0;
@@ -41,13 +39,24 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  /* Card aspect ratio 85.6×53.98mm ≈ 1.586 */
   width: 72%;
   aspect-ratio: 1.586;
   border: 2px solid rgba(255, 255, 255, .85);
   border-radius: 8px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55);
   pointer-events: none;
+  transition: border-color .25s ease;
+}
+
+/* Green locked state — card is sharp and about to auto-capture */
+.cardFrameLocked {
+  border-color: #C8F060;
+  animation: lockGlow 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes lockGlow {
+  from { box-shadow: 0 0 0 9999px rgba(0,0,0,.55), 0 0 10px 3px rgba(200,240,96,.35); }
+  to   { box-shadow: 0 0 0 9999px rgba(0,0,0,.55), 0 0 22px 7px rgba(200,240,96,.7);  }
 }
 
 /* Corner accent marks */
@@ -104,11 +113,21 @@
   background: #fff;
   border: 4px solid rgba(255,255,255,.35);
   cursor: pointer;
-  transition: background .12s, transform .1s;
+  transition: background .12s, transform .1s, border-color .25s;
   flex-shrink: 0;
 }
 .captureBtn:hover:not(:disabled) { background: #f0f0f0; transform: scale(1.04); }
 .captureBtn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Pulse ring when locked */
+.captureBtnLocked {
+  border-color: #C8F060;
+  animation: captureRing 0.7s ease-in-out infinite alternate;
+}
+@keyframes captureRing {
+  from { box-shadow: 0 0 0 0 rgba(200,240,96,.5); }
+  to   { box-shadow: 0 0 0 8px rgba(200,240,96,0); }
+}
 
 .captureLabel {
   font-size: .75rem;
@@ -116,6 +135,54 @@
   letter-spacing: .03em;
   margin-top: -.45rem;
 }
+
+/* ─── Error block ────────────────────────────────────────────────────────── */
+.errorBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+}
+
+.statusError {
+  font-size: .78rem;
+  color: #FCA5A5;
+  text-align: center;
+}
+
+.errorActions {
+  display: flex;
+  gap: .75rem;
+}
+
+.retryBtn {
+  background: none;
+  border: 1px solid rgba(255,255,255,.3);
+  color: #fff;
+  font-family: var(--fb);
+  font-size: .78rem;
+  font-weight: 600;
+  padding: .45rem 1.1rem;
+  border-radius: var(--r-full);
+  cursor: pointer;
+  transition: background .15s;
+}
+.retryBtn:hover { background: rgba(255,255,255,.1); }
+
+.cancelBtn {
+  background: none;
+  border: 1px solid rgba(255,255,255,.15);
+  color: rgba(255,255,255,.55);
+  font-family: var(--fb);
+  font-size: .78rem;
+  font-weight: 500;
+  padding: .45rem 1.1rem;
+  border-radius: var(--r-full);
+  cursor: pointer;
+  transition: background .15s;
+}
+.cancelBtn:hover { background: rgba(255,255,255,.06); }
 
 .uploadFallback {
   background: none;
@@ -131,6 +198,7 @@
 }
 .uploadFallback:hover { background: rgba(255,255,255,.08); }
 
+/* ─── Close button (top-right ✕) ────────────────────────────────────────── */
 .closeBtn {
   position: absolute;
   top: 1rem;
@@ -148,17 +216,9 @@
   align-items: center;
   justify-content: center;
   transition: background .12s;
+  z-index: 10;
 }
 .closeBtn:hover { background: rgba(0,0,0,.75); }
-
-/* ─── Status messages ────────────────────────────────────────────────────── */
-.status {
-  font-size: .78rem;
-  color: rgba(255,255,255,.75);
-  text-align: center;
-  min-height: 1.2em;
-}
-.statusError { color: #FCA5A5; }
 
 /* ─── Permission-denied fallback ─────────────────────────────────────────── */
 .permissionError {
