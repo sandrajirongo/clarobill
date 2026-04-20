@@ -10,7 +10,8 @@ import {
   MEDICARE_PLAN_TYPES,
   TRICARE_PLAN_TYPES,
 } from '@/lib/utils/insurance-constants';
-import { useCardScan } from '@/lib/hooks/use-card-scan';
+import { CardScanner } from '@/components/card-scanner';
+import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
 import { CameraIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
@@ -62,7 +63,8 @@ export function MembersPanel(): JSX.Element {
   const [newTricareType, setNewTricareType]   = useState('');
   const [newIsPrimary, setNewIsPrimary]   = useState(false);
 
-  const { scanState, inputRef: cardInputRef, openFilePicker, handleFile, reset: resetScan } = useCardScan();
+  const [showScanner, setShowScanner] = useState(false);
+  const [lastScan, setLastScan] = useState<{ confident: boolean; note: string | null } | null>(null);
 
   const loadMembers = useCallback(async (): Promise<void> => {
     const res = await fetch('/api/profile/members');
@@ -75,22 +77,39 @@ export function MembersPanel(): JSX.Element {
 
   useEffect(() => { void loadMembers(); }, [loadMembers]);
 
-  // Pre-fill plan form from card scan result
-  useEffect(() => {
-    if (scanState.status !== 'done') return;
-    const r = scanState.result;
-    if (r.payerName) setNewPayer(r.payerName);
-    if (r.planName)  setNewPlan(r.planName);
-    if (r.planType)  setNewPlanType(r.planType);
-    if (r.memberId)  setNewMemberId(r.memberId);
-  }, [scanState]);
+  function handleScanExtracted(result: InsuranceCardExtraction): void {
+    if (result.payerName) setNewPayer(result.payerName);
+    if (result.planName)  setNewPlan(result.planName);
+    if (result.planType)  setNewPlanType(result.planType);
+    if (result.memberId)  setNewMemberId(result.memberId);
+
+    // Auto-infer Medicare sub-type from plan name
+    if (result.planType === 'medicare' && result.planName) {
+      const lower = result.planName.toLowerCase();
+      if (lower.includes('advantage') || lower.includes('part c')) {
+        setNewMedicareType('Medicare Advantage (Part C)');
+        if (result.payerName) setNewMedicareMAName(result.payerName);
+      }
+    }
+
+    // Auto-infer TRICARE sub-type from plan name
+    if (result.planType === 'tricare' && result.planName) {
+      const matched = TRICARE_PLAN_TYPES.find(
+        (pt) => result.planName!.toLowerCase().includes(pt.value.toLowerCase())
+      );
+      if (matched) setNewTricareType(matched.value);
+    }
+
+    setLastScan({ confident: result.confident, note: result.note ?? null });
+    setShowScanner(false);
+  }
 
   function resetPlanForm(): void {
     setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId('');
     setNewMedicaidType(''); setNewMedicaidMCO('');
     setNewMedicareType(''); setNewMedicareMAName('');
     setNewTricareType(''); setNewIsPrimary(false);
-    resetScan();
+    setLastScan(null);
   }
 
   async function handleAddMember(): Promise<void> {
@@ -300,34 +319,21 @@ export function MembersPanel(): JSX.Element {
                       <button
                         type="button"
                         className={s.scanBtn}
-                        onClick={openFilePicker}
-                        disabled={scanState.status === 'scanning'}
+                        onClick={() => setShowScanner(true)}
                       >
                         <CameraIcon size={13} />
-                        {scanState.status === 'scanning' ? 'Reading card\u2026' : 'Scan or upload card'}
+                        Scan or upload card
                       </button>
                     </div>
 
-                    {/* No capture attribute — lets user choose between camera and gallery */}
-                    <input
-                      ref={cardInputRef}
-                      type="file"
-                      accept="image/*,application/pdf"
-                      style={{ display: 'none' }}
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }}
-                    />
-
                     {/* Scan status */}
-                    {scanState.status === 'error' && (
-                      <p className={s.scanError}>{scanState.message}</p>
-                    )}
-                    {scanState.status === 'done' && (
-                      scanState.result.confident
+                    {lastScan !== null && (
+                      lastScan.confident
                         ? <p className={s.scanSuccess}>Card read — fields auto-filled. Review before saving.</p>
                         : <p className={s.scanWarn}>Card read with low confidence — please review all fields carefully.</p>
                     )}
-                    {scanState.status === 'done' && scanState.result.note && (
-                      <p className={s.scanNote}>{scanState.result.note}</p>
+                    {lastScan?.note && (
+                      <p className={s.scanNote}>{lastScan.note}</p>
                     )}
 
                     {/* Plan type — label shows state Medicaid brand name when known */}
@@ -461,7 +467,7 @@ export function MembersPanel(): JSX.Element {
                         <div className={s.formField}>
                           <label className={s.formLabel}>Insurance company *</label>
                           <input
-                            className={`${s.formInput}${scanState.status === 'done' && !scanState.result.confident && scanState.result.payerName ? ` ${s.formInputUncertain}` : ''}`}
+                            className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPayer ? ` ${s.formInputUncertain}` : ''}`}
                             placeholder="e.g. Blue Cross Blue Shield"
                             value={newPayer}
                             onChange={(e) => setNewPayer(e.target.value)}
@@ -470,7 +476,7 @@ export function MembersPanel(): JSX.Element {
                         <div className={s.formField}>
                           <label className={s.formLabel}>Plan name *</label>
                           <input
-                            className={`${s.formInput}${scanState.status === 'done' && !scanState.result.confident && scanState.result.planName ? ` ${s.formInputUncertain}` : ''}`}
+                            className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPlan ? ` ${s.formInputUncertain}` : ''}`}
                             placeholder="e.g. PPO Gold"
                             value={newPlan}
                             onChange={(e) => setNewPlan(e.target.value)}
@@ -484,7 +490,7 @@ export function MembersPanel(): JSX.Element {
                       <div className={s.formField}>
                         <label className={s.formLabel}>Member ID <span className={s.optionalTag}>(for dispute letters)</span></label>
                         <input
-                          className={`${s.formInput}${scanState.status === 'done' && !scanState.result.confident && scanState.result.memberId ? ` ${s.formInputUncertain}` : ''}`}
+                          className={`${s.formInput}${lastScan !== null && !lastScan.confident && newMemberId ? ` ${s.formInputUncertain}` : ''}`}
                           placeholder="e.g. XYZ123456789"
                           value={newMemberId}
                           onChange={(e) => setNewMemberId(e.target.value)}
@@ -599,6 +605,13 @@ export function MembersPanel(): JSX.Element {
           </div>
         )}
       </div>
+
+      {showScanner && (
+        <CardScanner
+          onExtracted={handleScanExtracted}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </div>
   );
 }

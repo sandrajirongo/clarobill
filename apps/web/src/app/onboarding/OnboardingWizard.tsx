@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogoWithMark } from '@/components/logo';
 import { US_STATES } from '@/lib/utils/county-data';
 import { saveOnboarding } from '@/lib/i18n/actions';
-import { useCardScan } from '@/lib/hooks/use-card-scan';
+import { CardScanner } from '@/components/card-scanner';
+import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
 import s from './onboarding.module.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -215,18 +216,17 @@ export function OnboardingWizard(): JSX.Element {
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  // Insurance card scan
-  const { scanState, inputRef, openFilePicker, handleFile, reset: resetScan } = useCardScan();
+  const [showScanner, setShowScanner] = useState(false);
+  const [lastScan, setLastScan] = useState<{ confident: boolean } | null>(null);
 
-  // Auto-select insurance type when scan returns a recognised plan type
-  useEffect(() => {
-    if (scanState.status === 'done') {
-      const scanned = scanState.result.planType;
-      if (scanned && (VALID_INSURANCE_TYPES as string[]).includes(scanned)) {
-        setInsurance(scanned as InsuranceType);
-      }
+  function handleScanExtracted(result: InsuranceCardExtraction): void {
+    const scanned = result.planType;
+    if (scanned && (VALID_INSURANCE_TYPES as string[]).includes(scanned)) {
+      setInsurance(scanned as InsuranceType);
     }
-  }, [scanState]);
+    setLastScan({ confident: result.confident });
+    setShowScanner(false);
+  }
 
   const t = T[locale];
 
@@ -425,32 +425,16 @@ export function OnboardingWizard(): JSX.Element {
               <button
                 type="button"
                 className={s.scanBtn}
-                onClick={openFilePicker}
-                disabled={scanState.status === 'scanning'}
+                onClick={() => setShowScanner(true)}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                   <circle cx="12" cy="13" r="4"/>
                 </svg>
-                {scanState.status === 'scanning' ? 'Reading card\u2026' : 'Scan or upload insurance card'}
+                Scan or upload insurance card
               </button>
-              {/* No capture attribute — lets user choose between camera and gallery */}
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className={s.hiddenInput}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-              />
 
-              {scanState.status === 'error' && (
-                <p className={s.scanError}>
-                  {scanState.message}
-                  {' '}
-                  <button type="button" className={s.scanRetry} onClick={resetScan}>Try again</button>
-                </p>
-              )}
-              {scanState.status === 'done' && (
+              {lastScan !== null && (
                 <p className={s.scanSuccess}>
                   {insurance
                     ? `Card read \u2014 ${INSURANCE_OPTIONS.find((o) => o.type === insurance)?.label(t.profile.insurance) ?? insurance} auto-selected`
@@ -502,6 +486,13 @@ export function OnboardingWizard(): JSX.Element {
           <span className={`${s.dot} ${s.dotActive}`} />
           <span className={s.dot} />
         </div>
+
+        {showScanner && (
+          <CardScanner
+            onExtracted={handleScanExtracted}
+            onClose={() => setShowScanner(false)}
+          />
+        )}
       </div>
     );
   }
