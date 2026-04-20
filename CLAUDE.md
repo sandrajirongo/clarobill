@@ -14,7 +14,7 @@
 - AI: Anthropic Claude API (Sonnet)
 - Payments: Stripe
 - File Storage: Supabase Storage (encrypted)
-- Hosting: Vercel (frontend) + Railway/Fly.io (Python service)
+- Hosting: Vercel (frontend) + Google Cloud Run (Python service, deployed via Cloud Build)
 
 **Monorepo Structure:**
 ```
