@@ -24,11 +24,6 @@ class Settings(BaseSettings):
     gcp_project_id: str = ""
     bigquery_dataset: str = "hospital_prices"
 
-    # Document AI — Health Insurance Card Parser processor.
-    # Create the processor at: console.cloud.google.com/ai/document-ai/processors
-    # Processor type: HEALTH_INSURANCE_CARD_PROCESSOR, location: us
-    document_ai_processor_id: str = ""
-    document_ai_location: str = "us"
     gcs_mrf_staging_bucket: str = "mrf-staging"
     bq_reader_credentials_json: str = ""
 
@@ -57,4 +52,4 @@ class Settings(BaseSettings):
 
 
 # Module-level singleton — import this, don't instantiate Settings directly
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()
