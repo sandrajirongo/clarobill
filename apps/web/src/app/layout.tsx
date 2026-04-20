@@ -51,7 +51,10 @@ export default async function RootLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale} className={`${fraunces.variable} ${syne.variable}`}>
+    // lang="en" — article and medical bill content is English; browser auto-translate
+    // detects this correctly and offers to translate for non-English users.
+    // next-intl locale is passed via NextIntlClientProvider for UI string translation.
+    <html lang="en" className={`${fraunces.variable} ${syne.variable}`}>
       <body>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Suspense>

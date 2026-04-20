@@ -121,7 +121,30 @@
       "errorNameRequired": "Kailangan ang pangalan at petsa ng kapanganakan.",
       "errorPlanRequired": "Kailangan ang pangalan ng insurer at pangalan ng plano.",
       "errorMemberFailed": "Nabigo ang pagdaragdag ng miyembro. Pakisubukan ulit.",
-      "errorPlanFailed": "Nabigo ang pagdaragdag ng plano. Pakisubukan ulit."
+      "errorPlanFailed": "Nabigo ang pagdaragdag ng plano. Pakisubukan ulit.",
+      "scanner": {
+        "hint": "Ilagay ang card sa loob ng frame",
+        "hintLocked": "Huwag gumalaw\u2026",
+        "hintStarting": "Sinisimulan ang camera\u2026",
+        "capturing": "Binabasa ang card\u2026",
+        "autoCapturing": "Awtomatikong kumukuha\u2026",
+        "holdOrTap": "Huwag gumalaw o pindutin para kumuha",
+        "uploadPhoto": "Mag-upload ng larawan sa halip",
+        "tryAgain": "Subukan ulit",
+        "permissionDenied": "Tinanggihan ang access sa camera. Payagan ang access sa camera sa mga setting ng browser, o mag-upload ng larawan.",
+        "confirmTitle": "Suriin ang mga detalye ng card",
+        "confirmSubtitle": "Suriin ang mga detalye bago i-save",
+        "confirmInsurer": "Insurer",
+        "confirmPlan": "Plano",
+        "confirmMemberId": "ID ng miyembro",
+        "confirmGroupId": "Grupo #",
+        "confirmPlanType": "Uri ng plano",
+        "confirmRxBin": "Rx BIN",
+        "confirmBtn": "Kumpirmahin",
+        "retakeBtn": "Kumuha ulit",
+        "notDetected": "\u2014",
+        "lowConfidence": "Maaaring may mga maling field \u2014 pakisuri nang maingat"
+      }
     }
   },
   "resources": {

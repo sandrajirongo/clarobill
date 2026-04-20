@@ -218,7 +218,30 @@
       "errorNameRequired": "Name and date of birth are required.",
       "errorPlanRequired": "Insurer name and plan name are required.",
       "errorMemberFailed": "Failed to add member. Please try again.",
-      "errorPlanFailed": "Failed to add plan. Please try again."
+      "errorPlanFailed": "Failed to add plan. Please try again.",
+      "scanner": {
+        "hint": "Align card within frame",
+        "hintLocked": "Hold still\u2026",
+        "hintStarting": "Starting camera\u2026",
+        "capturing": "Reading card\u2026",
+        "autoCapturing": "Auto-capturing\u2026",
+        "holdOrTap": "Hold steady or tap to capture",
+        "uploadPhoto": "Upload a photo instead",
+        "tryAgain": "Try again",
+        "permissionDenied": "Camera access was denied. Allow camera access in your browser settings, or upload a photo instead.",
+        "confirmTitle": "Review card details",
+        "confirmSubtitle": "Check the details below before saving",
+        "confirmInsurer": "Insurer",
+        "confirmPlan": "Plan",
+        "confirmMemberId": "Member ID",
+        "confirmGroupId": "Group #",
+        "confirmPlanType": "Plan type",
+        "confirmRxBin": "Rx BIN",
+        "confirmBtn": "Confirm",
+        "retakeBtn": "Retake",
+        "notDetected": "\u2014",
+        "lowConfidence": "Some fields may be incorrect \u2014 please review carefully"
+      }
     }
   },
   "resources": {

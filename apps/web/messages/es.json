@@ -122,7 +122,30 @@
       "errorNameRequired": "Se requieren nombre y fecha de nacimiento.",
       "errorPlanRequired": "Se requieren nombre del asegurador y nombre del plan.",
       "errorMemberFailed": "Error al agregar miembro. Por favor intenta de nuevo.",
-      "errorPlanFailed": "Error al agregar plan. Por favor intenta de nuevo."
+      "errorPlanFailed": "Error al agregar plan. Por favor intenta de nuevo.",
+      "scanner": {
+        "hint": "Centra la tarjeta en el marco",
+        "hintLocked": "No te muevas\u2026",
+        "hintStarting": "Iniciando c\u00e1mara\u2026",
+        "capturing": "Leyendo tarjeta\u2026",
+        "autoCapturing": "Capturando autom\u00e1ticamente\u2026",
+        "holdOrTap": "Mant\u00e9n firme o toca para capturar",
+        "uploadPhoto": "Subir una foto en su lugar",
+        "tryAgain": "Intentar de nuevo",
+        "permissionDenied": "Se deneg\u00f3 el acceso a la c\u00e1mara. Permite el acceso en la configuraci\u00f3n del navegador, o sube una foto.",
+        "confirmTitle": "Revisar detalles de la tarjeta",
+        "confirmSubtitle": "Verifica los datos antes de guardar",
+        "confirmInsurer": "Asegurador",
+        "confirmPlan": "Plan",
+        "confirmMemberId": "ID de miembro",
+        "confirmGroupId": "N\u00fam. de grupo",
+        "confirmPlanType": "Tipo de plan",
+        "confirmRxBin": "BIN Rx",
+        "confirmBtn": "Confirmar",
+        "retakeBtn": "Volver a capturar",
+        "notDetected": "\u2014",
+        "lowConfidence": "Algunos campos pueden ser incorrectos \u2014 revisa cuidadosamente"
+      }
     }
   },
   "resources": {

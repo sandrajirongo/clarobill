@@ -1,40 +1,38 @@
-"""Insurance card extraction — GCV OCR + Claude text parsing.
+"""Insurance card extraction via Google Document AI Health Insurance Card Parser.
 
-Two-stage pipeline used by production document scanning systems:
-  1. Google Cloud Vision document_text_detection → raw OCR text (~0.5s)
-  2. Claude Sonnet text API → structured JSON from OCR text (~1-2s)
+Document AI's Health Insurance Card Processor is purpose-built for extracting
+structured data from insurance cards. It returns typed entities (member_id,
+insurance_company, group_number, plan_name, etc.) directly — no OCR + LLM chain
+needed. This is the same technology used by hospital intake systems and benefits
+verification platforms.
 
-This is more reliable than sending the raw image to Claude Vision because:
-- GCV is purpose-built for dense printed text on cards (handles glare, plastic sheen)
-- The text API never fails due to image quality — only the OCR step sees the image
-- Combined latency ~2-3s vs 8-15s for vision inference on a high-res frame
+Setup: create a HEALTH_INSURANCE_CARD_PROCESSOR processor in GCP Document AI
+console (console.cloud.google.com/ai/document-ai/processors), then set
+DOCUMENT_AI_PROCESSOR_ID in the engine .env. Location must be "us".
 """
 
 import json
 import logging
-import re
+from pathlib import Path
 
-import anthropic
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from google.cloud import documentai_v1 as documentai
+from google.oauth2 import service_account
 from pydantic import BaseModel, ConfigDict
 
-from app.core.dependencies import get_async_anthropic_client
-from app.services.ocr import OcrExtractionError, OcrService
+from app.core.config import settings
 
 router = APIRouter(prefix="/insurance-card", tags=["insurance-card"])
 logger = logging.getLogger(__name__)
 
-# The frontend crops to the card region before sending, so images are small.
-# Keep the limit generous for upload-a-photo fallback.
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
-ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff"}
 
 
 class InsuranceCardExtraction(BaseModel):
     """Structured fields extracted from an insurance card.
 
-    Each field is None when not found. confident=False signals the frontend
-    to highlight fields for user review.
+    confident=False signals the frontend to highlight all fields for user review.
     """
 
     model_config = ConfigDict(strict=True)
@@ -44,63 +42,55 @@ class InsuranceCardExtraction(BaseModel):
     member_id: str | None
     group_id: str | None
     plan_type: str | None
+    rx_bin: str | None
+    rx_pcn: str | None
+    rx_group: str | None
     confident: bool
     note: str | None
 
 
-_PARSE_PROMPT = """\
-Parse the OCR text below from a health insurance card. Return ONLY a valid JSON object — \
-no explanation, no markdown fences.
-
-Required keys:
-  "payer_name"  — Insurance company name. e.g. Aetna, Blue Cross Blue Shield, UnitedHealthcare, \
-Humana, Cigna, Molina, Kaiser, Anthem, BCBS, Centene. null if not present.
-  "plan_name"   — Specific plan/product name. Look for Plan, Product, Coverage, Network labels. \
-null if not separately labeled.
-  "member_id"   — Member/subscriber ID. Labels: Member ID, Member #, ID #, Subscriber ID, Mbr ID. \
-NOT Group #, NOT Rx BIN, NOT PCN, NOT RxGrp. null if not present.
-  "group_id"    — Group/employer number. Labels: Group, Group #, Grp #. null if not present.
-  "plan_type"   — Exactly one of: commercial, medicare, medicaid, tricare, self_pay.
-                  medicare  → card mentions Medicare, CMS, or Medicare Advantage
-                  medicaid  → card mentions Medicaid, CHIP, Medi-Cal, TennCare, AHCCCS, or any state Medicaid brand
-                  tricare   → card mentions TRICARE, Military Health System, DoD
-                  self_pay  → no insurer name
-                  commercial → all employer/marketplace/ACA plans from private insurers
-  "confident"   — true if all values are clear and unambiguous, false if any were uncertain
-  "note"        — brief description of ambiguity, or null
-
-Rules:
-- Use null (never empty string) for fields not found in the text
-- "plan_type" is always one of the 5 values, never null
-
-OCR text extracted from card:
-{ocr_text}"""
-
-_ASSISTANT_PREFILL = "{"
+def _build_documentai_client() -> documentai.DocumentProcessorServiceClient:
+    if settings.google_credentials_json:
+        info = json.loads(settings.google_credentials_json)
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return documentai.DocumentProcessorServiceClient(credentials=creds)
+    return documentai.DocumentProcessorServiceClient()
 
 
-def _normalise_plan_type(raw: str) -> str:
-    s = raw.lower().strip()
-    exact: dict[str, str] = {
-        "commercial": "commercial",
-        "medicare": "medicare",
-        "medicaid": "medicaid",
-        "tricare": "tricare",
-        "self_pay": "self_pay",
-        "self-pay": "self_pay",
-        "self pay": "self_pay",
-    }
-    if s in exact:
-        return exact[s]
-    if "medicare" in s:
+def _get_project_id() -> str:
+    if settings.gcp_project_id:
+        return settings.gcp_project_id
+    if settings.google_credentials_json:
+        return json.loads(settings.google_credentials_json).get("project_id", "")
+    if settings.google_application_credentials:
+        return json.loads(Path(settings.google_application_credentials).read_text()).get("project_id", "")
+    return ""
+
+
+def _normalise_plan_type(company: str, plan: str, raw_type: str) -> str:
+    """Infer our 5-value plan_type enum from Document AI entity text."""
+    combined = f"{company} {plan} {raw_type}".lower()
+    if "medicare" in combined:
         return "medicare"
-    if "medicaid" in s or "chip" in s or "medi-cal" in s or "tenncare" in s or "ahcccs" in s:
+    if any(k in combined for k in ("medicaid", "medi-cal", "chip", "tenncare", "ahcccs", "access")):
         return "medicaid"
-    if "tricare" in s or "military" in s:
+    if any(k in combined for k in ("tricare", "military", "va health", "champva")):
         return "tricare"
-    if "self" in s:
+    if "self" in combined and "pay" in combined:
         return "self_pay"
     return "commercial"
+
+
+def _entity_map(document: documentai.Document) -> dict[str, str]:
+    """Return a flat {entity_type: mention_text} dict from all document entities."""
+    result: dict[str, str] = {}
+    for entity in document.entities:
+        text = (entity.mention_text or "").strip()
+        if text:
+            result[entity.type_] = text
+    return result
 
 
 @router.post(
@@ -109,14 +99,15 @@ def _normalise_plan_type(raw: str) -> str:
     status_code=status.HTTP_200_OK,
 )
 async def extract_insurance_card(
-    image: UploadFile = File(..., description="Cropped insurance card image (JPEG, PNG, or WebP)"),
-    client: anthropic.AsyncAnthropic = Depends(get_async_anthropic_client),
+    image: UploadFile = File(..., description="Insurance card photo (JPEG, PNG, or WebP)"),
 ) -> InsuranceCardExtraction:
-    """Extract structured insurance plan data from a card photo.
+    """Extract structured insurance plan data from a card photo using Document AI."""
+    if not settings.document_ai_processor_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Insurance card scanning is not configured. Contact support.",
+        )
 
-    Uses Google Cloud Vision for OCR, then Claude text API for field parsing.
-    No PHI is stored — this endpoint is stateless.
-    """
     content_type = image.content_type or ""
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
@@ -131,74 +122,68 @@ async def extract_insurance_card(
             detail="Image exceeds 10 MB limit.",
         )
 
-    logger.info(
-        "Insurance card extraction: %s (%d bytes)",
-        image.filename or "upload",
-        len(image_bytes),
+    project_id = _get_project_id()
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GCP project not configured. Set GCP_PROJECT_ID.",
+        )
+
+    processor_name = (
+        f"projects/{project_id}"
+        f"/locations/{settings.document_ai_location}"
+        f"/processors/{settings.document_ai_processor_id}"
     )
 
-    # ── Stage 1: Google Cloud Vision OCR ─────────────────────────────────────
-    try:
-        ocr = OcrService()
-        raw_text = await ocr.extract_text(image_bytes, content_type)
-    except OcrExtractionError as exc:
-        logger.error("GCV OCR failed for insurance card: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Could not read text from the card. Ensure the card is well-lit, flat, and in focus.",
-        ) from exc
+    logger.info(
+        "Document AI card extraction: %s (%d bytes) processor=%s",
+        image.filename or "upload",
+        len(image_bytes),
+        settings.document_ai_processor_id,
+    )
 
-    logger.info("GCV extracted %d characters from card", len(raw_text))
-    logger.debug("Card OCR text: %.400s", raw_text)
-
-    # ── Stage 2: Claude text API parses the OCR output ────────────────────────
     try:
-        message = await client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=512,
-            messages=[
-                {
-                    "role": "user",
-                    "content": _PARSE_PROMPT.format(ocr_text=raw_text),
-                },
-                {
-                    "role": "assistant",
-                    "content": _ASSISTANT_PREFILL,
-                },
-            ],
+        client = _build_documentai_client()
+        request = documentai.ProcessRequest(
+            name=processor_name,
+            raw_document=documentai.RawDocument(content=image_bytes, mime_type=content_type),
         )
-    except anthropic.APIError as exc:
-        logger.error("Claude API error parsing card OCR text: %s", exc)
+        result = client.process_document(request=request)
+        document = result.document
+    except Exception as exc:
+        logger.error("Document AI error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Card parsing service unavailable. Please try again.",
+            detail="Could not read the card. Ensure it is well-lit and in focus, then try again.",
         ) from exc
 
-    first_block = message.content[0] if message.content else None
-    continuation = first_block.text if isinstance(first_block, anthropic.types.TextBlock) else ""
-    raw_json = re.sub(r"\s*```\s*$", "", (_ASSISTANT_PREFILL + (continuation or "}")).strip())
+    entities = _entity_map(document)
+    logger.info("Document AI entities: %s", list(entities.keys()))
+    logger.debug("Document AI entity values: %s", entities)
 
-    try:
-        data = json.loads(raw_json)
-    except json.JSONDecodeError:
-        logger.warning("Claude returned non-JSON for card: %.200s", raw_json)
-        return InsuranceCardExtraction(
-            payer_name=None,
-            plan_name=None,
-            member_id=None,
-            group_id=None,
-            plan_type="commercial",
-            confident=False,
-            note="Could not parse fields automatically. Please fill in manually.",
-        )
+    company   = entities.get("insurance_company", "")
+    plan_name = entities.get("plan_name", "")
+    raw_type  = entities.get("plan_type", "")
+    member_id = entities.get("member_id") or entities.get("subscriber_id", "")
+    group_id  = entities.get("group_number") or entities.get("group_name", "")
 
-    raw_type = str(data.get("plan_type") or "")
+    plan_type = _normalise_plan_type(company, plan_name, raw_type)
+
+    # confident = True if we extracted at least the insurer or member ID
+    confident = bool(company or member_id)
+    note = None
+    if not confident:
+        note = "Could not extract key fields. Please fill in manually."
+
     return InsuranceCardExtraction(
-        payer_name=data.get("payer_name") or None,
-        plan_name=data.get("plan_name") or None,
-        member_id=data.get("member_id") or None,
-        group_id=data.get("group_id") or None,
-        plan_type=_normalise_plan_type(raw_type) if raw_type else None,
-        confident=bool(data.get("confident", True)),
-        note=data.get("note") or None,
+        payer_name=company or None,
+        plan_name=plan_name or None,
+        member_id=member_id or None,
+        group_id=group_id or None,
+        plan_type=plan_type,
+        rx_bin=entities.get("rx_bin") or None,
+        rx_pcn=entities.get("rx_pcn") or None,
+        rx_group=entities.get("rx_group") or None,
+        confident=confident,
+        note=note,
     )

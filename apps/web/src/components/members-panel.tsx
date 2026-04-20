@@ -612,6 +612,30 @@ export function MembersPanel(): JSX.Element {
         <CardScanner
           onExtracted={handleScanExtracted}
           onClose={() => setShowScanner(false)}
+          labels={{
+            hint: t('scanner.hint'),
+            hintLocked: t('scanner.hintLocked'),
+            hintStarting: t('scanner.hintStarting'),
+            capturing: t('scanner.capturing'),
+            autoCapturing: t('scanner.autoCapturing'),
+            holdOrTap: t('scanner.holdOrTap'),
+            uploadPhoto: t('scanner.uploadPhoto'),
+            tryAgain: t('scanner.tryAgain'),
+            cancel: t('cancel'),
+            permissionDenied: t('scanner.permissionDenied'),
+            confirmTitle: t('scanner.confirmTitle'),
+            confirmSubtitle: t('scanner.confirmSubtitle'),
+            confirmInsurer: t('scanner.confirmInsurer'),
+            confirmPlan: t('scanner.confirmPlan'),
+            confirmMemberId: t('scanner.confirmMemberId'),
+            confirmGroupId: t('scanner.confirmGroupId'),
+            confirmPlanType: t('scanner.confirmPlanType'),
+            confirmRxBin: t('scanner.confirmRxBin'),
+            confirmBtn: t('scanner.confirmBtn'),
+            retakeBtn: t('scanner.retakeBtn'),
+            notDetected: t('scanner.notDetected'),
+            lowConfidence: t('scanner.lowConfidence'),
+          }}
         />
       )}
     </div>

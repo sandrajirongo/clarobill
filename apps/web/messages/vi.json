@@ -121,7 +121,30 @@
       "errorNameRequired": "Yêu cầu họ tên và ngày sinh.",
       "errorPlanRequired": "Yêu cầu tên công ty bảo hiểm và tên kế hoạch.",
       "errorMemberFailed": "Không thêm được thành viên. Vui lòng thử lại.",
-      "errorPlanFailed": "Không thêm được kế hoạch. Vui lòng thử lại."
+      "errorPlanFailed": "Không thêm được kế hoạch. Vui lòng thử lại.",
+      "scanner": {
+        "hint": "Căn chỉnh thẻ vào khung",
+        "hintLocked": "Gi\u1eef nguy\u00ean\u2026",
+        "hintStarting": "\u0110ang kh\u1edfi \u0111\u1ed9ng camera\u2026",
+        "capturing": "\u0110ang \u0111\u1ecdc th\u1ebb\u2026",
+        "autoCapturing": "\u0110ang t\u1ef1 \u0111\u1ed9ng ch\u1ee5p\u2026",
+        "holdOrTap": "Gi\u1eef y\u00ean ho\u1eb7c nh\u1ea5n \u0111\u1ec3 ch\u1ee5p",
+        "uploadPhoto": "T\u1ea3i \u1ea3nh l\u00ean thay th\u1ebf",
+        "tryAgain": "Th\u1eed l\u1ea1i",
+        "permissionDenied": "Quy\u1ec1n truy c\u1eadp camera b\u1ecb t\u1eeb ch\u1ed1i. H\u00e3y c\u1ea5p quy\u1ec1n trong c\u00e0i \u0111\u1eb7t tr\u00ecnh duy\u1ec7t, ho\u1eb7c t\u1ea3i \u1ea3nh l\u00ean.",
+        "confirmTitle": "Ki\u1ec3m tra th\u00f4ng tin th\u1ebb",
+        "confirmSubtitle": "Ki\u1ec3m tra th\u00f4ng tin b\u00ean d\u01b0\u1edbi tr\u01b0\u1edbc khi l\u01b0u",
+        "confirmInsurer": "C\u00f4ng ty b\u1ea3o hi\u1ec3m",
+        "confirmPlan": "G\u00f3i",
+        "confirmMemberId": "M\u00e3 th\u00e0nh vi\u00ean",
+        "confirmGroupId": "S\u1ed1 nh\u00f3m",
+        "confirmPlanType": "Lo\u1ea1i g\u00f3i",
+        "confirmRxBin": "Rx BIN",
+        "confirmBtn": "X\u00e1c nh\u1eadn",
+        "retakeBtn": "Ch\u1ee5p l\u1ea1i",
+        "notDetected": "\u2014",
+        "lowConfidence": "M\u1ed9t s\u1ed1 tr\u01b0\u1eddng c\u00f3 th\u1ec3 sai \u2014 vui l\u00f2ng ki\u1ec3m tra k\u1ef9"
+      }
     }
   },
   "resources": {

@@ -4,32 +4,82 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
 import s from './card-scanner.module.css';
 
+export interface CardScannerLabels {
+  // Camera viewfinder hints
+  hint: string;           // "Align card within frame"
+  hintLocked: string;     // "Hold still…"
+  hintStarting: string;   // "Starting camera…"
+  // Capture state labels
+  capturing: string;      // "Reading card…"
+  autoCapturing: string;  // "Auto-capturing…"
+  holdOrTap: string;      // "Hold steady or tap to capture"
+  // Buttons
+  uploadPhoto: string;    // "Upload a photo instead"
+  tryAgain: string;       // "Try again"
+  cancel: string;         // "Cancel"
+  // Permission denied screen
+  permissionDenied: string; // "Camera access was denied..."
+  // Confirmation step
+  confirmTitle: string;     // "Review card details"
+  confirmSubtitle: string;  // "Check the extracted details before saving"
+  confirmInsurer: string;   // "Insurer"
+  confirmPlan: string;      // "Plan"
+  confirmMemberId: string;  // "Member ID"
+  confirmGroupId: string;   // "Group #"
+  confirmPlanType: string;  // "Plan type"
+  confirmRxBin: string;     // "Rx BIN"
+  confirmBtn: string;       // "Confirm"
+  retakeBtn: string;        // "Retake"
+  notDetected: string;      // "—" (placeholder for missing fields)
+  lowConfidence: string;    // "Some fields may need review"
+}
+
+const DEFAULT_LABELS: CardScannerLabels = {
+  hint: 'Align card within frame',
+  hintLocked: 'Hold still\u2026',
+  hintStarting: 'Starting camera\u2026',
+  capturing: 'Reading card\u2026',
+  autoCapturing: 'Auto-capturing\u2026',
+  holdOrTap: 'Hold steady or tap to capture',
+  uploadPhoto: 'Upload a photo instead',
+  tryAgain: 'Try again',
+  cancel: 'Cancel',
+  permissionDenied: 'Camera access was denied. Allow camera access in your browser settings, or upload a photo instead.',
+  confirmTitle: 'Review card details',
+  confirmSubtitle: 'Check the details below before saving',
+  confirmInsurer: 'Insurer',
+  confirmPlan: 'Plan',
+  confirmMemberId: 'Member ID',
+  confirmGroupId: 'Group #',
+  confirmPlanType: 'Plan type',
+  confirmRxBin: 'Rx BIN',
+  confirmBtn: 'Confirm',
+  retakeBtn: 'Retake',
+  notDetected: '\u2014',
+  lowConfidence: 'Some fields may be incorrect \u2014 please review carefully',
+};
+
 interface CardScannerProps {
   onExtracted: (result: InsuranceCardExtraction) => void;
   onClose: () => void;
+  labels?: Partial<CardScannerLabels>;
 }
 
 type ScannerState =
   | { phase: 'starting' }
   | { phase: 'ready' }
   | { phase: 'capturing' }
+  | { phase: 'confirming'; result: InsuranceCardExtraction }
   | { phase: 'error'; message: string }
   | { phase: 'permission_denied' };
 
-// Card overlay dimensions mirror the .cardFrame CSS rule:
-//   width: 72% of videoWrap, centered, aspect-ratio: 1.586 (standard card)
 const CARD_WIDTH_RATIO = 0.72;
 const CARD_ASPECT = 1.586;
-
-// Output resolution sent to GCV — enough for it to read 8pt insurance card text
 const CAPTURE_WIDTH = 1200;
-const CAPTURE_HEIGHT = Math.round(CAPTURE_WIDTH / CARD_ASPECT); // 756
+const CAPTURE_HEIGHT = Math.round(CAPTURE_WIDTH / CARD_ASPECT);
 
-// Laplacian focus metric — same approach used by Stripe/Plaid for document capture
-// Measures edge sharpness in the central 60%×70% of the frame. Low threshold because
-// GCV handles moderate blur; we just need to avoid complete motion blur.
 const SHARPNESS_THRESHOLD = 6;
-const STABLE_FRAMES_NEEDED = 2; // ~1.4s at 700ms interval
+const STABLE_FRAMES_NEEDED = 2;
 
 function measureSharpness(video: HTMLVideoElement): number {
   const W = 160, H = 100;
@@ -55,7 +105,6 @@ function measureSharpness(video: HTMLVideoElement): number {
   return sum / ((W - 2) * (H - 2));
 }
 
-/** Draw any image file through canvas to produce a JPEG (handles HEIC from iOS). */
 async function toJpeg(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -66,18 +115,24 @@ async function toJpeg(file: File): Promise<Blob> {
       const ctx2d = c.getContext('2d');
       if (ctx2d) ctx2d.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      c.toBlob((blob) => { if (blob) { resolve(blob); } else { reject(new Error('toBlob returned null')); } }, 'image/jpeg', 0.92);
+      c.toBlob(
+        (blob) => { if (blob) { resolve(blob); } else { reject(new Error('toBlob returned null')); } },
+        'image/jpeg',
+        0.92,
+      );
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
     img.src = url;
   });
 }
 
-export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Element {
+export function CardScanner({ onExtracted, onClose, labels: labelOverrides }: CardScannerProps): JSX.Element {
+  const labels: CardScannerLabels = { ...DEFAULT_LABELS, ...labelOverrides };
+
   const videoRef     = useRef<HTMLVideoElement>(null);
   const streamRef    = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [state, setState]       = useState<ScannerState>({ phase: 'starting' });
+  const [state, setState]         = useState<ScannerState>({ phase: 'starting' });
   const [cardLocked, setCardLocked] = useState(false);
 
   // ── Camera setup ──────────────────────────────────────────────────────────
@@ -108,14 +163,12 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
     };
   }, []);
 
-  // ── Submit image to API ───────────────────────────────────────────────────
+  // ── Submit image → show confirmation step ─────────────────────────────────
   const submitImage = useCallback(async (blob: Blob, filename: string, mimeType: string): Promise<void> => {
     const formData = new FormData();
     formData.append('image', new File([blob], filename, { type: mimeType }));
-
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25_000);
-
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
     try {
       const res = await fetch('/api/insurance-card/extract', {
         method: 'POST',
@@ -125,13 +178,13 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
       clearTimeout(timeoutId);
       if (!res.ok) {
         const body = await res.json() as { error?: { detail?: string } };
-        setState({ phase: 'error', message: body?.error?.detail ?? 'Could not read the card. Try again or upload instead.' });
+        setState({ phase: 'error', message: body?.error?.detail ?? labels.tryAgain });
         return;
       }
       const result = await res.json() as InsuranceCardExtraction;
+      // Stop the camera stream while the user reviews extracted details
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      onExtracted(result);
-      onClose();
+      setState({ phase: 'confirming', result });
     } catch (err) {
       clearTimeout(timeoutId);
       if (err instanceof Error && err.name === 'AbortError') {
@@ -140,7 +193,7 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
         setState({ phase: 'error', message: 'Network error. Check your connection and try again.' });
       }
     }
-  }, [onExtracted, onClose]);
+  }, [labels.tryAgain]);
 
   // ── Camera capture — crops to the card overlay region ────────────────────
   const doCapture = useCallback(async (): Promise<void> => {
@@ -148,24 +201,18 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
     if (!video) return;
     setState({ phase: 'capturing' });
     setCardLocked(false);
-
-    // Map the CSS card frame overlay to video pixel coordinates.
-    // .cardFrame: width=72% of videoWrap, centered, aspect-ratio=1.586
     const vw = video.videoWidth  || 1280;
     const vh = video.videoHeight || 720;
     const cardW = vw * CARD_WIDTH_RATIO;
     const cardH = cardW / CARD_ASPECT;
     const cardX = (vw - cardW) / 2;
     const cardY = (vh - cardH) / 2;
-
-    // Render cropped card region at CAPTURE_WIDTH × CAPTURE_HEIGHT
     const canvas = document.createElement('canvas');
     canvas.width  = CAPTURE_WIDTH;
     canvas.height = CAPTURE_HEIGHT;
     const ctx = canvas.getContext('2d');
     if (!ctx) { setState({ phase: 'error', message: 'Could not capture frame.' }); return; }
     ctx.drawImage(video, cardX, cardY, cardW, cardH, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
-
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
     if (!blob) { setState({ phase: 'error', message: 'Could not capture frame.' }); return; }
     await submitImage(blob, 'card.jpg', 'image/jpeg');
@@ -186,7 +233,7 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
     }
   }, [submitImage]);
 
-  // ── Auto-capture: Laplacian sharpness polling ─────────────────────────────
+  // ── Auto-capture polling ──────────────────────────────────────────────────
   const doCaptureRef = useRef(doCapture);
   useEffect(() => { doCaptureRef.current = doCapture; }, [doCapture]);
 
@@ -200,19 +247,58 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
       if (score >= SHARPNESS_THRESHOLD) {
         stableCount++;
         if (stableCount >= 1) setCardLocked(true);
-        if (stableCount >= STABLE_FRAMES_NEEDED) {
-          clearInterval(id);
-          void doCaptureRef.current();
-        }
-      } else {
-        stableCount = 0;
-        setCardLocked(false);
-      }
+        if (stableCount >= STABLE_FRAMES_NEEDED) { clearInterval(id); void doCaptureRef.current(); }
+      } else { stableCount = 0; setCardLocked(false); }
     }, 700);
     return () => clearInterval(id);
   }, [state.phase]);
 
-  const handleRetry = useCallback(() => setState({ phase: 'ready' }), []);
+  // ── Confirmation: user reviews extracted data then confirms ───────────────
+  if (state.phase === 'confirming') {
+    const { result } = state;
+    const field = (v: string | null) => v ?? labels.notDetected;
+    return (
+      <div className={s.overlay}>
+        <button className={s.closeBtn} onClick={onClose} aria-label="Close">✕</button>
+        <div className={s.confirmCard}>
+          <p className={s.confirmTitle}>{labels.confirmTitle}</p>
+          <p className={s.confirmSubtitle}>{labels.confirmSubtitle}</p>
+          {!result.confident && result.note && (
+            <p className={s.confirmWarn}>{labels.lowConfidence}</p>
+          )}
+          <dl className={s.confirmFields}>
+            <dt>{labels.confirmInsurer}</dt>
+            <dd className={result.confident || result.payerName ? '' : s.confirmMissing}>{field(result.payerName)}</dd>
+            <dt>{labels.confirmPlan}</dt>
+            <dd>{field(result.planName)}</dd>
+            <dt>{labels.confirmMemberId}</dt>
+            <dd className={result.confident || result.memberId ? '' : s.confirmMissing}>{field(result.memberId)}</dd>
+            <dt>{labels.confirmGroupId}</dt>
+            <dd>{field(result.groupId)}</dd>
+            <dt>{labels.confirmPlanType}</dt>
+            <dd>{field(result.planType)}</dd>
+            {result.rxBin && (
+              <>
+                <dt>{labels.confirmRxBin}</dt>
+                <dd>{result.rxBin}</dd>
+              </>
+            )}
+          </dl>
+          <div className={s.confirmActions}>
+            <button className={s.retryBtn} onClick={() => setState({ phase: 'ready' })}>
+              {labels.retakeBtn}
+            </button>
+            <button
+              className={s.confirmBtn}
+              onClick={() => { onExtracted(result); onClose(); }}
+            >
+              {labels.confirmBtn}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Permission denied ─────────────────────────────────────────────────────
   if (state.phase === 'permission_denied') {
@@ -220,10 +306,10 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
       <div className={s.overlay}>
         <button className={s.closeBtn} onClick={onClose} aria-label="Close">✕</button>
         <div className={s.permissionError}>
-          <p>Camera access was denied. Allow camera access in your browser settings, or upload a photo instead.</p>
+          <p>{labels.permissionDenied}</p>
           <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUploadFile} />
-          <button className={s.uploadFallback} onClick={() => fileInputRef.current?.click()}>Upload a photo instead</button>
-          <button className={s.cancelBtn} onClick={onClose}>Cancel</button>
+          <button className={s.uploadFallback} onClick={() => fileInputRef.current?.click()}>{labels.uploadPhoto}</button>
+          <button className={s.cancelBtn} onClick={onClose}>{labels.cancel}</button>
         </div>
       </div>
     );
@@ -242,10 +328,10 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
         <div className={`${s.cardFrame} ${cardLocked ? s.cardFrameLocked : ''}`}>
           {(state.phase === 'ready' || state.phase === 'starting') && (
             <span className={s.hint}>
-              {cardLocked ? 'Hold still\u2026' : state.phase === 'starting' ? 'Starting camera\u2026' : 'Align card within frame'}
+              {cardLocked ? labels.hintLocked : state.phase === 'starting' ? labels.hintStarting : labels.hint}
             </span>
           )}
-          {isCapturing && <span className={s.hint}>Reading card\u2026</span>}
+          {isCapturing && <span className={s.hint}>{labels.capturing}</span>}
         </div>
       </div>
 
@@ -257,34 +343,25 @@ export function CardScanner({ onExtracted, onClose }: CardScannerProps): JSX.Ele
           aria-label="Capture card"
         />
         <span className={s.captureLabel}>
-          {isCapturing
-            ? 'Reading card\u2026'
-            : cardLocked
-            ? 'Auto-capturing\u2026'
-            : state.phase === 'starting'
-            ? 'Starting camera\u2026'
-            : 'Hold steady or tap to capture'}
+          {isCapturing ? labels.capturing
+            : cardLocked ? labels.autoCapturing
+            : state.phase === 'starting' ? labels.hintStarting
+            : labels.holdOrTap}
         </span>
 
         {state.phase === 'error' && (
           <div className={s.errorBlock}>
             <p className={s.statusError}>{state.message}</p>
             <div className={s.errorActions}>
-              <button className={s.retryBtn} onClick={handleRetry}>Try again</button>
-              <button className={s.cancelBtn} onClick={onClose}>Cancel</button>
+              <button className={s.retryBtn} onClick={() => setState({ phase: 'ready' })}>{labels.tryAgain}</button>
+              <button className={s.cancelBtn} onClick={onClose}>{labels.cancel}</button>
             </div>
           </div>
         )}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleUploadFile}
-        />
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUploadFile} />
         <button className={s.uploadFallback} onClick={() => fileInputRef.current?.click()}>
-          Upload a photo instead
+          {labels.uploadPhoto}
         </button>
       </div>
     </div>

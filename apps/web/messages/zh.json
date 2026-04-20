@@ -121,7 +121,30 @@
       "errorNameRequired": "姓名和出生日期为必填项。",
       "errorPlanRequired": "需要填写保险公司名称和计划名称。",
       "errorMemberFailed": "添加成员失败。请重试。",
-      "errorPlanFailed": "添加计划失败。请重试。"
+      "errorPlanFailed": "添加计划失败。请重试。",
+      "scanner": {
+        "hint": "将卡片对准框内",
+        "hintLocked": "保持不动\u2026",
+        "hintStarting": "正在启动摄像头\u2026",
+        "capturing": "正在读取卡片\u2026",
+        "autoCapturing": "自动拍摄中\u2026",
+        "holdOrTap": "保持稳定或点击拍摄",
+        "uploadPhoto": "改为上传照片",
+        "tryAgain": "重试",
+        "permissionDenied": "相机访问被拒绝。请在浏览器设置中允许相机访问，或上传照片。",
+        "confirmTitle": "确认卡片信息",
+        "confirmSubtitle": "保存前请检查以下信息",
+        "confirmInsurer": "保险公司",
+        "confirmPlan": "计划",
+        "confirmMemberId": "会员ID",
+        "confirmGroupId": "团体编号",
+        "confirmPlanType": "计划类型",
+        "confirmRxBin": "处方BIN",
+        "confirmBtn": "确认",
+        "retakeBtn": "重新拍摄",
+        "notDetected": "\u2014",
+        "lowConfidence": "部分字段可能有误 \u2014 请仔细核对"
+      }
     }
   },
   "resources": {

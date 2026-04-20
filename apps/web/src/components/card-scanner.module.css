@@ -231,3 +231,85 @@
   color: rgba(255,255,255,.8);
 }
 .permissionError p { font-size: .875rem; line-height: 1.6; max-width: 280px; }
+
+/* ─── Confirmation step ───────────────────────────────────────────────────── */
+.confirmCard {
+  background: #fff;
+  border-radius: 16px;
+  padding: 1.5rem 1.25rem 1.25rem;
+  width: min(400px, calc(100vw - 2rem));
+  max-height: 90dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.confirmTitle {
+  font-family: var(--font-fraunces), serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #1a2e1a;
+  margin: 0;
+}
+
+.confirmSubtitle {
+  font-size: .78rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.confirmWarn {
+  font-size: .75rem;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 6px;
+  padding: .45rem .75rem;
+  margin: 0;
+}
+
+.confirmFields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .35rem .75rem;
+  margin: 0;
+  font-size: .82rem;
+}
+
+.confirmFields dt {
+  color: #6b7280;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.confirmFields dd {
+  color: #111827;
+  margin: 0;
+  word-break: break-all;
+}
+
+.confirmMissing {
+  color: #d1d5db;
+  font-style: italic;
+}
+
+.confirmActions {
+  display: flex;
+  gap: .75rem;
+  padding-top: .25rem;
+}
+
+.confirmBtn {
+  flex: 1;
+  background: #2D4A2A;
+  color: #fff;
+  border: none;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--font-syne), sans-serif;
+  font-size: .875rem;
+  font-weight: 600;
+  padding: .65rem 1.25rem;
+  cursor: pointer;
+  transition: background .15s;
+}
+.confirmBtn:hover { background: #3a5e36; }

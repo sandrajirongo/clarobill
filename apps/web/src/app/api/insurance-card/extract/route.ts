@@ -9,13 +9,16 @@ export interface InsuranceCardExtraction {
   memberId:   string | null;
   groupId:    string | null;
   planType:   string | null;
+  rxBin:      string | null;
+  rxPcn:      string | null;
+  rxGroup:    string | null;
   confident:  boolean;
   note:       string | null;
 }
 
 // POST /api/insurance-card/extract
-// Accepts a multipart/form-data image, forwards to the engine for Claude vision
-// extraction, and returns structured insurance plan fields.
+// Accepts a multipart/form-data image, forwards to the engine's Document AI
+// Health Insurance Card Parser, and returns structured insurance plan fields.
 // The image is never stored — this endpoint is stateless.
 export async function POST(
   request: Request
@@ -28,7 +31,6 @@ export async function POST(
     );
   }
 
-  // Forward the raw multipart body straight to the engine — no repacking needed
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.startsWith('multipart/form-data')) {
     return NextResponse.json(
@@ -56,7 +58,9 @@ export async function POST(
     const detail = engineResponse.status === 415
       ? 'Unsupported image type. Use JPEG, PNG, or WebP.'
       : engineResponse.status === 413
-      ? 'Image is too large. Please use a photo under 5 MB.'
+      ? 'Image is too large. Please use a photo under 10 MB.'
+      : engineResponse.status === 503
+      ? 'Card scanning is not available right now. Please fill in the fields manually.'
       : 'Could not read the card. Please try again or fill in the fields manually.';
 
     return NextResponse.json(
@@ -68,12 +72,15 @@ export async function POST(
   // Snake_case → camelCase conversion from engine response
   const raw = await engineResponse.json() as {
     payer_name: string | null;
-    plan_name: string | null;
-    member_id: string | null;
-    group_id: string | null;
-    plan_type: string | null;
-    confident: boolean;
-    note: string | null;
+    plan_name:  string | null;
+    member_id:  string | null;
+    group_id:   string | null;
+    plan_type:  string | null;
+    rx_bin:     string | null;
+    rx_pcn:     string | null;
+    rx_group:   string | null;
+    confident:  boolean;
+    note:       string | null;
   };
 
   return NextResponse.json({
@@ -82,6 +89,9 @@ export async function POST(
     memberId:  raw.member_id,
     groupId:   raw.group_id,
     planType:  raw.plan_type,
+    rxBin:     raw.rx_bin,
+    rxPcn:     raw.rx_pcn,
+    rxGroup:   raw.rx_group,
     confident: raw.confident,
     note:      raw.note,
   } satisfies InsuranceCardExtraction);
