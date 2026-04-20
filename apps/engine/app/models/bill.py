@@ -41,6 +41,7 @@ class BillingErrorCode(StrEnum):
     AMBULANCE_CHARGE_OUTLIER = "AMBULANCE_CHARGE_OUTLIER"
     HOSPITAL_CHARGE_OUTLIER = "HOSPITAL_CHARGE_OUTLIER"
     NEGOTIATED_RATE_EXCEEDED = "NEGOTIATED_RATE_EXCEEDED"
+    MUE_EXCEEDED = "MUE_EXCEEDED"
 
 
 class LineItem(BaseModel):
@@ -107,6 +108,9 @@ class AnalyzeRequest(BaseModel):
     # Both must be provided to enable NEGOTIATED_RATE_EXCEEDED detection.
     payer_name: str | None = None
     plan_name: str | None = None
+    # Insurance programme type — controls which NCCI edit set is loaded.
+    # Values: 'medicare' | 'medicaid' | 'commercial' | 'tricare' | 'self_pay' | None
+    plan_type: str | None = None
 
 
 class AnalyzeAccepted(BaseModel):

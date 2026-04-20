@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
+import { getPriceTier } from '@/lib/pricing';
 import s from './bill-results-view.module.css';
 
 interface BillResultsViewProps {
@@ -100,6 +101,8 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   // Showing it on a clean bill ("no issues found") would be misleading.
   const showPaywall = !hasPaid && (analysis.errors.length + hiddenErrorCount) > 0;
 
+  const priceTier = getPriceTier(analysis.totalPotentialSavings);
+
   // Report generation is async on the engine — can take 15–60s after payment.
   // Show a pending card while we wait, then switch to download buttons on refresh.
   const reportPending = hasPaid && !analysis.reportUrl && !analysis.disputeLetterUrl;
@@ -165,7 +168,11 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
             <p className={s.paywallCtaSub}>
               Unlock all findings, a detailed PDF report, and a ready-to-send dispute letter.
             </p>
-            <p className={s.paywallCtaPrice}>$19.99</p>
+            <div className={s.paywallTierRow}>
+              <span className={s.paywallTierLabel}>{priceTier.label}</span>
+              <span className={s.paywallCtaPrice}>{priceTier.priceDisplay}</span>
+              <span className={s.paywallTierRange}>{priceTier.range} found</span>
+            </div>
             {checkoutError && <p className={s.paywallError}>{checkoutError}</p>}
             <button
               onClick={handleGetFullReport}

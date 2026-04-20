@@ -1,6 +1,7 @@
 # Rules Engine Architecture
 
 **Date:** 2026-04-19  
+**Updated:** 2026-04-20 — Added MUE detection, insurance-type-aware NCCI loading  
 **Status:** Active
 
 ---
@@ -60,14 +61,15 @@ Used for rules where the benchmark is the exact agreed or published price:
 
 | Data | Source | Table in Supabase | Used By |
 |------|---------|-------------------|---------|
-| Medicare PFS rates | CMS Physician Fee Schedule ZIP file | `cms_physician_fee_schedule` | PRICE_OUTLIER |
-| NCCI edit pairs | CMS NCCI edits (Column 1/Column 2) | `cms_ncci_edits` | NCCI_UNBUNDLING |
+| Medicare PFS rates | CMS Physician Fee Schedule ZIP file | `cms_pfs_indicators` | PRICE_OUTLIER |
+| NCCI PTP edit pairs | CMS MCD/MCR PTP files (tab-delimited) | `ncci_edit_pairs` | NCCI_UNBUNDLING |
+| NCCI MUE limits | CMS MCR MUE CSV files (Q2 2026) | `ncci_mue_limits` | MUE_EXCEEDED |
 | CPT proc_stat flags | CMS PFS status indicators | `cms_pfs_indicators` | NON_PAYABLE_CODE |
 | HCPCS Level II codes | CMS HCPCS code file | `cms_hcpcs_codes` | NON_PAYABLE_CODE, TERMINATED_CODE_BILLED |
 | Anesthesia conversion factor | CMS PFS locality file | `cms_anesthesia_cf` | ANESTHESIA_OUTLIER |
 | Anesthesia base units | CMS PFS anesthesia base unit table | `cms_anesthesia_base_units` | ANESTHESIA_OUTLIER |
-| OPPS payment caps | CMS OPPS addendum B | `cms_opps_rates` | FACILITY_CHARGE_OUTLIER |
-| Ambulance Fee Schedule | CMS AFS final rule tables | `cms_ambulance_fee_schedule` | AMBULANCE_CHARGE_OUTLIER |
+| OPPS payment caps | CMS OPPS addendum B | `cms_opps_cap` | FACILITY_CHARGE_OUTLIER |
+| Ambulance Fee Schedule | CMS AFS final rule tables | `cms_ambulance_rates` | AMBULANCE_CHARGE_OUTLIER |
 | Hospital gross charges | CMS price transparency MRF files | BigQuery `hospital_charges` | HOSPITAL_CHARGE_OUTLIER |
 | Negotiated rates | CMS price transparency MRF files | BigQuery `hospital_charges` | NEGOTIATED_RATE_EXCEEDED |
 
@@ -188,6 +190,28 @@ Used for rules where the benchmark is the exact agreed or published price:
 
 ---
 
+### 11. MUE_EXCEEDED
+
+**What:** Flags line items where the billed quantity exceeds the CMS Medically Unlikely Edit (MUE) limit for that code.
+
+**Why it fires:** CMS publishes MUE values defining the maximum units of a given CPT/HCPCS code that are clinically reasonable for a single patient on a single date of service. Billing above this limit strongly indicates quantity inflation or a billing error.
+
+**MUE Adjudication Indicator (MAI) determines how the check is applied:**
+- `1` (Claim Edit): Sum all lines with the same code and service date; the total must not exceed the MUE. Severity: Critical.
+- `2` (Date of Service — Policy): Each individual line must not exceed the MUE. Hard denial; cannot be overridden. Severity: Critical.
+- `3` (Date of Service — Clinical): Each line must not exceed the MUE, but the limit can be exceeded with supporting clinical documentation. Severity: Warning.
+- `0` (Unknown — MCD files omit the MAI column): Treated as indicator 2 conservatively. Severity: Critical.
+
+**MUE value of 0:** The code is not separately payable under any circumstances — flag every occurrence as Critical regardless of quantity.
+
+**Data source:** CMS MCR MUE CSV files (Q2 2026+) loaded via `scripts/load_mue_limits.py`. MCD tab-delimited files are also supported (without MAI). Loaded into `ncci_mue_limits` filtered by `service_type` and `payer_type`.
+
+**When active:** Only when MUE limits are loaded for the bill's service_type/payer_type combination.
+
+**Severity:** Critical (indicators 0, 1, 2) or Warning (indicator 3).
+
+---
+
 ### 10. NEGOTIATED_RATE_EXCEEDED
 
 **What:** Flags charges exceeding 1.1× the insurer-specific contracted rate for this hospital.
@@ -204,7 +228,9 @@ Used for rules where the benchmark is the exact agreed or published price:
 
 ## Insurance Type Implications
 
-The engine applies all rules regardless of insurance type, but the interpretation varies:
+### Price benchmarks (PRICE_OUTLIER, FACILITY_CHARGE_OUTLIER, AMBULANCE_CHARGE_OUTLIER)
+
+The 1.8× Medicare threshold is applied consistently regardless of insurance type:
 
 | Insurance Type | Price benchmark interpretation |
 |----------------|-------------------------------|
@@ -215,6 +241,26 @@ The engine applies all rules regardless of insurance type, but the interpretatio
 | TRICARE | Published rates similar to Medicare; 1.8× threshold appropriate |
 
 For all insurance types: NEGOTIATED_RATE_EXCEEDED (when available) and HOSPITAL_CHARGE_OUTLIER are more definitive than PRICE_OUTLIER, because they compare against the actual agreed price rather than the Medicare floor.
+
+### NCCI and MUE selection (insurance-type-aware)
+
+NCCI PTP edit pairs and MUE limits are loaded from the database filtered by `service_type` and `payer_type`. The mapping from the bill's `plan_type` to these parameters is:
+
+| Bill `plan_type` | NCCI `payer_type` loaded | Rationale |
+|-----------------|--------------------------|-----------|
+| `medicare` | `medicare` | Direct match — CMS MCR/MCD files apply |
+| `medicaid` | `medicaid` | CMS national NCCI files are the Medicaid standard; state-specific files use `payer_type='medicaid'` when loaded |
+| `commercial` | `medicare` | Medicare NCCI is the industry floor standard; commercial payers incorporate it |
+| `tricare` | `medicare` | TRICARE uses Medicare-aligned NCCI edits |
+| `self_pay` | `medicare` | Conservative default — NCCI unbundling is improper regardless of payer |
+| `null` (unknown) | `medicare` | Conservative default |
+
+**Service type detection:** The service type (`practitioner`, `outpatient`, `dme`) is inferred from the CPT/HCPCS codes on the bill:
+- Codes starting with A0–A9, E0–E1, K0, L0–L9 → `dme`
+- All other bills → `practitioner` (default; covers the vast majority of physician/professional claims)
+- `outpatient` is not yet auto-detected (requires revenue codes not extracted by the current parser)
+
+**Current data loaded:** All six CMS MCD PTP files (Q1 2026) are available at `data/ncci/`. Three MCR MUE CSV files (Q2 2026, the fresher dataset) are available at `data/ncci/`. Load these using `scripts/load_ncci_edits.py` and `scripts/load_mue_limits.py`.
 
 ---
 

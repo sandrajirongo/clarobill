@@ -1,21 +1,32 @@
 """Load CMS NCCI Procedure-to-Procedure (PTP) edit pairs into the database.
 
-Download the quarterly file from CMS:
-  https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-procedure-to-procedure-edits
+Supports two file formats:
 
-Select "NCCI PTP Edits" → download the ZIP → extract the CSV file.
-The CSV filename looks like: "NCCI_PT_to_PT_XXQYYYY.csv"
+  MCD (tab-delimited, Q1 data, .txt files):
+    Multi-line preamble before the header row. Header starts with "Col1\t".
+    Columns: Col1, Col2, EffDt, DelDt, ModifierIndicator, PTP Edit Rationale
 
-Expected CSV columns (no header row in CMS file):
-  col 1: Column 1 HCPCS code  (5-digit CPT/HCPCS)
-  col 2: Column 2 HCPCS code  (5-digit CPT/HCPCS)
-  col 3: Effective date        (YYYYMMDD)
-  col 4: Deletion date         (YYYYMMDD or 20991231 = still active)
-  col 5: Modifier indicator    (0 = no modifier; 1 = modifier may allow; 9 = N/A)
+  MCR (tab-delimited, same format as MCD — no CSV MCR PTP files shipped by CMS):
+    Same format; use --payer-type medicare to tag rows appropriately.
 
 Usage:
-  python scripts/load_ncci_edits.py --file /path/to/NCCI_PT_to_PT_XXQYYYY.csv
-  python scripts/load_ncci_edits.py --sample   # loads a small sample for dev/testing
+  # Load MCD PTP Practitioner file as Medicare practitioner edits
+  python scripts/load_ncci_edits.py \
+      --file data/ncci/MCD-PTP-PractitionerServices-Effective_01012026.txt \
+      --service-type practitioner --payer-type medicare
+
+  # Load MCD PTP Outpatient file
+  python scripts/load_ncci_edits.py \
+      --file data/ncci/MCD-PTP-OutpatientHospitalServices-Effective_01012026.txt \
+      --service-type outpatient --payer-type medicare
+
+  # Load MCD PTP DME file
+  python scripts/load_ncci_edits.py \
+      --file data/ncci/MCD-PTP-DMEServices-Effective_01012026.txt \
+      --service-type dme --payer-type medicare
+
+  # Load sample data for dev/testing
+  python scripts/load_ncci_edits.py --sample
 """
 
 import argparse
@@ -29,7 +40,8 @@ from pathlib import Path
 from supabase import create_client
 
 BATCH_SIZE = 500
-ACTIVE_DATE = date(2099, 12, 31)  # CMS sentinel value meaning "not yet deleted"
+VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
+VALID_PAYER_TYPES = ("medicare", "medicaid")
 
 
 def parse_cms_date(value: str) -> date | None:
@@ -43,15 +55,27 @@ def parse_cms_date(value: str) -> date | None:
         return None
 
 
-def load_from_file(path: Path) -> list[dict]:
-    """Parse CMS NCCI CSV into dicts ready for DB insertion."""
+def load_from_file(path: Path, service_type: str, payer_type: str) -> list[dict]:
+    """Parse a CMS NCCI PTP tab-delimited file into dicts ready for DB insertion.
+
+    Skips the preamble by reading until the header row (Col1 or "Column 1 Code").
+    Both MCD .txt and any equivalent tab-delimited format are supported.
+    """
     rows = []
-    with path.open(newline="", encoding="utf-8-sig") as f:
-        reader = csv.reader(f)
+    with path.open(newline="", encoding="latin-1") as f:
+        reader = csv.reader(f, delimiter="\t")
+        header_found = False
         for line_num, row in enumerate(reader, start=1):
-            # Skip any header row CMS may include
-            if line_num == 1 and not row[0].strip().isdigit():
+            if not row:
                 continue
+
+            # Detect the header row — first cell starts with "Col1" (case-insensitive)
+            if not header_found:
+                first = row[0].strip().lower()
+                if first == "col1" or first.startswith("col1"):
+                    header_found = True
+                continue  # skip everything up to and including the header
+
             if len(row) < 5:
                 print(f"  Skipping malformed row {line_num}: {row}", file=sys.stderr)
                 continue
@@ -60,13 +84,15 @@ def load_from_file(path: Path) -> list[dict]:
             col2 = row[1].strip().zfill(5)
             effective = parse_cms_date(row[2])
             deletion = parse_cms_date(row[3])
+
+            # Modifier indicator may be quoted and have trailing label text
             try:
-                modifier_indicator = int(row[4].strip())
-            except ValueError:
+                modifier_indicator = int(row[4].strip().split()[0])
+            except (ValueError, IndexError):
                 modifier_indicator = 9
 
             if not effective:
-                continue  # Effective date is required
+                continue  # effective date is required
 
             rows.append({
                 "id": str(uuid.uuid4()),
@@ -75,22 +101,20 @@ def load_from_file(path: Path) -> list[dict]:
                 "effective_date": effective.isoformat(),
                 "deletion_date": deletion.isoformat() if deletion else None,
                 "modifier_indicator": modifier_indicator,
+                "service_type": service_type,
+                "payer_type": payer_type,
             })
     return rows
 
 
 def load_sample() -> list[dict]:
-    """Returns a small sample of known NCCI pairs for dev/testing without the full file."""
+    """Returns a small sample of known NCCI pairs for dev/testing."""
     pairs = [
-        # Office visit bundles routine venipuncture
         ("99213", "36415", "20200101", None, 1),
         ("99214", "36415", "20200101", None, 1),
-        # Total knee replacement bundles knee injection
         ("27447", "27370", "20200101", None, 1),
-        # Critical care bundles many E&M codes
         ("99291", "99213", "20200101", None, 0),
         ("99291", "99214", "20200101", None, 0),
-        # Colonoscopy bundles biopsy
         ("45378", "45380", "20200101", None, 1),
     ]
     return [
@@ -101,16 +125,30 @@ def load_sample() -> list[dict]:
             "effective_date": datetime.strptime(eff, "%Y%m%d").date().isoformat(),
             "deletion_date": del_date,
             "modifier_indicator": mod,
+            "service_type": "practitioner",
+            "payer_type": "medicare",
         }
         for col1, col2, eff, del_date, mod in pairs
     ]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Load CMS NCCI edit pairs into Clarobill DB")
+    parser = argparse.ArgumentParser(description="Load CMS NCCI PTP edit pairs into ClaroBill DB")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--file", type=Path, help="Path to the CMS NCCI CSV file")
+    group.add_argument("--file", type=Path, help="Path to CMS NCCI PTP tab-delimited .txt file")
     group.add_argument("--sample", action="store_true", help="Load sample data for dev/testing")
+    parser.add_argument(
+        "--service-type",
+        choices=VALID_SERVICE_TYPES,
+        default="practitioner",
+        help="Bill service type the edits apply to (default: practitioner)",
+    )
+    parser.add_argument(
+        "--payer-type",
+        choices=VALID_PAYER_TYPES,
+        default="medicare",
+        help="Insurance programme the NCCI file was published for (default: medicare)",
+    )
     args = parser.parse_args()
 
     supabase_url = os.environ.get("SUPABASE_URL")
@@ -128,20 +166,26 @@ def main() -> None:
         if not args.file.exists():
             print(f"Error: File not found: {args.file}", file=sys.stderr)
             sys.exit(1)
-        rows = load_from_file(args.file)
-        print(f"Parsed {len(rows)} NCCI pairs from {args.file.name}")
+        rows = load_from_file(args.file, args.service_type, args.payer_type)
+        print(
+            f"Parsed {len(rows)} NCCI PTP pairs from {args.file.name} "
+            f"(service_type={args.service_type}, payer_type={args.payer_type})"
+        )
 
-    # Upsert in batches — re-runnable without duplicates
+    # Upsert in batches — re-runnable without duplicates.
+    # Conflict key includes service_type + payer_type so the same code pair can
+    # exist once per combination (e.g. practitioner/medicare and outpatient/medicare).
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i : i + BATCH_SIZE]
         client.table("ncci_edit_pairs").upsert(
-            batch, on_conflict="column_one_code,column_two_code"
+            batch,
+            on_conflict="column_one_code,column_two_code,service_type,payer_type",
         ).execute()
         inserted += len(batch)
         print(f"  Upserted {inserted}/{len(rows)} rows...")
 
-    print(f"Done. {inserted} NCCI edit pairs loaded.")
+    print(f"Done. {inserted} NCCI PTP edit pairs loaded.")
 
 
 if __name__ == "__main__":

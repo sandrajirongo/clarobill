@@ -73,6 +73,17 @@ export async function POST(
     );
   }
 
+  // Look up the confirmed insurance plan to get plan_type for NCCI edit selection.
+  // Not a hard failure — plan_type is optional; engine falls back to medicare edits.
+  const { data: insurancePlan } = await supabase
+    .from('insurance_plans')
+    .select('plan_type')
+    .eq('profile_member_id', body.profileMemberId)
+    .eq('payer_name', body.payerName.trim())
+    .eq('plan_name', body.planName.trim())
+    .limit(1)
+    .single();
+
   // Persist confirmed context to the bill record.
   // confirmed_at marks that the user completed verification — used for tracking.
   await supabase
@@ -107,6 +118,7 @@ export async function POST(
       zip_code: member.zip_code ?? null,
       payer_name: body.payerName.trim(),
       plan_name: body.planName.trim(),
+      plan_type: insurancePlan?.plan_type ?? null,
     }),
   });
 

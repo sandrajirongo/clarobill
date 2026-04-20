@@ -739,3 +739,119 @@ class TestNegotiatedRateExceeded:
         assert len(neg_errors) == 1
         # Negotiated overcharge ($708) is larger than hospital charge overcharge ($500)
         assert neg_errors[0].estimated_overcharge > hosp_errors[0].estimated_overcharge
+
+
+class TestMueViolation:
+    """MUE (Medically Unlikely Edit) quantity violation detection tests."""
+
+    @pytest.fixture()
+    def mue_engine(self) -> RulesEngine:
+        """Engine with MUE limits for common test codes."""
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            mue_limits={
+                "99213": (2, 2),   # max 2 units, policy (hard denial)
+                "85025": (1, 2),   # max 1 unit, policy
+                "99291": (1, 3),   # max 1 unit, clinical (documentable)
+                "36415": (3, 1),   # max 3 units, claim edit (sum all lines)
+                "00400": (0, 2),   # MUE value of 0 — not separately payable
+            },
+        )
+
+    def _make(
+        self,
+        cpt_code: str,
+        charge: float,
+        quantity: int,
+        service_date: date = date(2026, 3, 15),
+    ) -> ParsedLineItem:
+        return ParsedLineItem(
+            cpt_code=cpt_code,
+            description=f"Procedure {cpt_code}",
+            service_date=service_date,
+            quantity=quantity,
+            unit_charge=charge,
+            total_charge=charge * quantity,
+            modifier=None,
+            diagnosis_pointers=[],
+            anesthesia_minutes=None,
+        )
+
+    def test_flags_quantity_above_mue_indicator_2(self, mue_engine: RulesEngine) -> None:
+        # 99213 has MUE of 2 units — billing 5 is a critical violation
+        items = [self._make("99213", 75.00, 5)]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 1
+        assert mue_errors[0].severity == "critical"
+        assert mue_errors[0].estimated_overcharge == Decimal("225.00")  # 3 excess × $75
+
+    def test_does_not_flag_quantity_at_mue_limit(self, mue_engine: RulesEngine) -> None:
+        items = [self._make("99213", 75.00, 2)]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 0
+
+    def test_flags_indicator_3_as_warning(self, mue_engine: RulesEngine) -> None:
+        # 99291 has MUE of 1, indicator 3 (clinical) — should be a warning, not critical
+        items = [self._make("99291", 300.00, 3)]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 1
+        assert mue_errors[0].severity == "warning"
+
+    def test_claim_edit_sums_across_lines_same_date(self, mue_engine: RulesEngine) -> None:
+        # 36415 has MUE of 3, indicator 1 (claim edit) — two lines totaling 5 on same date
+        items = [
+            self._make("36415", 3.00, 2, date(2026, 3, 15)),
+            self._make("36415", 3.00, 3, date(2026, 3, 15)),
+        ]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 1
+        assert mue_errors[0].severity == "critical"
+        assert len(mue_errors[0].affected_indices) == 2  # both lines flagged
+
+    def test_claim_edit_does_not_flag_when_sum_at_limit(self, mue_engine: RulesEngine) -> None:
+        # Two lines totaling exactly 3 — should not be flagged
+        items = [
+            self._make("36415", 3.00, 1, date(2026, 3, 15)),
+            self._make("36415", 3.00, 2, date(2026, 3, 15)),
+        ]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 0
+
+    def test_claim_edit_separate_dates_checked_independently(self, mue_engine: RulesEngine) -> None:
+        # 3 units on each of two different dates — each is within limit independently
+        items = [
+            self._make("36415", 3.00, 3, date(2026, 3, 15)),
+            self._make("36415", 3.00, 3, date(2026, 3, 16)),
+        ]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 0
+
+    def test_mue_value_zero_flagged_as_critical(self, mue_engine: RulesEngine) -> None:
+        # 00400 has MUE of 0 — not separately payable under any circumstances
+        items = [self._make("00400", 50.00, 1)]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 1
+        assert mue_errors[0].severity == "critical"
+        assert mue_errors[0].estimated_overcharge == Decimal("50.00")
+
+    def test_no_flag_when_mue_limits_not_loaded(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [self._make("99213", 75.00, 999)]
+        errors = engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 0
+
+    def test_does_not_flag_code_without_mue_entry(self, mue_engine: RulesEngine) -> None:
+        # 99214 is not in mue_limits — should not be flagged regardless of quantity
+        items = [self._make("99214", 100.00, 50)]
+        errors = mue_engine.run(items)
+        mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
+        assert len(mue_errors) == 0

@@ -6,4 +6,5 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
 });
 
-export const REPORT_PRICE_CENTS = parseInt(process.env.STRIPE_REPORT_PRICE_CENTS ?? '1999', 10);
+// Re-export tier helpers so server routes only need one import
+export { getPriceTier, PRICING_TIERS } from './pricing';

@@ -24,6 +24,7 @@ export interface Bill {
   profileMemberId: string | null;
   payerName: string | null;
   planName: string | null;
+  planType: PlanType | null;
   // Timestamp when the user completed pre-analysis verification
   confirmedAt: string | null;
   createdAt: string;
@@ -90,7 +91,8 @@ export type BillingErrorCode =
   | 'FACILITY_CHARGE_OUTLIER'
   | 'AMBULANCE_CHARGE_OUTLIER'
   | 'HOSPITAL_CHARGE_OUTLIER'
-  | 'NEGOTIATED_RATE_EXCEEDED';
+  | 'NEGOTIATED_RATE_EXCEEDED'
+  | 'MUE_EXCEEDED';
 
 export interface BillingError {
   code: BillingErrorCode;

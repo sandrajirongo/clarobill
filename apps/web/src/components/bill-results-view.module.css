@@ -165,13 +165,31 @@
   margin-bottom: 1rem;
   position: relative;
 }
+.paywallTierRow {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  position: relative;
+}
+.paywallTierLabel {
+  font-size: .72rem;
+  font-weight: 700;
+  color: rgba(200, 240, 96, .7);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
 .paywallCtaPrice {
   font-family: var(--fd);
   font-size: 2.2rem;
   font-weight: 700;
   color: var(--accent);
-  margin-bottom: 1.25rem;
-  position: relative;
+  line-height: 1;
+}
+.paywallTierRange {
+  font-size: .76rem;
+  color: rgba(255, 255, 255, .45);
 }
 .paywallError { font-size: .82rem; color: #FCA5A5; margin-bottom: .75rem; position: relative; }
 .paywallBtn {

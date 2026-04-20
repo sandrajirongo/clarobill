@@ -228,7 +228,35 @@ own published maximum.
 
 ---
 
-### 10. NEGOTIATED_RATE_EXCEEDED *(planned — next build)*
+### 11. MUE_EXCEEDED
+**Severity:** critical (MAI 0, 1, 2) or warning (MAI 3)  
+**Data source:** `ncci_mue_limits` (Supabase), loaded from CMS MCR MUE CSV files
+
+**What it detects:**  
+Line items where the billed quantity exceeds the CMS Medically Unlikely Edit (MUE)
+limit for that HCPCS/CPT code. MUE values define the maximum units of a given code
+that are clinically reasonable for a single patient on a single claim or date of service.
+
+**MUE Adjudication Indicator (MAI) drives both check logic and severity:**
+
+| MAI | Type | Check | Severity |
+|-----|------|-------|----------|
+| 0 | Unknown (MCD files) | Per-line quantity ≤ MUE | critical |
+| 1 | Claim Edit | Sum of all lines, same code+date ≤ MUE | critical |
+| 2 | Date of Service — Policy | Per-line quantity ≤ MUE (hard denial) | critical |
+| 3 | Date of Service — Clinical | Per-line quantity ≤ MUE (documentable) | warning |
+
+**Special case:** MUE value = 0 means the code is not separately payable under any
+circumstances. Every occurrence is flagged Critical regardless of quantity.
+
+**Estimated overcharge:** `excess_quantity × unit_charge`
+
+**Insurance-type filtering:** Loaded with `payer_type` matching the bill's insurance
+programme (mapped from `plan_type` on the bill). See decision doc for the full mapping.
+
+---
+
+### 10. NEGOTIATED_RATE_EXCEEDED
 **Severity:** critical  
 **Data source:** `hospital_charges` (BigQuery — payer-specific negotiated rates in MRF)
 
@@ -273,12 +301,13 @@ but orders by descending severity and specificity:
 1. **NEGOTIATED_RATE_EXCEEDED** — strongest claim (your insurer's exact contract)
 2. **HOSPITAL_CHARGE_OUTLIER** — strong claim (hospital's own published price)
 3. **NCCI_UNBUNDLING** — structural error (CMS coding rule violation)
-4. **DUPLICATE_CHARGE** — structural error (mechanical billing error)
-5. **NON_PAYABLE_CODE / TERMINATED_CODE_BILLED** — code-validity errors
-6. **ANESTHESIA_OUTLIER** — specialty charge error
-7. **FACILITY_CHARGE_OUTLIER** — facility benchmark comparison
-8. **AMBULANCE_CHARGE_OUTLIER** — ambulance benchmark comparison
-9. **PRICE_OUTLIER** — weakest claim (Medicare population average)
+4. **MUE_EXCEEDED** — quantity error (CMS-defined billing limit violated)
+5. **DUPLICATE_CHARGE** — structural error (mechanical billing error)
+6. **NON_PAYABLE_CODE / TERMINATED_CODE_BILLED** — code-validity errors
+7. **ANESTHESIA_OUTLIER** — specialty charge error
+8. **FACILITY_CHARGE_OUTLIER** — facility benchmark comparison
+9. **AMBULANCE_CHARGE_OUTLIER** — ambulance benchmark comparison
+10. **PRICE_OUTLIER** — weakest claim (Medicare population average)
 
 ---
 
@@ -289,7 +318,8 @@ but orders by descending severity and specificity:
 | `cms_pfs_indicators` | CMS PFS RVU files (annual + quarterly) | `scripts/load_cms_pfs.py` |
 | `cms_localities` | CMS GPCI locality file | `scripts/load_cms_pfs.py` |
 | `cms_county_locality` | CMS locality county mapping | `scripts/load_cms_pfs.py` |
-| `ncci_edit_pairs` | CMS NCCI edit tables | `scripts/load_ncci.py` |
+| `ncci_edit_pairs` | CMS MCD/MCR PTP files (.txt, tab-delimited) | `scripts/load_ncci_edits.py` |
+| `ncci_mue_limits` | CMS MCR MUE CSV files (.csv) / MCD MUE .txt files | `scripts/load_mue_limits.py` |
 | `cms_hcpcs_codes` | CMS HCPCS Level II annual release | `scripts/load_hcpcs.py` |
 | `cms_anesthesia_cf` | CMS anesthesia CF locality files | `scripts/load_anesthesia_cf.py` |
 | `cms_anesthesia_base_units` | CMS anesthesia base unit tables | `scripts/load_anesthesia_base_units.py` |

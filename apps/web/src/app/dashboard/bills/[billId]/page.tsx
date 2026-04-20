@@ -22,7 +22,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
   // Fetch bill — RLS enforces ownership
   const { data: bill } = await supabase
     .from('bills')
-    .select('id, user_id, file_name, display_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
+    .select('id, user_id, file_name, display_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, plan_type, confirmed_at, created_at, updated_at')
     .eq('id', billId)
     .single();
 
@@ -60,6 +60,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
           profileMemberId: bill.profile_member_id ?? null,
           payerName: bill.payer_name ?? null,
           planName: bill.plan_name ?? null,
+          planType: (bill.plan_type ?? null) as import('@clarobill/shared').PlanType | null,
           confirmedAt: bill.confirmed_at ?? null,
           createdAt: bill.created_at,
           updatedAt: bill.updated_at,
@@ -108,6 +109,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
         profileMemberId: bill.profile_member_id ?? null,
         payerName: bill.payer_name ?? null,
         planName: bill.plan_name ?? null,
+        planType: (bill.plan_type ?? null) as import('@clarobill/shared').PlanType | null,
         confirmedAt: bill.confirmed_at ?? null,
         createdAt: bill.created_at,
         updatedAt: bill.updated_at,

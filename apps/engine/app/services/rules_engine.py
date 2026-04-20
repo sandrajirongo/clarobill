@@ -52,6 +52,7 @@ class RulesEngine:
         hcpcs_termination_dates: dict[str, date] | None = None,
         hospital_charges: dict[str, Decimal] | None = None,
         negotiated_charges: dict[str, Decimal] | None = None,
+        mue_limits: dict[str, tuple[int, int]] | None = None,
     ) -> None:
         """
         Args:
@@ -100,6 +101,11 @@ class RulesEngine:
                                         the MRF price transparency file. When provided, enables
                                         the negotiated rate exceeded detection — the strongest
                                         price benchmark available.
+            mue_limits:                 Map of hcpcs_code → (mue_value, adjudication_indicator).
+                                        mue_value: max allowed units per line (or per claim/date for
+                                        indicator 1). adjudication_indicator: 0=unknown, 1=claim edit,
+                                        2=DOS policy (hard denial), 3=DOS clinical (documentable).
+                                        When provided, enables MUE violation detection.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -113,6 +119,7 @@ class RulesEngine:
         self._hcpcs_termination_dates = hcpcs_termination_dates or {}
         self._hospital_charges = hospital_charges or {}
         self._negotiated_charges = negotiated_charges or {}
+        self._mue_limits = mue_limits or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -134,6 +141,7 @@ class RulesEngine:
         errors.extend(self._detect_terminated_codes(line_items))
         errors.extend(self._detect_hospital_charge_outliers(line_items))
         errors.extend(self._detect_negotiated_rate_exceeded(line_items))
+        errors.extend(self._detect_mue_violations(line_items))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -662,6 +670,116 @@ class RulesEngine:
                     ),
                     estimated_overcharge=overcharge,
                     medicare_benchmark_rate=opps_cap,
+                ))
+
+        return errors
+
+    def _detect_mue_violations(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag line items where the billed quantity exceeds the CMS Medically Unlikely Edit limit.
+
+        MUE limits define the maximum units of a given HCPCS/CPT code that can be billed
+        on a single claim line or per date of service. Exceeding these limits is a strong
+        indicator of quantity inflation or billing error.
+
+        Adjudication indicator determines how the check is applied and what severity to assign:
+          1 = Claim Edit: sum all lines with same code+date; total must not exceed the MUE value.
+          2 = Date of Service Edit (Policy): each individual line must not exceed MUE — hard denial.
+          3 = Date of Service Edit (Clinical): each line must not exceed MUE, but medical
+              documentation can override — flag as warning rather than critical.
+          0 = Unknown (MCD files omit this field): treat like indicator 2 conservatively.
+        """
+        if not self._mue_limits:
+            return []
+
+        errors: list[DetectedError] = []
+
+        # Build index: (cpt_code, service_date_str) → [indices]
+        code_date_indices: dict[tuple[str, str], list[int]] = {}
+        for index, item in enumerate(line_items):
+            key = (item.cpt_code, str(item.service_date))
+            code_date_indices.setdefault(key, []).append(index)
+
+        already_flagged: set[tuple[str, str]] = set()
+
+        for index, item in enumerate(line_items):
+            limit = self._mue_limits.get(item.cpt_code)
+            if limit is None:
+                continue
+
+            mue_value, adj_indicator = limit
+            if mue_value == 0:
+                # mue_value of 0 means "not separately payable" — flag every occurrence
+                errors.append(DetectedError(
+                    code="MUE_EXCEEDED",
+                    severity="critical",
+                    affected_indices=[index],
+                    description=(
+                        f"CPT {item.cpt_code} has a CMS MUE value of 0, meaning it is "
+                        f"not separately payable under any circumstances. "
+                        f"Billing this code is considered improper."
+                    ),
+                    estimated_overcharge=Decimal(str(item.total_charge)),
+                    medicare_benchmark_rate=None,
+                ))
+                continue
+
+            key = (item.cpt_code, str(item.service_date))
+
+            if adj_indicator == 1:
+                # Claim Edit: compare the sum of all quantities for this code+date
+                if key in already_flagged:
+                    continue
+                already_flagged.add(key)
+                all_indices = code_date_indices[key]
+                total_qty = sum(line_items[i].quantity for i in all_indices)
+                if total_qty <= mue_value:
+                    continue
+                excess = total_qty - mue_value
+                avg_unit = sum(
+                    Decimal(str(line_items[i].unit_charge)) for i in all_indices
+                ) / len(all_indices)
+                overcharge = avg_unit * excess
+                errors.append(DetectedError(
+                    code="MUE_EXCEEDED",
+                    severity="critical",
+                    affected_indices=all_indices,
+                    description=(
+                        f"CPT {item.cpt_code} was billed for a combined total of {total_qty} units "
+                        f"on {item.service_date}. The CMS Medically Unlikely Edit limit is "
+                        f"{mue_value} units per claim. The excess {excess} unit(s) are unlikely "
+                        f"to be reimbursed. Potential overcharge: ${float(overcharge):.2f}."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=None,
+                ))
+            else:
+                # Indicators 0, 2, 3: check each line individually
+                qty = item.quantity
+                if qty <= mue_value:
+                    continue
+                excess = qty - mue_value
+                overcharge = Decimal(str(item.unit_charge)) * excess
+                # Indicator 2 (policy) = hard denial → critical
+                # Indicator 3 (clinical) = can be overridden with documentation → warning
+                # Indicator 0 (unknown) = treat conservatively as critical
+                severity = "warning" if adj_indicator == 3 else "critical"
+                doc_note = (
+                    " With supporting clinical documentation, this may be justified."
+                    if adj_indicator == 3 else ""
+                )
+                errors.append(DetectedError(
+                    code="MUE_EXCEEDED",
+                    severity=severity,
+                    affected_indices=[index],
+                    description=(
+                        f"CPT {item.cpt_code} was billed for {qty} units on {item.service_date}. "
+                        f"The CMS Medically Unlikely Edit limit is {mue_value} units per date of "
+                        f"service. The excess {excess} unit(s) are unlikely to be "
+                        f"reimbursed.{doc_note} "
+                        f"Potential overcharge: ${float(overcharge):.2f}."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=None,
                 ))
 
         return errors

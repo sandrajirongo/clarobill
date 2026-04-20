@@ -13,7 +13,7 @@ import {
 } from '@/lib/utils/insurance-constants';
 import { CardScanner } from '@/components/card-scanner';
 import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
-import { CameraIcon } from '@/components/icons';
+import { CameraIcon, PencilIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
 interface InsurancePlan {
@@ -53,6 +53,14 @@ export function MembersPanel(): JSX.Element {
   const [newCounty, setNewCounty] = useState('');
   const [newZip, setNewZip] = useState('');
 
+  // Edit member form state
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDob, setEditDob] = useState('');
+  const [editState, setEditState] = useState('');
+  const [editCounty, setEditCounty] = useState('');
+  const [editZip, setEditZip] = useState('');
+
   // Add plan form state — mirrors bill-verification.tsx
   const [newPayer, setNewPayer]           = useState('');
   const [newPlan, setNewPlan]             = useState('');
@@ -64,6 +72,14 @@ export function MembersPanel(): JSX.Element {
   const [newMedicareMAName, setNewMedicareMAName] = useState('');
   const [newTricareType, setNewTricareType]   = useState('');
   const [newIsPrimary, setNewIsPrimary]   = useState(false);
+
+  // Edit plan form state
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [editPayerName, setEditPayerName] = useState('');
+  const [editPlanName, setEditPlanName]   = useState('');
+  const [editPlanType, setEditPlanType]   = useState('commercial');
+  const [editMemberIdField, setEditMemberIdField] = useState('');
+  const [editIsPrimary, setEditIsPrimary] = useState(false);
 
   const [showScanner, setShowScanner] = useState(false);
   const [lastScan, setLastScan] = useState<{ confident: boolean; note: string | null } | null>(null);
@@ -85,7 +101,6 @@ export function MembersPanel(): JSX.Element {
     if (result.planType)  setNewPlanType(result.planType);
     if (result.memberId)  setNewMemberId(result.memberId);
 
-    // Auto-infer Medicare sub-type from plan name
     if (result.planType === 'medicare' && result.planName) {
       const lower = result.planName.toLowerCase();
       if (lower.includes('advantage') || lower.includes('part c')) {
@@ -94,7 +109,6 @@ export function MembersPanel(): JSX.Element {
       }
     }
 
-    // Auto-infer TRICARE sub-type from plan name
     if (result.planType === 'tricare' && result.planName) {
       const matched = TRICARE_PLAN_TYPES.find(
         (pt) => result.planName!.toLowerCase().includes(pt.value.toLowerCase())
@@ -143,9 +157,79 @@ export function MembersPanel(): JSX.Element {
     void loadMembers();
   }
 
+  function startEditMember(member: ProfileMember): void {
+    setEditingMemberId(member.id);
+    setEditName(member.full_name);
+    setEditDob(member.date_of_birth);
+    setEditState(member.state ?? '');
+    setEditCounty(member.county ?? '');
+    setEditZip(member.zip_code ?? '');
+    setError(null);
+  }
+
+  async function handleSaveMember(memberId: string): Promise<void> {
+    if (!editName.trim() || !editDob) {
+      setError(t('errorNameRequired'));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const res = await fetch(`/api/profile/members/${memberId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: editName,
+        dateOfBirth: editDob,
+        state: editState || null,
+        county: editCounty || null,
+        zipCode: editZip || null,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError(t('errorMemberFailed'));
+      return;
+    }
+    setEditingMemberId(null);
+    void loadMembers();
+  }
+
   async function handleDeleteMember(memberId: string): Promise<void> {
     if (!confirm(t('deleteConfirm'))) return;
     await fetch(`/api/profile/members/${memberId}`, { method: 'DELETE' });
+    void loadMembers();
+  }
+
+  function startEditPlan(plan: InsurancePlan): void {
+    setEditingPlanId(plan.id);
+    setEditPayerName(plan.payer_name);
+    setEditPlanName(plan.plan_name);
+    setEditPlanType(plan.plan_type);
+    setEditMemberIdField(plan.member_id ?? '');
+    setEditIsPrimary(plan.is_primary_plan);
+    setError(null);
+  }
+
+  async function handleSavePlan(planId: string, memberId: string): Promise<void> {
+    setSaving(true);
+    setError(null);
+    const res = await fetch(`/api/profile/plans/${planId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payerName: editPayerName,
+        planName: editPlanName,
+        planType: editPlanType,
+        memberId: editMemberIdField || null,
+        isPrimaryPlan: editIsPrimary,
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError(t('errorPlanFailed'));
+      return;
+    }
+    setEditingPlanId(null);
     void loadMembers();
   }
 
@@ -158,8 +242,6 @@ export function MembersPanel(): JSX.Element {
     setSaving(true);
     setError(null);
 
-    // Derive the most specific payer_name and plan_name from sub-type selections.
-    // The API fills defaults for anything left null, but these give better analysis context.
     let resolvedPayerName = newPayer.trim() || null;
     let resolvedPlanName  = newPlan.trim()  || null;
 
@@ -212,6 +294,7 @@ export function MembersPanel(): JSX.Element {
   }
 
   const countiesForNewState = newState ? (COUNTIES_BY_STATE[newState] ?? []) : [];
+  const countiesForEditState = editState ? (COUNTIES_BY_STATE[editState] ?? []) : [];
 
   if (loading) {
     return (
@@ -247,6 +330,7 @@ export function MembersPanel(): JSX.Element {
 
         {members.map((member) => {
           const isAddingPlan = addingPlanFor === member.id;
+          const isEditingMember = editingMemberId === member.id;
           const dobFormatted = new Date(member.date_of_birth + 'T00:00:00').toLocaleDateString('en-US', {
             month: 'short', day: 'numeric', year: 'numeric',
           });
@@ -254,280 +338,450 @@ export function MembersPanel(): JSX.Element {
 
           return (
             <div key={member.id} className={s.memberCard}>
-              <div className={s.memberHeader}>
-                <div style={{ minWidth: 0 }}>
-                  <p className={s.memberName}>
-                    {member.full_name}
-                    {member.is_primary && <span className={s.primaryBadge}>{t('primary')}</span>}
-                  </p>
-                  <p className={s.memberMeta}>
-                    {t('dob')} {dobFormatted}
-                    {locationParts.length > 0 && ` · ${locationParts.join(', ')}`}
-                    {member.zip_code && ` ${member.zip_code}`}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleDeleteMember(member.id)}
-                  className={s.removeBtn}
-                  aria-label="Remove member"
-                >✕</button>
-              </div>
 
-              {/* Insurance plans list */}
-              <div className={s.plansSection}>
-                {member.insurance_plans.length > 0 ? (
-                  <div className={s.plansList}>
-                    {member.insurance_plans.map((plan) => (
-                      <div key={plan.id} className={s.planRow}>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <span className={s.planPayer}>{plan.payer_name}</span>
-                          <span className={s.planName}> · {plan.plan_name}</span>
-                          {plan.is_primary_plan
-                            ? <span className={s.planPrimaryBadge}>{t('primary')}</span>
-                            : member.insurance_plans.length > 1
-                            ? <span className={s.planSecondaryBadge}>{t('secondary')}</span>
-                            : null}
-                          {plan.member_id && <span className={s.planMemberId}>ID: {plan.member_id}</span>}
-                        </div>
-                        <button
-                          onClick={() => handleDeletePlan(plan.id)}
-                          className={s.removeBtn}
-                          aria-label="Remove plan"
-                        >✕</button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className={s.noPlansText}>{t('noPlans')}</p>
-                )}
-
-                {/* ── Add plan form ──────────────────────────────────────── */}
-                {!isAddingPlan ? (
-                  <button
-                    onClick={() => {
-                      setAddingPlanFor(member.id);
-                      setError(null);
-                      setNewIsPrimary(member.insurance_plans.length === 0);
-                    }}
-                    className={s.addPlanBtn}
-                  >
-                    {t('addPlan')}
-                  </button>
-                ) : (
-                  <div className={s.inlineForm}>
-                    {/* Header: title + scan button */}
-                    <div className={s.inlineFormHeader}>
-                      <p className={s.inlineFormTitle}>{t('addPlanTitle')}</p>
-                      <button
-                        type="button"
-                        className={s.scanBtn}
-                        onClick={() => setShowScanner(true)}
-                      >
-                        <CameraIcon size={13} />
-                        {t('scanCard')}
-                      </button>
+              {/* ── Member header: display or edit form ─────────────── */}
+              {isEditingMember ? (
+                <div className={s.inlineForm} style={{ margin: '0', borderRadius: 0, background: 'var(--cream)', padding: '1rem' }}>
+                  <p className={s.inlineFormTitle}>{t('editMemberTitle')}</p>
+                  <div className={s.formRow}>
+                    <div className={s.formField} style={{ flex: 2 }}>
+                      <label className={s.formLabel}>{t('fullName')}</label>
+                      <input
+                        className={s.formInput}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        autoFocus
+                      />
                     </div>
-
-                    {/* Scan status */}
-                    {lastScan !== null && (
-                      lastScan.confident
-                        ? <p className={s.scanSuccess}>{t('scanSuccess')}</p>
-                        : <p className={s.scanWarn}>{t('scanWarn')}</p>
-                    )}
-                    {lastScan?.note && (
-                      <p className={s.scanNote}>{lastScan.note}</p>
-                    )}
-
-                    {/* Plan type — label shows state Medicaid brand name when known */}
-                    <div className={s.formRow}>
+                    <div className={s.formField}>
+                      <label className={s.formLabel}>{t('dateOfBirth')}</label>
+                      <input
+                        type="date"
+                        className={s.formInput}
+                        value={editDob}
+                        onChange={(e) => setEditDob(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className={s.formRow}>
+                    <div className={s.formField}>
+                      <label className={s.formLabel}>{t('state')} <span className={s.optionalTag}>{t('stateHint')}</span></label>
+                      <select
+                        className={s.formSelect}
+                        value={editState}
+                        onChange={(e) => { setEditState(e.target.value); setEditCounty(''); }}
+                      >
+                        <option value="">{t('selectState')}</option>
+                        {US_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    </div>
+                    {countiesForEditState.length > 0 && (
                       <div className={s.formField}>
-                        <label className={s.formLabel}>{t('planType')}</label>
+                        <label className={s.formLabel}>{t('county')} <span className={s.optionalTag}>{t('countyOptional')}</span></label>
                         <select
                           className={s.formSelect}
-                          value={newPlanType}
-                          onChange={(e) => {
-                            setNewPlanType(e.target.value);
-                            setNewMedicaidType(''); setNewMedicaidMCO('');
-                            setNewMedicareType(''); setNewMedicareMAName('');
-                            setNewTricareType('');
-                          }}
+                          value={editCounty}
+                          onChange={(e) => setEditCounty(e.target.value)}
                         >
-                          <option value="commercial">{t('commercial')}</option>
-                          <option value="medicare">{t('medicare')}</option>
-                          <option value="medicaid">{getMedicaidBrandName(member.state)} (Medicaid)</option>
-                          <option value="tricare">{t('tricare')}</option>
-                          <option value="self_pay">{t('selfPay')}</option>
+                          <option value="">{t('selectCounty')}</option>
+                          {countiesForEditState.map((c) => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
-                    </div>
-
-                    {/* Medicare sub-types */}
-                    {newPlanType === 'medicare' && (
-                      <div className={s.formRow}>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('medicareType')} <span className={s.optionalTag}>{t('analysisHint')}</span></label>
-                          <select
-                            className={s.formSelect}
-                            value={newMedicareType}
-                            onChange={(e) => { setNewMedicareType(e.target.value); setNewMedicareMAName(''); }}
-                          >
-                            <option value="">Select type…</option>
-                            {MEDICARE_PLAN_TYPES.map(({ value, label }) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
                     )}
-
-                    {/* Medicare Advantage: insurer + plan name */}
-                    {newPlanType === 'medicare' && newMedicareType === 'Medicare Advantage (Part C)' && (
-                      <div className={s.formRow}>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('maInsurer')}</label>
-                          <input
-                            className={s.formInput}
-                            placeholder={t('maInsurerPlaceholder')}
-                            value={newMedicareMAName}
-                            onChange={(e) => setNewMedicareMAName(e.target.value)}
-                          />
-                        </div>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('planName')} <span className={s.optionalTag}>{t('optional')}</span></label>
-                          <input
-                            className={s.formInput}
-                            placeholder={t('planNamePlaceholder')}
-                            value={newPlan}
-                            onChange={(e) => setNewPlan(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Medicaid program sub-type */}
-                    {newPlanType === 'medicaid' && (
-                      <div className={s.formRow}>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('medicaidProgram')} <span className={s.optionalTag}>{t('analysisHint')}</span></label>
-                          <select
-                            className={s.formSelect}
-                            value={newMedicaidType}
-                            onChange={(e) => { setNewMedicaidType(e.target.value); setNewMedicaidMCO(''); }}
-                          >
-                            <option value="">Select program…</option>
-                            {MEDICAID_PLAN_TYPES.map(({ value, label }) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Medicaid Managed Care: MCO name with state autocomplete */}
-                    {newPlanType === 'medicaid' && newMedicaidType === 'Medicaid Managed Care' && (
-                      <div className={s.formRow}>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('medicaidMCO')} <span className={s.optionalTag}>{t('optional')}</span></label>
-                          <input
-                            className={s.formInput}
-                            list="panel-mco-suggestions"
-                            placeholder={member.state ? `Plans in ${member.state}…` : 'Start typing your plan name…'}
-                            value={newMedicaidMCO}
-                            onChange={(e) => setNewMedicaidMCO(e.target.value)}
-                          />
-                          <datalist id="panel-mco-suggestions">
-                            {(MEDICAID_MCOS_BY_STATE[member.state ?? ''] ?? MEDICAID_MCOS_NATIONAL).map((mco) => (
-                              <option key={mco} value={mco} />
-                            ))}
-                          </datalist>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* TRICARE sub-types */}
-                    {newPlanType === 'tricare' && (
-                      <div className={s.formRow}>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('tricareProgram')} <span className={s.optionalTag}>{t('optional')}</span></label>
-                          <select
-                            className={s.formSelect}
-                            value={newTricareType}
-                            onChange={(e) => setNewTricareType(e.target.value)}
-                          >
-                            <option value="">Select program…</option>
-                            {TRICARE_PLAN_TYPES.map(({ value, label }) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Commercial: payer + plan name required */}
-                    {newPlanType === 'commercial' && (
-                      <div className={s.formRow}>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('insurer')}</label>
-                          <input
-                            className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPayer ? ` ${s.formInputUncertain}` : ''}`}
-                            placeholder={t('insurerPlaceholder')}
-                            value={newPayer}
-                            onChange={(e) => setNewPayer(e.target.value)}
-                          />
-                        </div>
-                        <div className={s.formField}>
-                          <label className={s.formLabel}>{t('planName')} *</label>
-                          <input
-                            className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPlan ? ` ${s.formInputUncertain}` : ''}`}
-                            placeholder="e.g. PPO Gold"
-                            value={newPlan}
-                            onChange={(e) => setNewPlan(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Member ID + isPrimary */}
-                    <div className={s.formRow}>
-                      <div className={s.formField}>
-                        <label className={s.formLabel}>{t('memberId')} <span className={s.optionalTag}>{t('memberIdHint')}</span></label>
-                        <input
-                          className={`${s.formInput}${lastScan !== null && !lastScan.confident && newMemberId ? ` ${s.formInputUncertain}` : ''}`}
-                          placeholder={t('memberIdPlaceholder')}
-                          value={newMemberId}
-                          onChange={(e) => setNewMemberId(e.target.value)}
-                        />
-                      </div>
-                      <div className={s.checkboxField}>
-                        <label className={s.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={newIsPrimary}
-                            onChange={(e) => setNewIsPrimary(e.target.checked)}
-                          />
-                          {t('primaryInsurance')}
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className={s.formActions}>
-                      <button
-                        onClick={() => { setAddingPlanFor(null); resetPlanForm(); setError(null); }}
-                        className={s.cancelBtn}
-                      >
-                        {t('cancel')}
-                      </button>
-                      <button
-                        onClick={() => void handleAddPlan(member.id)}
-                        disabled={saving}
-                        className={s.saveBtn}
-                      >
-                        {saving ? t('saving') : t('savePlan')}
-                      </button>
+                    <div className={s.formField}>
+                      <label className={s.formLabel}>{t('zip')} <span className={s.optionalTag}>{t('countyOptional')}</span></label>
+                      <input
+                        className={s.formInput}
+                        placeholder={t('zipPlaceholder')}
+                        maxLength={5}
+                        value={editZip}
+                        onChange={(e) => setEditZip(e.target.value.replace(/\D/g, ''))}
+                      />
                     </div>
                   </div>
-                )}
-              </div>
+                  <div className={s.formActions}>
+                    <button
+                      onClick={() => { setEditingMemberId(null); setError(null); }}
+                      className={s.cancelBtn}
+                    >
+                      {t('cancel')}
+                    </button>
+                    <button
+                      onClick={() => void handleSaveMember(member.id)}
+                      disabled={saving}
+                      className={s.saveBtn}
+                    >
+                      {saving ? t('saving') : t('saveChanges')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className={s.memberHeader}>
+                  <div style={{ minWidth: 0 }}>
+                    <p className={s.memberName}>
+                      {member.full_name}
+                      {member.is_primary && <span className={s.primaryBadge}>{t('primary')}</span>}
+                    </p>
+                    <p className={s.memberMeta}>
+                      {t('dob')} {dobFormatted}
+                      {locationParts.length > 0 && ` · ${locationParts.join(', ')}`}
+                      {member.zip_code && ` ${member.zip_code}`}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
+                    <button
+                      onClick={() => startEditMember(member)}
+                      className={s.editBtn}
+                      aria-label="Edit member"
+                    >
+                      <PencilIcon size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMember(member.id)}
+                      className={s.removeBtn}
+                      aria-label="Remove member"
+                    >✕</button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Insurance plans ──────────────────────────────────── */}
+              {!isEditingMember && (
+                <div className={s.plansSection}>
+                  {member.insurance_plans.length > 0 ? (
+                    <div className={s.plansList}>
+                      {member.insurance_plans.map((plan) => {
+                        const isEditingPlan = editingPlanId === plan.id;
+
+                        if (isEditingPlan) {
+                          return (
+                            <div key={plan.id} className={s.inlineForm} style={{ margin: '.5rem 0 0', padding: '.85rem 1rem' }}>
+                              <p className={s.inlineFormTitle} style={{ marginBottom: '.6rem' }}>{t('editPlanTitle')}</p>
+                              <div className={s.formRow}>
+                                <div className={s.formField}>
+                                  <label className={s.formLabel}>{t('planType')}</label>
+                                  <select
+                                    className={s.formSelect}
+                                    value={editPlanType}
+                                    onChange={(e) => setEditPlanType(e.target.value)}
+                                  >
+                                    <option value="commercial">{t('commercial')}</option>
+                                    <option value="medicare">{t('medicare')}</option>
+                                    <option value="medicaid">{getMedicaidBrandName(member.state)} (Medicaid)</option>
+                                    <option value="tricare">{t('tricare')}</option>
+                                    <option value="self_pay">{t('selfPay')}</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className={s.formRow}>
+                                <div className={s.formField}>
+                                  <label className={s.formLabel}>{t('insurer')}</label>
+                                  <input
+                                    className={s.formInput}
+                                    value={editPayerName}
+                                    onChange={(e) => setEditPayerName(e.target.value)}
+                                  />
+                                </div>
+                                <div className={s.formField}>
+                                  <label className={s.formLabel}>{t('planName')}</label>
+                                  <input
+                                    className={s.formInput}
+                                    value={editPlanName}
+                                    onChange={(e) => setEditPlanName(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              <div className={s.formRow}>
+                                <div className={s.formField}>
+                                  <label className={s.formLabel}>{t('memberId')} <span className={s.optionalTag}>{t('memberIdHint')}</span></label>
+                                  <input
+                                    className={s.formInput}
+                                    value={editMemberIdField}
+                                    onChange={(e) => setEditMemberIdField(e.target.value)}
+                                  />
+                                </div>
+                                <div className={s.checkboxField}>
+                                  <label className={s.checkboxLabel}>
+                                    <input
+                                      type="checkbox"
+                                      checked={editIsPrimary}
+                                      onChange={(e) => setEditIsPrimary(e.target.checked)}
+                                    />
+                                    {t('primaryInsurance')}
+                                  </label>
+                                </div>
+                              </div>
+                              <div className={s.formActions}>
+                                <button
+                                  onClick={() => { setEditingPlanId(null); setError(null); }}
+                                  className={s.cancelBtn}
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button
+                                  onClick={() => void handleSavePlan(plan.id, member.id)}
+                                  disabled={saving}
+                                  className={s.saveBtn}
+                                >
+                                  {saving ? t('saving') : t('saveChanges')}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={plan.id} className={s.planRow}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <span className={s.planPayer}>{plan.payer_name}</span>
+                              <span className={s.planName}> · {plan.plan_name}</span>
+                              {plan.is_primary_plan
+                                ? <span className={s.planPrimaryBadge}>{t('primary')}</span>
+                                : member.insurance_plans.length > 1
+                                ? <span className={s.planSecondaryBadge}>{t('secondary')}</span>
+                                : null}
+                              {plan.member_id && <span className={s.planMemberId}>ID: {plan.member_id}</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
+                              <button
+                                onClick={() => startEditPlan(plan)}
+                                className={s.editBtn}
+                                aria-label="Edit plan"
+                              >
+                                <PencilIcon size={13} />
+                              </button>
+                              <button
+                                onClick={() => handleDeletePlan(plan.id)}
+                                className={s.removeBtn}
+                                aria-label="Remove plan"
+                              >✕</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className={s.noPlansText}>{t('noPlans')}</p>
+                  )}
+
+                  {/* ── Add plan form ──────────────────────────────────────── */}
+                  {!isAddingPlan ? (
+                    <button
+                      onClick={() => {
+                        setAddingPlanFor(member.id);
+                        setError(null);
+                        setNewIsPrimary(member.insurance_plans.length === 0);
+                      }}
+                      className={s.addPlanBtn}
+                    >
+                      {t('addPlan')}
+                    </button>
+                  ) : (
+                    <div className={s.inlineForm}>
+                      <div className={s.inlineFormHeader}>
+                        <p className={s.inlineFormTitle}>{t('addPlanTitle')}</p>
+                        <button
+                          type="button"
+                          className={s.scanBtn}
+                          onClick={() => setShowScanner(true)}
+                        >
+                          <CameraIcon size={13} />
+                          {t('scanCard')}
+                        </button>
+                      </div>
+
+                      {lastScan !== null && (
+                        lastScan.confident
+                          ? <p className={s.scanSuccess}>{t('scanSuccess')}</p>
+                          : <p className={s.scanWarn}>{t('scanWarn')}</p>
+                      )}
+                      {lastScan?.note && (
+                        <p className={s.scanNote}>{lastScan.note}</p>
+                      )}
+
+                      <div className={s.formRow}>
+                        <div className={s.formField}>
+                          <label className={s.formLabel}>{t('planType')}</label>
+                          <select
+                            className={s.formSelect}
+                            value={newPlanType}
+                            onChange={(e) => {
+                              setNewPlanType(e.target.value);
+                              setNewMedicaidType(''); setNewMedicaidMCO('');
+                              setNewMedicareType(''); setNewMedicareMAName('');
+                              setNewTricareType('');
+                            }}
+                          >
+                            <option value="commercial">{t('commercial')}</option>
+                            <option value="medicare">{t('medicare')}</option>
+                            <option value="medicaid">{getMedicaidBrandName(member.state)} (Medicaid)</option>
+                            <option value="tricare">{t('tricare')}</option>
+                            <option value="self_pay">{t('selfPay')}</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {newPlanType === 'medicare' && (
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('medicareType')} <span className={s.optionalTag}>{t('analysisHint')}</span></label>
+                            <select
+                              className={s.formSelect}
+                              value={newMedicareType}
+                              onChange={(e) => { setNewMedicareType(e.target.value); setNewMedicareMAName(''); }}
+                            >
+                              <option value="">Select type…</option>
+                              {MEDICARE_PLAN_TYPES.map(({ value, label }) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {newPlanType === 'medicare' && newMedicareType === 'Medicare Advantage (Part C)' && (
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('maInsurer')}</label>
+                            <input
+                              className={s.formInput}
+                              placeholder={t('maInsurerPlaceholder')}
+                              value={newMedicareMAName}
+                              onChange={(e) => setNewMedicareMAName(e.target.value)}
+                            />
+                          </div>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('planName')} <span className={s.optionalTag}>{t('optional')}</span></label>
+                            <input
+                              className={s.formInput}
+                              placeholder={t('planNamePlaceholder')}
+                              value={newPlan}
+                              onChange={(e) => setNewPlan(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {newPlanType === 'medicaid' && (
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('medicaidProgram')} <span className={s.optionalTag}>{t('analysisHint')}</span></label>
+                            <select
+                              className={s.formSelect}
+                              value={newMedicaidType}
+                              onChange={(e) => { setNewMedicaidType(e.target.value); setNewMedicaidMCO(''); }}
+                            >
+                              <option value="">Select program…</option>
+                              {MEDICAID_PLAN_TYPES.map(({ value, label }) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {newPlanType === 'medicaid' && newMedicaidType === 'Medicaid Managed Care' && (
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('medicaidMCO')} <span className={s.optionalTag}>{t('optional')}</span></label>
+                            <input
+                              className={s.formInput}
+                              list="panel-mco-suggestions"
+                              placeholder={member.state ? `Plans in ${member.state}…` : 'Start typing your plan name…'}
+                              value={newMedicaidMCO}
+                              onChange={(e) => setNewMedicaidMCO(e.target.value)}
+                            />
+                            <datalist id="panel-mco-suggestions">
+                              {(MEDICAID_MCOS_BY_STATE[member.state ?? ''] ?? MEDICAID_MCOS_NATIONAL).map((mco) => (
+                                <option key={mco} value={mco} />
+                              ))}
+                            </datalist>
+                          </div>
+                        </div>
+                      )}
+
+                      {newPlanType === 'tricare' && (
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('tricareProgram')} <span className={s.optionalTag}>{t('optional')}</span></label>
+                            <select
+                              className={s.formSelect}
+                              value={newTricareType}
+                              onChange={(e) => setNewTricareType(e.target.value)}
+                            >
+                              <option value="">Select program…</option>
+                              {TRICARE_PLAN_TYPES.map(({ value, label }) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {newPlanType === 'commercial' && (
+                        <div className={s.formRow}>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('insurer')}</label>
+                            <input
+                              className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPayer ? ` ${s.formInputUncertain}` : ''}`}
+                              placeholder={t('insurerPlaceholder')}
+                              value={newPayer}
+                              onChange={(e) => setNewPayer(e.target.value)}
+                            />
+                          </div>
+                          <div className={s.formField}>
+                            <label className={s.formLabel}>{t('planName')} *</label>
+                            <input
+                              className={`${s.formInput}${lastScan !== null && !lastScan.confident && newPlan ? ` ${s.formInputUncertain}` : ''}`}
+                              placeholder="e.g. PPO Gold"
+                              value={newPlan}
+                              onChange={(e) => setNewPlan(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className={s.formRow}>
+                        <div className={s.formField}>
+                          <label className={s.formLabel}>{t('memberId')} <span className={s.optionalTag}>{t('memberIdHint')}</span></label>
+                          <input
+                            className={`${s.formInput}${lastScan !== null && !lastScan.confident && newMemberId ? ` ${s.formInputUncertain}` : ''}`}
+                            placeholder={t('memberIdPlaceholder')}
+                            value={newMemberId}
+                            onChange={(e) => setNewMemberId(e.target.value)}
+                          />
+                        </div>
+                        <div className={s.checkboxField}>
+                          <label className={s.checkboxLabel}>
+                            <input
+                              type="checkbox"
+                              checked={newIsPrimary}
+                              onChange={(e) => setNewIsPrimary(e.target.checked)}
+                            />
+                            {t('primaryInsurance')}
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className={s.formActions}>
+                        <button
+                          onClick={() => { setAddingPlanFor(null); resetPlanForm(); setError(null); }}
+                          className={s.cancelBtn}
+                        >
+                          {t('cancel')}
+                        </button>
+                        <button
+                          onClick={() => void handleAddPlan(member.id)}
+                          disabled={saving}
+                          className={s.saveBtn}
+                        >
+                          {saving ? t('saving') : t('savePlan')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

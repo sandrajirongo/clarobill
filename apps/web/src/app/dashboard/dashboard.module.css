@@ -1053,6 +1053,22 @@
 }
 .removeBtn:hover { color: #DC2626; background: #FEF2F2; }
 
+.editBtn {
+  color: var(--txt3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: .25rem .4rem;
+  border-radius: var(--r);
+  line-height: 1;
+  transition: color .15s, background .15s;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.editBtn:hover { color: var(--sage); background: rgba(45,74,42,.07); }
+
 .plansSection {
   padding: .75rem 1rem;
   display: flex;

@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
-import { stripe, REPORT_PRICE_CENTS } from '@/lib/stripe';
+import { stripe, getPriceTier } from '@/lib/stripe';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
-const REFERRAL_DISCOUNT_CENTS = 500; // $5.00
+// ─── BETA MODE ────────────────────────────────────────────────────────────────
+// Set to false (and configure STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET in env)
+// when ready to enable live payments.
+const BETA_MODE = true;
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REFERRAL_DISCOUNT_CENTS = 500; // $5.00 — applies to any paid tier
 
 // POST /api/stripe/checkout
 // Creates a Stripe Checkout Session for purchasing a bill report.
+// Tier is determined server-side from the bill's analysis savings total.
 // Applies a $5 referral discount if the user signed up via a referral link.
 export async function POST(
   request: Request
@@ -22,6 +29,7 @@ export async function POST(
   const { billId } = await request.json() as { billId: string };
 
   const supabase = await createSupabaseServerClient();
+
   const { data: bill } = await supabase
     .from('bills')
     .select('id, status, file_name')
@@ -35,7 +43,18 @@ export async function POST(
     );
   }
 
-  // Check for a pending referral discount — one-time use per referred user
+  // Determine pricing tier from total savings found in analysis.
+  // Server-calculated — never trust the client for price.
+  const { data: analysisResult } = await supabase
+    .from('analysis_results')
+    .select('total_potential_savings')
+    .eq('bill_id', billId)
+    .single();
+
+  const savingsDollars = Number(analysisResult?.total_potential_savings ?? 0);
+  const tier = getPriceTier(savingsDollars);
+
+  // Referral discount — one-time use per referred user, capped at the tier price
   const service = createSupabaseServiceClient();
   const { data: pendingReferral } = await service
     .from('referrals')
@@ -44,13 +63,15 @@ export async function POST(
     .eq('status', 'pending')
     .maybeSingle();
 
-  const discountCents = pendingReferral ? REFERRAL_DISCOUNT_CENTS : 0;
-  const finalAmountCents = Math.max(0, REPORT_PRICE_CENTS - discountCents);
+  const discountCents = pendingReferral
+    ? Math.min(REFERRAL_DISCOUNT_CENTS, tier.priceCents)
+    : 0;
+  const finalAmountCents = Math.max(0, tier.priceCents - discountCents);
 
   const origin = request.headers.get('origin') ?? 'http://localhost:3000';
 
-  // Beta mode: skip Stripe, grant free access, and trigger report generation.
-  if (process.env.BETA_MODE === 'true') {
+  // ─── BETA: Stripe is disabled — grant access for free ───────────────────────
+  if (BETA_MODE) {
     await supabase.from('payments').upsert(
       {
         user_id: user.id,
@@ -75,6 +96,27 @@ export async function POST(
 
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
+  // ─── END BETA ────────────────────────────────────────────────────────────────
+
+  // ─── PRODUCTION: Live Stripe checkout ────────────────────────────────────────
+  // Uncomment this block (and set BETA_MODE = false above) when ready for launch.
+  //
+  // Free tier: savings ≤ $20 — paywall should not show in this case, but guard here
+  // to prevent a $0 Stripe session from being created.
+  if (finalAmountCents === 0) {
+    await supabase.from('payments').upsert(
+      {
+        user_id: user.id,
+        bill_id: billId,
+        stripe_session_id: `free_${billId}`,
+        amount_cents: 0,
+        currency: 'usd',
+        status: 'complete',
+      },
+      { onConflict: 'stripe_session_id' }
+    );
+    return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
+  }
 
   const discountLabel = discountCents > 0
     ? ` (includes $${(discountCents / 100).toFixed(2)} referral discount)`
@@ -88,8 +130,8 @@ export async function POST(
           currency: 'usd',
           unit_amount: finalAmountCents,
           product_data: {
-            name: 'Clarobill Full Report',
-            description: `Detailed analysis and dispute letter for: ${bill.file_name}${discountLabel}`,
+            name: `ClaroBill Report — ${tier.label}`,
+            description: `${tier.range} in potential savings found on: ${bill.file_name}${discountLabel}`,
           },
         },
         quantity: 1,
@@ -123,4 +165,5 @@ export async function POST(
   });
 
   return NextResponse.json({ checkoutUrl: session.url });
+  // ─── END PRODUCTION ───────────────────────────────────────────────────────────
 }

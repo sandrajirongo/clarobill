@@ -58,7 +58,7 @@ async def analyze_bill(
     background_tasks.add_task(
         _run_analysis_pipeline,
         bill_id, body.file_path, body.state, body.county, body.zip_code,
-        body.payer_name, body.plan_name, supabase,
+        body.payer_name, body.plan_name, body.plan_type, supabase,
     )
 
     return AnalyzeAccepted()
@@ -72,6 +72,7 @@ async def _run_analysis_pipeline(
     zip_code: str | None,
     payer_name: str | None,
     plan_name: str | None,
+    plan_type: str | None,
     supabase: Client,
 ) -> None:
     """Full analysis pipeline — runs in the background after accepting the request.
@@ -121,6 +122,8 @@ async def _run_analysis_pipeline(
             identity_update["payer_name"] = payer_name
         if plan_name:
             identity_update["plan_name"] = plan_name
+        if plan_type:
+            identity_update["plan_type"] = plan_type
         if identity_update:
             supabase.table("bills").update(identity_update).eq("id", bill_id).execute()
 
@@ -151,7 +154,9 @@ async def _run_analysis_pipeline(
             "Using rate_date=%s locality_code=%s for bill %s (state=%s county=%s)",
             rate_date, locality_code, bill_id, state, county,
         )
-        ncci_pairs = _load_ncci_pairs(supabase)
+        service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
+        ncci_pairs = _load_ncci_pairs(supabase, service_type, payer_type)
+        mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type)
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
         hcpcs_non_payable, hcpcs_termination_dates = _load_hcpcs_code_data(
@@ -178,6 +183,7 @@ async def _run_analysis_pipeline(
             hcpcs_termination_dates=hcpcs_termination_dates,
             hospital_charges=hospital_charges,
             negotiated_charges=negotiated_charges,
+            mue_limits=mue_limits,
         )
         detected_errors = engine.run(parsed_items)
 
@@ -245,13 +251,87 @@ def _derive_rate_date(parsed_items: list[ParsedLineItem]) -> date:
     return max(counts, key=lambda d: (counts[d], d))
 
 
-def _load_ncci_pairs(supabase: Client) -> dict[str, set[str]]:
-    """Load active NCCI edit pairs from the database."""
-    response = supabase.table("ncci_edit_pairs").select("column_one_code,column_two_code").is_("deletion_date", "null").execute()
+def _derive_ncci_context(cpt_codes: list[str], plan_type: str | None) -> tuple[str, str]:
+    """Determine the NCCI service_type and payer_type to use for a given bill.
+
+    service_type: inferred from the code set present on the bill.
+      'dme'          — any HCPCS Level II code in the A/E/K/L/S range (DME/supply codes)
+      'practitioner' — default; covers the vast majority of professional/physician bills
+
+    payer_type: maps the patient's insurance type to the CMS NCCI file to query.
+      'medicare'  — plan_type is 'medicare' or unknown/commercial (Medicare NCCI is the
+                    national floor standard and the only payer-specific file currently loaded)
+      'medicaid'  — plan_type is 'medicaid' (CMS national MCD files apply; when state-specific
+                    Medicaid edits are loaded they will use payer_type='medicaid')
+
+    Note: outpatient hospital service type is not yet auto-detected. OPPS-billed facility
+    claims can be distinguished by the presence of revenue codes, which are not extracted
+    by the current parser. Default 'practitioner' is conservative — PTP edits for
+    practitioner services are a valid floor for outpatient facility bills.
+    """
+    # DME detection: HCPCS Level II alpha codes that are supply/equipment categories
+    dme_prefixes = ("A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9",
+                    "E0", "E1", "K0", "L0", "L1", "L2", "L3", "L4", "L5", "L6",
+                    "L7", "L8", "L9")
+    has_dme = any(
+        c and any(c.startswith(p) for p in dme_prefixes)
+        for c in cpt_codes
+    )
+    service_type = "dme" if has_dme else "practitioner"
+
+    payer_type = "medicaid" if plan_type == "medicaid" else "medicare"
+
+    return service_type, payer_type
+
+
+def _load_ncci_pairs(
+    supabase: Client,
+    service_type: str = "practitioner",
+    payer_type: str = "medicare",
+) -> dict[str, set[str]]:
+    """Load active NCCI PTP edit pairs for the given service_type and payer_type."""
+    response = (
+        supabase.table("ncci_edit_pairs")
+        .select("column_one_code,column_two_code")
+        .is_("deletion_date", "null")
+        .eq("service_type", service_type)
+        .eq("payer_type", payer_type)
+        .execute()
+    )
     pairs: dict[str, set[str]] = {}
     for row in response.data:
         pairs.setdefault(row["column_one_code"], set()).add(row["column_two_code"])
     return pairs
+
+
+def _load_mue_limits(
+    supabase: Client,
+    cpt_codes: list[str],
+    service_type: str = "practitioner",
+    payer_type: str = "medicare",
+) -> dict[str, tuple[int, int]]:
+    """Load CMS MUE limits for the CPT codes on this bill.
+
+    Returns a map of hcpcs_code → (mue_value, adjudication_indicator).
+    Only returns limits for codes actually present on the bill to keep the
+    dict small and avoid loading the full ~10 000-row table per analysis.
+    """
+    if not cpt_codes:
+        return {}
+
+    response = (
+        supabase.table("ncci_mue_limits")
+        .select("hcpcs_code,mue_value,adjudication_indicator")
+        .in_("hcpcs_code", list(set(cpt_codes)))
+        .eq("service_type", service_type)
+        .eq("payer_type", payer_type)
+        .execute()
+    )
+
+    return {
+        row["hcpcs_code"]: (int(row["mue_value"]), int(row["adjudication_indicator"]))
+        for row in response.data
+    }
 
 
 def _load_medicare_rates(
