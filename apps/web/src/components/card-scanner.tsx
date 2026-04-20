@@ -63,9 +63,10 @@ async function toJpeg(file: File): Promise<Blob> {
     img.onload = () => {
       const c = document.createElement('canvas');
       c.width = img.naturalWidth; c.height = img.naturalHeight;
-      c.getContext('2d')!.drawImage(img, 0, 0);
+      const ctx2d = c.getContext('2d');
+      if (ctx2d) ctx2d.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      c.toBlob((blob) => { blob ? resolve(blob) : reject(new Error('toBlob returned null')); }, 'image/jpeg', 0.92);
+      c.toBlob((blob) => { if (blob) { resolve(blob); } else { reject(new Error('toBlob returned null')); } }, 'image/jpeg', 0.92);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
     img.src = url;
