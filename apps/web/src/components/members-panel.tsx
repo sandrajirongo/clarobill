@@ -635,6 +635,8 @@ export function MembersPanel(): JSX.Element {
             retakeBtn: t('scanner.retakeBtn'),
             notDetected: t('scanner.notDetected'),
             lowConfidence: t('scanner.lowConfidence'),
+            scanFailed: t('scanner.scanFailed'),
+            imageTooLarge: t('scanner.imageTooLarge'),
           }}
         />
       )}

@@ -143,7 +143,9 @@
         "confirmBtn": "Kumpirmahin",
         "retakeBtn": "Kumuha ulit",
         "notDetected": "\u2014",
-        "lowConfidence": "Maaaring may mga maling field \u2014 pakisuri nang maingat"
+        "lowConfidence": "Maaaring may mga maling field \u2014 pakisuri nang maingat",
+        "scanFailed": "Hindi mabasa ang card. Pakisubukan ulit.",
+        "imageTooLarge": "Masyadong malaki ang larawan. Gumamit ng larawang mas maliit sa 10\u00a0MB."
       }
     }
   },

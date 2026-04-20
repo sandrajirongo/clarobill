@@ -240,7 +240,9 @@
         "confirmBtn": "Confirm",
         "retakeBtn": "Retake",
         "notDetected": "\u2014",
-        "lowConfidence": "Some fields may be incorrect \u2014 please review carefully"
+        "lowConfidence": "Some fields may be incorrect \u2014 please review carefully",
+        "scanFailed": "Could not read the card. Please try again.",
+        "imageTooLarge": "Image is too large. Please use a photo under 10\u00a0MB."
       }
     }
   },

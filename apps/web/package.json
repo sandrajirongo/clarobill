@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.90.0",
     "@clarobill/shared": "*",
     "@sentry/nextjs": "8.55.0",
     "@stripe/stripe-js": "4.9.0",

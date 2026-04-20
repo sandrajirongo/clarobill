@@ -143,7 +143,9 @@
         "confirmBtn": "确认",
         "retakeBtn": "重新拍摄",
         "notDetected": "\u2014",
-        "lowConfidence": "部分字段可能有误 \u2014 请仔细核对"
+        "lowConfidence": "部分字段可能有误 \u2014 请仔细核对",
+        "scanFailed": "无法读取卡片，请重试。",
+        "imageTooLarge": "图片太大，请使用10\u00a0MB以下的照片。"
       }
     }
   },

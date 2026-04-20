@@ -17,6 +17,9 @@ export interface CardScannerLabels {
   uploadPhoto: string;    // "Upload a photo instead"
   tryAgain: string;       // "Try again"
   cancel: string;         // "Cancel"
+  // Error messages (frontend-owned — never use server strings)
+  scanFailed: string;     // "Could not read the card. Please try again."
+  imageTooLarge: string;  // "Image is too large. Please use a photo under 10 MB."
   // Permission denied screen
   permissionDenied: string; // "Camera access was denied..."
   // Confirmation step
@@ -44,6 +47,8 @@ const DEFAULT_LABELS: CardScannerLabels = {
   uploadPhoto: 'Upload a photo instead',
   tryAgain: 'Try again',
   cancel: 'Cancel',
+  scanFailed: 'Could not read the card. Please try again.',
+  imageTooLarge: 'Image is too large. Please use a photo under 10\u00a0MB.',
   permissionDenied: 'Camera access was denied. Allow camera access in your browser settings, or upload a photo instead.',
   confirmTitle: 'Review card details',
   confirmSubtitle: 'Check the details below before saving',
@@ -177,23 +182,19 @@ export function CardScanner({ onExtracted, onClose, labels: labelOverrides }: Ca
       });
       clearTimeout(timeoutId);
       if (!res.ok) {
-        const body = await res.json() as { error?: { detail?: string } };
-        setState({ phase: 'error', message: body?.error?.detail ?? labels.tryAgain });
+        const message = res.status === 413 ? labels.imageTooLarge : labels.scanFailed;
+        setState({ phase: 'error', message });
         return;
       }
       const result = await res.json() as InsuranceCardExtraction;
       // Stop the camera stream while the user reviews extracted details
       streamRef.current?.getTracks().forEach((t) => t.stop());
       setState({ phase: 'confirming', result });
-    } catch (err) {
+    } catch {
       clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === 'AbortError') {
-        setState({ phase: 'error', message: 'Request timed out. Please try again.' });
-      } else {
-        setState({ phase: 'error', message: 'Network error. Check your connection and try again.' });
-      }
+      setState({ phase: 'error', message: labels.scanFailed });
     }
-  }, [labels.tryAgain]);
+  }, [labels.imageTooLarge, labels.scanFailed]);
 
   // ── Camera capture — crops to the card overlay region ────────────────────
   const doCapture = useCallback(async (): Promise<void> => {

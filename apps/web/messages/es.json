@@ -144,7 +144,9 @@
         "confirmBtn": "Confirmar",
         "retakeBtn": "Volver a capturar",
         "notDetected": "\u2014",
-        "lowConfidence": "Algunos campos pueden ser incorrectos \u2014 revisa cuidadosamente"
+        "lowConfidence": "Algunos campos pueden ser incorrectos \u2014 revisa cuidadosamente",
+        "scanFailed": "No se pudo leer la tarjeta. Por favor intenta de nuevo.",
+        "imageTooLarge": "La imagen es demasiado grande. Usa una foto de menos de 10\u00a0MB."
       }
     }
   },

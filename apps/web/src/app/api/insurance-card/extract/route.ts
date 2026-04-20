@@ -1,6 +1,6 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/supabase/server';
-import { getCloudRunIdToken } from '@/lib/gcp-auth';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 export interface InsuranceCardExtraction {
@@ -16,10 +16,29 @@ export interface InsuranceCardExtraction {
   note:       string | null;
 }
 
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+const MAX_BYTES = 10 * 1024 * 1024;
+
+const EXTRACT_PROMPT = `
+Extract all insurance card fields from this image.
+Return ONLY a JSON object with these exact keys:
+
+- payer_name: insurance company name (string or null)
+- plan_name: plan or product name such as "Choice POS I", "HMO Gold" (string or null)
+- member_id: member or subscriber ID number (string or null)
+- group_id: group number (string or null)
+- plan_type: one of "commercial", "medicare", "medicaid", "tricare", "self_pay"
+- rx_bin: pharmacy BIN number, labeled BIN or RxBIN (string or null)
+- rx_pcn: pharmacy PCN number (string or null)
+- rx_group: pharmacy group number, distinct from medical group number (string or null)
+- confident: true if you could clearly read payer_name or member_id, false otherwise
+- note: brief note if confidence is low, null otherwise
+
+Return only the JSON object. No markdown, no explanation.`.trim();
+
 // POST /api/insurance-card/extract
-// Accepts a multipart/form-data image, forwards to the engine's Document AI
-// Health Insurance Card Parser, and returns structured insurance plan fields.
-// The image is never stored — this endpoint is stateless.
+// Accepts a multipart/form-data image, calls Claude Sonnet vision directly,
+// and returns structured insurance plan fields. Stateless — image is never stored.
 export async function POST(
   request: Request
 ): Promise<NextResponse<InsuranceCardExtraction | ApiErrorResponse>> {
@@ -31,68 +50,92 @@ export async function POST(
     );
   }
 
-  const contentType = request.headers.get('content-type') ?? '';
-  if (!contentType.startsWith('multipart/form-data')) {
+  let imageFile: File;
+  try {
+    const formData = await request.formData();
+    const entry = formData.get('image');
+    if (!(entry instanceof File)) throw new Error('missing');
+    imageFile = entry;
+  } catch {
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail: 'Expected multipart/form-data with an image field.', step: 'card_extract_validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Expected multipart/form-data with an image field.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 400 }
     );
   }
 
-  const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
-  const idToken = await getCloudRunIdToken(engineUrl);
-
-  const engineResponse = await fetch(`${engineUrl}/api/v1/insurance-card/extract`, {
-    method: 'POST',
-    headers: {
-      'content-type': contentType,
-      ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
-      ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
-    },
-    body: request.body,
-    // @ts-expect-error — Next.js requires this for streaming request bodies
-    duplex: 'half',
-  });
-
-  if (!engineResponse.ok) {
-    const detail = engineResponse.status === 415
-      ? 'Unsupported image type. Use JPEG, PNG, or WebP.'
-      : engineResponse.status === 413
-      ? 'Image is too large. Please use a photo under 10 MB.'
-      : engineResponse.status === 503
-      ? 'Card scanning is not available right now. Please fill in the fields manually.'
-      : 'Could not read the card. Please try again or fill in the fields manually.';
-
+  if (!ALLOWED_TYPES.includes(imageFile.type as typeof ALLOWED_TYPES[number])) {
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail, step: 'card_extract_engine' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
-      { status: engineResponse.status >= 500 ? 502 : engineResponse.status }
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Unsupported type.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 415 }
     );
   }
 
-  // Snake_case → camelCase conversion from engine response
-  const raw = await engineResponse.json() as {
-    payer_name: string | null;
-    plan_name:  string | null;
-    member_id:  string | null;
-    group_id:   string | null;
-    plan_type:  string | null;
-    rx_bin:     string | null;
-    rx_pcn:     string | null;
-    rx_group:   string | null;
-    confident:  boolean;
-    note:       string | null;
+  const imageBytes = await imageFile.arrayBuffer();
+  if (imageBytes.byteLength > MAX_BYTES) {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Image too large.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 413 }
+    );
+  }
+
+  const base64 = Buffer.from(imageBytes).toString('base64');
+  const mediaType = imageFile.type as 'image/jpeg' | 'image/png' | 'image/webp';
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  let rawText: string;
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 400,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+          { type: 'text', text: EXTRACT_PROMPT },
+        ],
+      }],
+    });
+    const block = response.content[0] ?? null;
+    if (!block || block.type !== 'text') throw new Error('unexpected block type');
+    rawText = block.text.trim();
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Vision call failed.', step: 'extract' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 502 }
+    );
+  }
+
+  // Strip markdown code fences if the model wraps the JSON
+  if (rawText.startsWith('```')) {
+    rawText = rawText.split('\n').slice(1).join('\n').split('```')[0]?.trim() ?? rawText;
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(rawText) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Parse failed.', step: 'parse' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 502 }
+    );
+  }
+
+  const str = (key: string): string | null => {
+    const v = data[key];
+    return typeof v === 'string' && v ? v : null;
   };
 
   return NextResponse.json({
-    payerName: raw.payer_name,
-    planName:  raw.plan_name,
-    memberId:  raw.member_id,
-    groupId:   raw.group_id,
-    planType:  raw.plan_type,
-    rxBin:     raw.rx_bin,
-    rxPcn:     raw.rx_pcn,
-    rxGroup:   raw.rx_group,
-    confident: raw.confident,
-    note:      raw.note,
+    payerName: str('payer_name'),
+    planName:  str('plan_name'),
+    memberId:  str('member_id'),
+    groupId:   str('group_id'),
+    planType:  str('plan_type') ?? 'commercial',
+    rxBin:     str('rx_bin'),
+    rxPcn:     str('rx_pcn'),
+    rxGroup:   str('rx_group'),
+    confident: Boolean(data['confident']),
+    note:      str('note'),
   } satisfies InsuranceCardExtraction);
 }
