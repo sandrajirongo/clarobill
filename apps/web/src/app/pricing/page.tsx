@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { LogoWithMark } from '@/components/logo';
+import { MarketingNav } from '@/components/marketing-nav';
 import s from './pricing.module.css';
 
 const TIERS = [
@@ -131,18 +131,7 @@ export default function PricingPage(): JSX.Element {
   return (
     <div className={s.shell}>
 
-      {/* NAV */}
-      <nav className={s.nav}>
-        <Link href="/" className={s.navLogo}>
-          <LogoWithMark size="md" />
-        </Link>
-        <div className={s.navLinks}>
-          <Link className={s.navLink} href="/">Home</Link>
-          <Link className={`${s.navLink} ${s.navLinkActive}`} href="/pricing">Pricing</Link>
-          <Link className={s.navLink} href="/blog">Resources</Link>
-        </div>
-        <Link className={s.navCta} href="/auth/sign-in">Get started</Link>
-      </nav>
+      <MarketingNav activePath="/pricing" />
 
       {/* HERO */}
       <section className={s.hero}>

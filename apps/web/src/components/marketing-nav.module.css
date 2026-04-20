@@ -1,0 +1,172 @@
+/* ─── Nav bar ─────────────────────────────────────────────────────────────── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(1.25rem, 5vw, 2.75rem);
+  background: rgba(244, 242, 236, .97);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+/* ─── Desktop links ───────────────────────────────────────────────────────── */
+.desktopLinks {
+  display: none;
+  align-items: center;
+  gap: .1rem;
+  flex: 1;
+  padding-left: 1.5rem;
+}
+@media (min-width: 600px) { .desktopLinks { display: flex; } }
+
+.navLink {
+  font-family: var(--fb);
+  font-size: .875rem;
+  font-weight: 500;
+  color: var(--txt2);
+  text-decoration: none;
+  padding: .45rem .8rem;
+  border-radius: 8px;
+  transition: color .15s, background .15s;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.navLink:hover { color: var(--txt); background: var(--cream2); }
+.navLinkActive { color: var(--sage); font-weight: 600; }
+.navLinkActive:hover { background: rgba(45, 74, 42, .07); }
+
+.desktopCta {
+  display: none;
+}
+@media (min-width: 600px) { .desktopCta { display: inline-block; } }
+
+.navCta {
+  background: var(--sage);
+  color: #fff;
+  font-family: var(--fb);
+  font-weight: 600;
+  font-size: .85rem;
+  padding: .58rem 1.3rem;
+  border-radius: var(--r-full);
+  text-decoration: none;
+  transition: background .15s, transform .1s;
+  letter-spacing: .01em;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.navCta:hover { background: var(--sage-l); transform: translateY(-1px); }
+
+/* ─── Burger button ───────────────────────────────────────────────────────── */
+.burger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+.burger:hover { background: var(--cream2); }
+@media (min-width: 600px) { .burger { display: none; } }
+
+.burgerLine {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: var(--txt);
+  border-radius: 2px;
+  transition: transform .25s ease, opacity .2s ease;
+  transform-origin: center;
+}
+.burgerLineTopOpen { transform: translateY(7px) rotate(45deg); }
+.burgerLineMidOpen { opacity: 0; transform: scaleX(0); }
+.burgerLineBotOpen { transform: translateY(-7px) rotate(-45deg); }
+
+/* ─── Mobile drawer ───────────────────────────────────────────────────────── */
+.drawer {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  background: rgba(244, 242, 236, .98);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem clamp(1.25rem, 5vw, 2.75rem) 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  transform: translateY(-110%);
+  opacity: 0;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1), opacity .22s ease;
+  pointer-events: none;
+  z-index: 199;
+  box-shadow: 0 8px 30px rgba(0,0,0,.08);
+}
+.drawerOpen {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (min-width: 600px) { .drawer { display: none; } }
+
+.drawerLinks {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: .75rem;
+}
+
+.drawerLink {
+  font-family: var(--fb);
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--txt2);
+  text-decoration: none;
+  padding: .7rem .9rem;
+  border-radius: 10px;
+  transition: color .15s, background .15s;
+  letter-spacing: .01em;
+}
+.drawerLink:hover { color: var(--txt); background: var(--cream2); }
+.drawerLinkActive {
+  color: var(--sage);
+  font-weight: 600;
+  background: rgba(45, 74, 42, .06);
+}
+
+.drawerCta {
+  display: block;
+  text-align: center;
+  background: var(--sage);
+  color: #fff;
+  font-family: var(--fb);
+  font-weight: 600;
+  font-size: .95rem;
+  padding: .8rem 1.5rem;
+  border-radius: var(--r-full);
+  text-decoration: none;
+  transition: background .15s;
+  letter-spacing: .01em;
+}
+.drawerCta:hover { background: var(--sage-l); }

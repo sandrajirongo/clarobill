@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { LogoWithMark } from '@/components/logo';
+import { MarketingNav } from '@/components/marketing-nav';
 import s from './blog.module.css';
 
 export default function BlogLayout({
@@ -9,14 +9,7 @@ export default function BlogLayout({
 }): JSX.Element {
   return (
     <div className={s.shell}>
-      <header className={s.nav}>
-        <Link href="/" className={s.navLogo}>
-          <LogoWithMark size="sm" />
-        </Link>
-        <Link href="/auth/sign-in" className={s.navCta}>
-          Analyze my bill
-        </Link>
-      </header>
+      <MarketingNav activePath="/blog" />
 
       <main className={s.main}>
         {children}
