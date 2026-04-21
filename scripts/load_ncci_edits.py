@@ -39,7 +39,7 @@ from postgrest.exceptions import APIError
 from supabase import create_client, ClientOptions
 
 BATCH_SIZE = 1000
-_RETRY_DELAYS = (10, 30, 60)  # seconds between attempts on transient 5xx
+_RETRY_DELAYS = (30, 60, 120, 180)  # seconds between attempts on transient 5xx
 
 VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
 VALID_PAYER_TYPES = ("medicare", "medicaid")
@@ -257,6 +257,7 @@ def main() -> None:
         _upsert_with_retry(client, "upsert_ncci_pairs_batch", batch)
         inserted += len(batch)
         print(f"  Upserted {inserted}/{len(rows)} rows...")
+        time.sleep(0.3)
 
     print(f"Done. {inserted} NCCI PTP edit pairs loaded.")
 
