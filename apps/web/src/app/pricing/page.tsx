@@ -13,7 +13,6 @@ const TIERS = [
     tag: 'Clean Bill',
     tagline: 'Your bill is clean. Enjoy the peace of mind — no charge, ever.',
     keepNote: 'No charge — ever',
-    popular: false,
     featured: false,
   },
   {
@@ -23,7 +22,6 @@ const TIERS = [
     tag: 'Small Win',
     tagline: "We've discounted the fee so you keep the lion's share of every dollar saved.",
     keepNote: 'You keep ≥\u202f$11',
-    popular: false,
     featured: false,
   },
   {
@@ -33,7 +31,6 @@ const TIERS = [
     tag: 'The Standard Fix',
     tagline: 'High ROI — a fraction of what a billing advocate charges for the same result.',
     keepNote: 'You keep ≥\u202f$51',
-    popular: true,
     featured: true,
   },
   {
@@ -43,7 +40,6 @@ const TIERS = [
     tag: 'The Heavy Hitter',
     tagline: 'Significant financial impact. Worth every cent on a four-figure correction.',
     keepNote: 'You keep ≥\u202f$900',
-    popular: false,
     featured: false,
   },
 ] as const;
@@ -207,9 +203,6 @@ export default function PricingPage(): JSX.Element {
                 key={tier.tag}
                 className={`${s.tierCard} ${tier.featured ? s.tierCardFeatured : ''}`}
               >
-                {tier.popular && (
-                  <span className={s.popularBadge}>Most popular</span>
-                )}
                 <span className={`${s.rangePill} ${tier.featured ? s.rangePillFeatured : ''}`}>
                   {tier.range} found
                 </span>
