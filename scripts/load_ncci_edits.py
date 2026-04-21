@@ -69,10 +69,14 @@ def load_from_file(path: Path, service_type: str, payer_type: str) -> list[dict]
             if not row:
                 continue
 
-            # Detect the header row — first cell starts with "Col1" (case-insensitive)
+            # Detect the header row. CMS ships two formats:
+            #   Older: standalone header row where row[0] is exactly "Col1"
+            #   2026+: header embedded inside a quoted preamble cell, so row[0]
+            #          is a long description that contains "\nCol1\tCol2\t..." —
+            #          check the full row text for that pattern.
             if not header_found:
-                first = row[0].strip().lower()
-                if first == "col1" or first.startswith("col1"):
+                row_text = "\t".join(row).lower()
+                if row_text.strip().startswith("col1") or "\ncol1\t" in row_text:
                     header_found = True
                 continue  # skip everything up to and including the header
 

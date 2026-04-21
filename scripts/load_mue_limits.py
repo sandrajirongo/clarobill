@@ -259,6 +259,16 @@ def main() -> None:
         }).execute()
         print("  Deleted.")
 
+    # Deduplicate on the DB conflict key before upserting. Some CMS files list
+    # the same HCPCS code more than once (e.g. once with a note, once without).
+    # PostgreSQL raises error 21000 if the same conflict key appears twice in a
+    # single upsert command. Keep the last occurrence — it tends to be the more
+    # specific or corrected entry.
+    seen: dict[str, int] = {}
+    for i, row in enumerate(rows):
+        seen[row["hcpcs_code"]] = i
+    rows = [rows[i] for i in sorted(seen.values())]
+
     print(
         f"Parsed {len(rows)} MUE limits from {args.file.name} "
         f"[{fmt}] (service_type={args.service_type}, payer_type={args.payer_type}, "
