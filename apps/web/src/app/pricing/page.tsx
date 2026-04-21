@@ -13,7 +13,6 @@ const TIERS = [
     tag: 'Clean Bill',
     tagline: 'Your bill is clean. Enjoy the peace of mind — no charge, ever.',
     keepNote: 'No charge — ever',
-    featured: false,
   },
   {
     range: '$21 – $100',
@@ -22,7 +21,6 @@ const TIERS = [
     tag: 'Small Win',
     tagline: "We've discounted the fee so you keep the lion's share of every dollar saved.",
     keepNote: 'You keep ≥\u202f$11',
-    featured: false,
   },
   {
     range: '$101 – $1,000',
@@ -31,7 +29,6 @@ const TIERS = [
     tag: 'The Standard Fix',
     tagline: 'High ROI — a fraction of what a billing advocate charges for the same result.',
     keepNote: 'You keep ≥\u202f$51',
-    featured: true,
   },
   {
     range: '$1,000+',
@@ -40,7 +37,6 @@ const TIERS = [
     tag: 'The Heavy Hitter',
     tagline: 'Significant financial impact. Worth every cent on a four-figure correction.',
     keepNote: 'You keep ≥\u202f$900',
-    featured: false,
   },
 ] as const;
 
@@ -201,31 +197,31 @@ export default function PricingPage(): JSX.Element {
             {TIERS.map((tier) => (
               <div
                 key={tier.tag}
-                className={`${s.tierCard} ${tier.featured ? s.tierCardFeatured : ''}`}
+                className={s.tierCard}
               >
-                <span className={`${s.rangePill} ${tier.featured ? s.rangePillFeatured : ''}`}>
+                <span className={s.rangePill}>
                   {tier.range} found
                 </span>
                 <div className={s.priceRow}>
-                  <span className={`${s.price} ${tier.featured ? s.priceFeatured : ''}`}>
+                  <span className={s.price}>
                     {tier.price}
                   </span>
                   {tier.priceSub && (
-                    <span className={`${s.priceSub} ${tier.featured ? s.priceSubFeatured : ''}`}>
+                    <span className={s.priceSub}>
                       {tier.priceSub}
                     </span>
                   )}
                 </div>
-                <p className={`${s.tierTag} ${tier.featured ? s.tierTagFeatured : ''}`}>{tier.tag}</p>
-                <p className={`${s.tierTagline} ${tier.featured ? s.tierTaglineFeatured : ''}`}>{tier.tagline}</p>
-                <div className={`${s.keepLine} ${tier.featured ? s.keepLineFeatured : ''}`}>
+                <p className={s.tierTag}>{tier.tag}</p>
+                <p className={s.tierTagline}>{tier.tagline}</p>
+                <div className={s.keepLine}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   {tier.keepNote}
                 </div>
                 <Link
-                  className={`${s.tierBtn} ${tier.featured ? s.tierBtnFeatured : ''}`}
+                  className={s.tierBtn}
                   href="/auth/sign-in"
                 >
                   Upload my bill

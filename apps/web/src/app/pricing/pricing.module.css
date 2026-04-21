@@ -289,19 +289,6 @@
   border-color: rgba(45, 74, 42, .18);
 }
 
-/* Featured card */
-.tierCardFeatured {
-  background: linear-gradient(160deg, #2D4A2A 0%, #1f3419 100%);
-  border-color: transparent;
-  box-shadow: 0 10px 44px rgba(45, 74, 42, .38);
-}
-.tierCardFeatured:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 55px rgba(45, 74, 42, .48);
-  border-color: transparent;
-}
-
-/* Popular badge */
 /* Range pill */
 .rangePill {
   display: inline-flex;
@@ -316,12 +303,6 @@
   padding: .25rem .7rem;
   border-radius: var(--r-full);
 }
-.rangePillFeatured {
-  background: rgba(200, 240, 96, .15);
-  border-color: rgba(200, 240, 96, .3);
-  color: rgba(200, 240, 96, .85);
-}
-
 /* Price */
 .priceRow {
   display: flex;
@@ -337,19 +318,14 @@
   line-height: 1;
   letter-spacing: -.025em;
 }
-.priceFeatured { color: #fff; }
 .priceSub {
   font-size: .72rem;
   color: var(--txt3);
   font-weight: 500;
 }
-.priceSubFeatured { color: rgba(255,255,255,.4); }
-
 /* Tag & tagline */
 .tierTag { font-size: .93rem; font-weight: 700; color: var(--txt); }
-.tierTagFeatured { color: #fff; }
 .tierTagline { font-size: .81rem; color: var(--txt2); line-height: 1.6; flex: 1; }
-.tierTaglineFeatured { color: rgba(255,255,255,.62); }
 
 /* Keep line */
 .keepLine {
@@ -363,11 +339,6 @@
   margin-top: auto;
   border-top: 1px solid var(--border);
 }
-.keepLineFeatured {
-  color: var(--accent);
-  border-top-color: rgba(255,255,255,.12);
-}
-
 /* CTA */
 .tierBtn {
   display: block;
@@ -385,8 +356,6 @@
   letter-spacing: .01em;
 }
 .tierBtn:hover { background: var(--sage-l); transform: translateY(-1px); }
-.tierBtnFeatured { background: var(--accent); color: var(--sage-dark); }
-.tierBtnFeatured:hover { background: var(--accent-h); }
 
 /* Footnote */
 .tiersNote {
