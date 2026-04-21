@@ -155,7 +155,7 @@ async def _run_analysis_pipeline(
             rate_date, locality_code, bill_id, state, county,
         )
         service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
-        ncci_pairs = _load_ncci_pairs(supabase, service_type, payer_type)
+        ncci_pairs = _load_ncci_pairs(supabase, service_type, payer_type, rate_date)
         mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type, rate_date)
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
@@ -288,16 +288,30 @@ def _load_ncci_pairs(
     supabase: Client,
     service_type: str = "practitioner",
     payer_type: str = "medicare",
+    service_date: date | None = None,
 ) -> dict[str, set[str]]:
-    """Load active NCCI PTP edit pairs for the given service_type and payer_type."""
-    response = (
+    """Load NCCI PTP edit pairs active on service_date.
+
+    Filters to pairs whose effective_date <= service_date and deletion_date is
+    null or after service_date, so historical bills use the edits in force at
+    the time of service rather than today's rules.
+    """
+    query = (
         supabase.table("ncci_edit_pairs")
         .select("column_one_code,column_two_code")
-        .is_("deletion_date", "null")
         .eq("service_type", service_type)
         .eq("payer_type", payer_type)
-        .execute()
     )
+    if service_date is not None:
+        query = (
+            query
+            .lte("effective_date", service_date.isoformat())
+            .or_(f"deletion_date.is.null,deletion_date.gte.{service_date.isoformat()}")
+        )
+    else:
+        query = query.is_("deletion_date", "null")
+
+    response = query.execute()
     pairs: dict[str, set[str]] = {}
     for row in response.data:
         pairs.setdefault(row["column_one_code"], set()).add(row["column_two_code"])
