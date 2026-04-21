@@ -195,6 +195,11 @@ def main() -> None:
         ).execute()
         print("  Deleted.")
 
+    seen: dict[tuple[str, str], int] = {}
+    for i, row in enumerate(rows):
+        seen[(row["column_one_code"], row["column_two_code"])] = i
+    rows = [rows[i] for i in sorted(seen.values())]
+
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i : i + BATCH_SIZE]
