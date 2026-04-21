@@ -149,6 +149,15 @@ def main() -> None:
         default="medicare",
         help="Insurance programme the NCCI file was published for (default: medicare)",
     )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help=(
+            "Delete all existing rows for the given (service_type, payer_type) "
+            "before inserting. Use when refreshing from a new quarterly file so "
+            "that pairs removed in the new release are not left in the database."
+        ),
+    )
     args = parser.parse_args()
 
     supabase_url = os.environ.get("SUPABASE_URL")
@@ -172,9 +181,16 @@ def main() -> None:
             f"(service_type={args.service_type}, payer_type={args.payer_type})"
         )
 
-    # Upsert in batches — re-runnable without duplicates.
-    # Conflict key includes service_type + payer_type so the same code pair can
-    # exist once per combination (e.g. practitioner/medicare and outpatient/medicare).
+    # When --replace is set, delete all existing rows for this (service_type, payer_type)
+    # before inserting. The CMS PTP files are full snapshots of currently active edits,
+    # so pairs absent from the new file should be removed, not kept from previous loads.
+    if args.replace and not args.sample:
+        print(f"  Deleting existing rows for service_type={args.service_type}, payer_type={args.payer_type}…")
+        client.table("ncci_edit_pairs").delete().match(
+            {"service_type": args.service_type, "payer_type": args.payer_type}
+        ).execute()
+        print("  Deleted.")
+
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i : i + BATCH_SIZE]

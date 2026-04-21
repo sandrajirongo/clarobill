@@ -192,6 +192,14 @@ def main() -> None:
         default="medicare",
         help="Insurance programme the MUE file was published for (default: medicare)",
     )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help=(
+            "Delete all existing rows for the given (service_type, payer_type) "
+            "before inserting. Use when refreshing from a new quarterly file."
+        ),
+    )
     args = parser.parse_args()
 
     supabase_url = os.environ.get("SUPABASE_URL")
@@ -224,6 +232,13 @@ def main() -> None:
         f"Parsed {len(rows)} MUE limits from {args.file.name} "
         f"[{fmt}] (service_type={args.service_type}, payer_type={args.payer_type})"
     )
+
+    if args.replace:
+        print(f"  Deleting existing rows for service_type={args.service_type}, payer_type={args.payer_type}…")
+        client.table("ncci_mue_limits").delete().match(
+            {"service_type": args.service_type, "payer_type": args.payer_type}
+        ).execute()
+        print("  Deleted.")
 
     # Upsert in batches — re-runnable without creating duplicates.
     # Conflict key is (hcpcs_code, service_type, payer_type) — one limit per code per context.
