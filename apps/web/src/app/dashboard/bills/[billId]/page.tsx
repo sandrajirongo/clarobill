@@ -19,12 +19,20 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
 
   const supabase = await createSupabaseServerClient();
 
-  // Fetch bill — RLS enforces ownership
-  const { data: bill } = await supabase
+  // Fetch bill — RLS enforces ownership.
+  // plan_type is intentionally omitted here: it lives on the bills row but is only
+  // needed by the engine at analysis time (already consumed). BillResultsView does
+  // not use planType, so we pass null and avoid a query failure if the migration
+  // adding plan_type hasn't been applied to this environment yet.
+  const { data: bill, error: billError } = await supabase
     .from('bills')
-    .select('id, user_id, file_name, display_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, plan_type, confirmed_at, created_at, updated_at')
+    .select('id, user_id, file_name, display_name, file_path, file_size, mime_type, status, hospital_npi, hospital_name, profile_member_id, payer_name, plan_name, confirmed_at, created_at, updated_at')
     .eq('id', billId)
     .single();
+
+  if (billError) {
+    console.error('[bill-results] bill fetch failed', { billId, code: billError.code, message: billError.message });
+  }
 
   if (!bill) redirect('/dashboard');
 
@@ -57,7 +65,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
     profileMemberId: bill.profile_member_id ?? null,
     payerName: bill.payer_name ?? null,
     planName: bill.plan_name ?? null,
-    planType: (bill.plan_type ?? null) as import('@clarobill/shared').PlanType | null,
+    planType: null,
     confirmedAt: bill.confirmed_at ?? null,
     createdAt: bill.created_at,
     updatedAt: bill.updated_at,
