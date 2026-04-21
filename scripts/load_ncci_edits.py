@@ -206,12 +206,16 @@ def main() -> None:
     # When --replace is set, delete all existing rows for this (service_type, payer_type)
     # before inserting. The CMS PTP files are full snapshots of currently active edits,
     # so pairs absent from the new file should be removed, not kept from previous loads.
+    # Uses an RPC function (delete_ncci_pairs) with statement_timeout=300s because a
+    # direct DELETE on 2M+ rows exceeds the 30s PostgREST timeout.
     if args.replace and not args.sample:
         print(f"  Deleting existing rows for service_type={args.service_type}, payer_type={args.payer_type}…")
-        client.table("ncci_edit_pairs").delete().match(
-            {"service_type": args.service_type, "payer_type": args.payer_type}
-        ).execute()
-        print("  Deleted.")
+        result = client.rpc("delete_ncci_pairs", {
+            "p_service_type": args.service_type,
+            "p_payer_type": args.payer_type,
+        }).execute()
+        deleted = result.data if isinstance(result.data, int) else 0
+        print(f"  Deleted {deleted} rows.")
 
     seen: dict[tuple[str, str], int] = {}
     for i, row in enumerate(rows):
