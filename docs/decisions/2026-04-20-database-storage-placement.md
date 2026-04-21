@@ -84,15 +84,38 @@ Hospital charges in BigQuery do not require this treatment — MRF files represe
 
 ---
 
-## Quarterly Refresh
+## Load and Refresh Patterns
 
-| Table | Source | Refresh pattern |
-|-------|--------|-----------------|
-| `ncci_edit_pairs` | CMS MCD/MCR PTP files (Q1 each year) | Load new quarterly file with `--replace` — file is a full cumulative snapshot; old pairs not in the new file are intentionally removed |
-| `ncci_mue_limits` | CMS MCR CSV + MCD TXT files (quarterly) | Load without `--replace` — each quarterly file has a distinct `effective_date`; prior quarters are preserved for historical bill lookups |
-| `hospital_charges` | CMS MRF v2.0.0 files (scraped continuously) | Parser deletes then reloads all rows for a given `hospital_npi` each scrape cycle |
+### Why upsert is the default — no pre-delete needed
 
-Use `scripts/load_ncci_all.sh` to reload all NCCI files. CMS releases new files each January, April, July, and October.
+Both NCCI tables use `ON CONFLICT DO UPDATE` (upsert). PostgreSQL enforces the unique constraint at the database level: a row with the same conflict key is updated in place; no duplicate can be created. Pre-deleting before an upsert is therefore never required for correctness — it only wastes time and risks statement timeouts on large tables.
+
+`load_ncci_all.sh` uses plain upsert for all files. Re-running the script is always safe.
+
+### The `--replace` flag on `load_ncci_edits.py` — when it is needed
+
+The `--replace` flag exists for one specific use case: **quarterly refresh of PTP pairs**.
+
+CMS PTP files are cumulative snapshots of *currently active* pairs. When CMS removes a pair from the edit table, it simply omits the pair from the next quarterly file — it does not mark the pair with a deletion date or send a tombstone record. This means:
+
+- On the **initial historical load**, `--replace` must NOT be used. The DB accumulates pairs from all years, each with its own `effective_date`. Upsert is correct.
+- On a **quarterly refresh** (replacing the current active ruleset with a new CMS release), `--replace` must be used. Without it, pairs that CMS removed from the new file would remain in the DB as phantom active rules that the engine would incorrectly apply to new bills.
+
+`--replace` calls the `delete_ncci_pairs(service_type, payer_type)` RPC function (migration 20260420000020) rather than a direct DELETE. The RPC sets `statement_timeout = 300s`, bypassing the 30s PostgREST limit that causes timeouts when deleting 2M+ rows.
+
+### MUE files — `--replace` removed entirely
+
+MUE files do not have the same problem. Each quarterly file loads with a distinct `effective_date`, so each quarter occupies its own partition of the unique key `(hcpcs_code, service_type, payer_type, effective_date)`. There is no risk of phantom rows from a previous quarter contaminating a newer quarter's lookups — the engine always queries `effective_date <= service_date` and takes the most recent qualifying row. `--replace` was removed from `load_mue_limits.py` because it provided no correctness benefit and added unnecessary delete overhead.
+
+### Refresh cadence
+
+| Table | Source | Pattern |
+|-------|--------|---------|
+| `ncci_edit_pairs` | CMS MCD/MCR PTP files | **Initial load:** `bash scripts/load_ncci_all.sh` (upsert, no delete). **Quarterly refresh:** `python3 scripts/load_ncci_edits.py --file <new_file> --service-type <type> --payer-type <payer> --replace` |
+| `ncci_mue_limits` | CMS MCR CSV + MCD TXT files | Always upsert. Run `bash scripts/load_ncci_all.sh` or load individual files. Prior quarters are preserved automatically. |
+| `hospital_charges` | CMS MRF v2.0.0 files | Parser deletes then reloads all rows for a given `hospital_npi` each scrape cycle — BigQuery handles this via MERGE |
+
+CMS releases new NCCI files each January, April, July, and October.
 
 ---
 

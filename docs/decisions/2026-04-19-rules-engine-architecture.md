@@ -260,9 +260,9 @@ NCCI PTP edit pairs and MUE limits are loaded from the database filtered by `ser
 - All other bills → `practitioner` (default; covers the vast majority of physician/professional claims)
 - `outpatient` is not yet auto-detected (requires revenue codes not extracted by the current parser)
 
-**Current data loaded:** CMS MCD PTP files (Q1 2026) for all three service types — loaded via `scripts/load_ncci_edits.py --replace`. MUE limits (MCR CSV for Medicare, MCD TXT for Medicaid) for all quarters 2020–2026 — loaded via `scripts/load_mue_limits.py`. Use `scripts/load_ncci_all.sh` to (re)load all files at once.
+**Current data loaded:** CMS MCD PTP files (Q1 2026) for all three service types. MUE limits (MCR CSV for Medicare, MCD TXT for Medicaid) for all quarters 2020–2026. Use `scripts/load_ncci_all.sh` to load or reload all files — it always upserts, re-running is safe.
 
-**Refreshing quarterly:** CMS releases new NCCI files each quarter (January, April, July, October). For PTP, load the new quarterly file with `--replace` — the file is a full snapshot so old pairs are wiped. For MUE, load without `--replace` — each quarterly file has a distinct `effective_date` and rows are upserted, leaving prior quarters intact for historical lookups.
+**Refreshing quarterly:** CMS releases new files each January, April, July, and October. For MUE, run `load_ncci_all.sh` — new quarterly files upsert alongside prior quarters, which are preserved for historical bill lookups. For PTP, use `load_ncci_edits.py --replace` per service type — CMS PTP files omit removed pairs without marking them, so the old rows must be cleared before loading the new snapshot. See `docs/decisions/2026-04-20-database-storage-placement.md` for the full rationale.
 
 ---
 
