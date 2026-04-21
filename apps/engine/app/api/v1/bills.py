@@ -156,7 +156,7 @@ async def _run_analysis_pipeline(
         )
         service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
         ncci_pairs = _load_ncci_pairs(supabase, service_type, payer_type)
-        mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type)
+        mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type, rate_date)
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
         hcpcs_non_payable, hcpcs_termination_dates = _load_hcpcs_code_data(
@@ -309,29 +309,44 @@ def _load_mue_limits(
     cpt_codes: list[str],
     service_type: str = "practitioner",
     payer_type: str = "medicare",
+    service_date: date | None = None,
 ) -> dict[str, tuple[int, int]]:
     """Load CMS MUE limits for the CPT codes on this bill.
 
     Returns a map of hcpcs_code → (mue_value, adjudication_indicator).
-    Only returns limits for codes actually present on the bill to keep the
-    dict small and avoid loading the full ~10 000-row table per analysis.
+
+    Uses the most recent quarterly release whose effective_date is on or before
+    service_date, so a bill from 2022 gets the 2022 MUE values, not the current
+    ones. Falls back to any available row when service_date is not provided.
     """
     if not cpt_codes:
         return {}
 
-    response = (
+    query = (
         supabase.table("ncci_mue_limits")
-        .select("hcpcs_code,mue_value,adjudication_indicator")
+        .select("hcpcs_code,mue_value,adjudication_indicator,effective_date")
         .in_("hcpcs_code", list(set(cpt_codes)))
         .eq("service_type", service_type)
         .eq("payer_type", payer_type)
+    )
+    if service_date is not None:
+        query = query.lte("effective_date", service_date.isoformat())
+
+    # Order by code then effective_date descending so the first occurrence of
+    # each code is the most recent quarterly release in effect on service_date.
+    response = (
+        query
+        .order("hcpcs_code")
+        .order("effective_date", desc=True)
         .execute()
     )
 
-    return {
-        row["hcpcs_code"]: (int(row["mue_value"]), int(row["adjudication_indicator"]))
-        for row in response.data
-    }
+    result: dict[str, tuple[int, int]] = {}
+    for row in response.data:
+        code = row["hcpcs_code"]
+        if code not in result:
+            result[code] = (int(row["mue_value"]), int(row["adjudication_indicator"]))
+    return result
 
 
 def _load_medicare_rates(
