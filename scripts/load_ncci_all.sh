@@ -36,8 +36,8 @@ if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
   exit 1
 fi
 
-PTP_LOADER="python $SCRIPTS_DIR/load_ncci_edits.py"
-MUE_LOADER="python $SCRIPTS_DIR/load_mue_limits.py"
+PTP_LOADER="python3 $SCRIPTS_DIR/load_ncci_edits.py"
+MUE_LOADER="python3 $SCRIPTS_DIR/load_mue_limits.py"
 
 echo "============================================================"
 echo " NCCI Full Load — $(date '+%Y-%m-%d %H:%M')"
