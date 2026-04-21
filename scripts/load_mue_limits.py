@@ -40,12 +40,6 @@ Usage:
       --file data/ncci/2026/mcd/MCD-MUE-DMEServices-Effective_01012026.txt \\
       --service-type dme --payer-type medicaid \\
       --effective-date 2026-01-01
-
-  # Replace only this quarter's data (delete existing rows with same
-  # service_type + payer_type + effective_date before inserting)
-  python scripts/load_mue_limits.py \\
-      --file data/ncci/2026/mcr/MCR_MUE_PractitionerServices_Eff_04-01-2026.csv \\
-      --service-type practitioner --payer-type medicare --replace
 """
 
 import argparse
@@ -54,7 +48,6 @@ import os
 import re
 import sys
 import time
-import uuid
 from datetime import date, datetime
 from pathlib import Path
 
@@ -62,7 +55,15 @@ from postgrest.exceptions import APIError
 from supabase import create_client
 
 BATCH_SIZE = 5000
-_RETRY_DELAYS = (10, 30, 60)
+_RETRY_DELAYS = (10, 30, 60)  # seconds between attempts on transient 5xx
+
+VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
+VALID_PAYER_TYPES = ("medicare", "medicaid")
+
+# MCR filename: *_Eff_MM-DD-YYYY* (e.g. _Eff_04-01-2026, _Eff_07-01-2020-REPLACEMENT)
+_MCR_DATE_RE = re.compile(r"_Eff_(\d{2})-(\d{2})-(\d{4})", re.IGNORECASE)
+# MCD filename: *_Effective_MMDDYYYY* or *-Effective-MMDDYYYY* (e.g. _Effective_01012026)
+_MCD_DATE_RE = re.compile(r"[_-]Effective[_-](\d{2})(\d{2})(\d{4})", re.IGNORECASE)
 
 
 def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) -> None:
@@ -78,13 +79,6 @@ def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) 
                 raise
             print(f"  Transient {code} on attempt {attempt}, retrying in {delay}s…", file=sys.stderr)
             time.sleep(delay)
-VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
-VALID_PAYER_TYPES = ("medicare", "medicaid")
-
-# MCR filename: *_Eff_MM-DD-YYYY* (e.g. _Eff_04-01-2026, _Eff_07-01-2020-REPLACEMENT)
-_MCR_DATE_RE = re.compile(r"_Eff_(\d{2})-(\d{2})-(\d{4})", re.IGNORECASE)
-# MCD filename: *_Effective_MMDDYYYY* or *-Effective-MMDDYYYY* (e.g. _Effective_01012026)
-_MCD_DATE_RE = re.compile(r"[_-]Effective[_-](\d{2})(\d{2})(\d{4})", re.IGNORECASE)
 
 
 def parse_effective_date_from_filename(path: Path) -> date | None:
@@ -144,14 +138,9 @@ def load_mcr_csv(path: Path, service_type: str, payer_type: str, effective_date:
             except ValueError:
                 print(f"  Skipping row {line_num} — invalid MUE value: {row[1]!r}", file=sys.stderr)
                 continue
-            if len(row) >= 4:
-                adj_indicator = _parse_adj_indicator(row[2])
-                mue_rationale = row[3].strip()
-            else:
-                adj_indicator = _parse_adj_indicator(row[2])
-                mue_rationale = ""
+            adj_indicator = _parse_adj_indicator(row[2])
+            mue_rationale = row[3].strip() if len(row) >= 4 else ""
             rows.append({
-                "id": str(uuid.uuid4()),
                 "hcpcs_code": hcpcs_code,
                 "service_type": service_type,
                 "payer_type": payer_type,
@@ -194,7 +183,6 @@ def load_mcd_txt(path: Path, service_type: str, payer_type: str, effective_date:
                 continue
             mue_rationale = row[2].strip() if len(row) >= 3 else ""
             rows.append({
-                "id": str(uuid.uuid4()),
                 "hcpcs_code": hcpcs_code,
                 "service_type": service_type,
                 "payer_type": payer_type,
@@ -214,14 +202,6 @@ def main() -> None:
     parser.add_argument(
         "--effective-date",
         help="Override the CMS effective date (YYYY-MM-DD). Auto-detected from filename if omitted.",
-    )
-    parser.add_argument(
-        "--replace",
-        action="store_true",
-        help=(
-            "Delete existing rows for (service_type, payer_type, effective_date) "
-            "before inserting. Use when re-loading a corrected quarterly file."
-        ),
     )
     args = parser.parse_args()
 
@@ -256,7 +236,7 @@ def main() -> None:
     if suffix == ".csv":
         rows = load_mcr_csv(args.file, args.service_type, args.payer_type, effective_date)
         fmt = "MCR CSV"
-    elif suffix in (".txt", ".txt"):
+    elif suffix == ".txt":
         rows = load_mcd_txt(args.file, args.service_type, args.payer_type, effective_date)
         fmt = "MCD tab-delimited"
     else:
@@ -265,23 +245,10 @@ def main() -> None:
 
     client = create_client(supabase_url, supabase_key)
 
-    if args.replace:
-        print(
-            f"  Deleting existing rows for service_type={args.service_type}, "
-            f"payer_type={args.payer_type}, effective_date={effective_date}…"
-        )
-        client.table("ncci_mue_limits").delete().match({
-            "service_type": args.service_type,
-            "payer_type": args.payer_type,
-            "effective_date": effective_date.isoformat(),
-        }).execute()
-        print("  Deleted.")
-
     # Deduplicate on the DB conflict key before upserting. Some CMS files list
-    # the same HCPCS code more than once (e.g. once with a note, once without).
-    # PostgreSQL raises error 21000 if the same conflict key appears twice in a
-    # single upsert command. Keep the last occurrence — it tends to be the more
-    # specific or corrected entry.
+    # the same HCPCS code more than once. PostgreSQL raises error 21000 if the
+    # same conflict key appears twice in one upsert command. Keep the last
+    # occurrence — it tends to be the more specific or corrected entry.
     seen: dict[str, int] = {}
     for i, row in enumerate(rows):
         seen[row["hcpcs_code"]] = i

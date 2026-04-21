@@ -34,7 +34,6 @@ import csv
 import os
 import sys
 import time
-import uuid
 from datetime import date, datetime
 from pathlib import Path
 
@@ -42,7 +41,10 @@ from postgrest.exceptions import APIError
 from supabase import create_client
 
 BATCH_SIZE = 5000
-_RETRY_DELAYS = (10, 30, 60)  # seconds between retries on transient 5xx
+_RETRY_DELAYS = (10, 30, 60)  # seconds between attempts on transient 5xx
+
+VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
+VALID_PAYER_TYPES = ("medicare", "medicaid")
 
 
 def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) -> None:
@@ -58,8 +60,6 @@ def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) 
                 raise
             print(f"  Transient {code} on attempt {attempt}, retrying in {delay}s…", file=sys.stderr)
             time.sleep(delay)
-VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
-VALID_PAYER_TYPES = ("medicare", "medicaid")
 
 
 def parse_cms_date(value: str) -> date | None:
@@ -117,7 +117,6 @@ def load_from_file(path: Path, service_type: str, payer_type: str) -> list[dict]
                 continue  # effective date is required
 
             rows.append({
-                "id": str(uuid.uuid4()),
                 "column_one_code": col1,
                 "column_two_code": col2,
                 "effective_date": effective.isoformat(),
@@ -141,7 +140,6 @@ def load_sample() -> list[dict]:
     ]
     return [
         {
-            "id": str(uuid.uuid4()),
             "column_one_code": col1,
             "column_two_code": col2,
             "effective_date": datetime.strptime(eff, "%Y%m%d").date().isoformat(),
@@ -206,8 +204,8 @@ def main() -> None:
     # When --replace is set, delete all existing rows for this (service_type, payer_type)
     # before inserting. The CMS PTP files are full snapshots of currently active edits,
     # so pairs absent from the new file should be removed, not kept from previous loads.
-    # Uses an RPC function (delete_ncci_pairs) with statement_timeout=300s because a
-    # direct DELETE on 2M+ rows exceeds the 30s PostgREST timeout.
+    # Uses the delete_ncci_pairs() RPC (statement_timeout=300s) because a direct DELETE
+    # on 2M+ rows exceeds the 30s PostgREST timeout.
     if args.replace and not args.sample:
         print(f"  Deleting existing rows for service_type={args.service_type}, payer_type={args.payer_type}…")
         result = client.rpc("delete_ncci_pairs", {
@@ -217,6 +215,9 @@ def main() -> None:
         deleted = result.data if isinstance(result.data, int) else 0
         print(f"  Deleted {deleted} rows.")
 
+    # Deduplicate on the DB conflict key. CMS PTP files contain ~298k duplicate
+    # (col1, col2) pairs — PostgreSQL raises error 21000 if the same conflict key
+    # appears twice in one upsert command. Keep the last occurrence.
     seen: dict[tuple[str, str], int] = {}
     for i, row in enumerate(rows):
         seen[(row["column_one_code"], row["column_two_code"])] = i
