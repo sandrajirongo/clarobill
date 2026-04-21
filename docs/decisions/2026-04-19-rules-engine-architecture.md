@@ -1,7 +1,7 @@
 # Rules Engine Architecture
 
 **Date:** 2026-04-19  
-**Updated:** 2026-04-20 — Added MUE detection, insurance-type-aware NCCI loading  
+**Updated:** 2026-04-20 — Added MUE detection, insurance-type-aware NCCI loading, date-aware NCCI lookups for historical bills  
 **Status:** Active
 
 ---
@@ -63,7 +63,7 @@ Used for rules where the benchmark is the exact agreed or published price:
 |------|---------|-------------------|---------|
 | Medicare PFS rates | CMS Physician Fee Schedule ZIP file | `cms_pfs_indicators` | PRICE_OUTLIER |
 | NCCI PTP edit pairs | CMS MCD/MCR PTP files (tab-delimited) | `ncci_edit_pairs` | NCCI_UNBUNDLING |
-| NCCI MUE limits | CMS MCR MUE CSV files (Q2 2026) | `ncci_mue_limits` | MUE_EXCEEDED |
+| NCCI MUE limits | CMS MCR MUE CSV + MCD TXT files (2020–2026, all quarters) | `ncci_mue_limits` | MUE_EXCEEDED |
 | CPT proc_stat flags | CMS PFS status indicators | `cms_pfs_indicators` | NON_PAYABLE_CODE |
 | HCPCS Level II codes | CMS HCPCS code file | `cms_hcpcs_codes` | NON_PAYABLE_CODE, TERMINATED_CODE_BILLED |
 | Anesthesia conversion factor | CMS PFS locality file | `cms_anesthesia_cf` | ANESTHESIA_OUTLIER |
@@ -204,7 +204,7 @@ Used for rules where the benchmark is the exact agreed or published price:
 
 **MUE value of 0:** The code is not separately payable under any circumstances — flag every occurrence as Critical regardless of quantity.
 
-**Data source:** CMS MCR MUE CSV files (Q2 2026+) loaded via `scripts/load_mue_limits.py`. MCD tab-delimited files are also supported (without MAI). Loaded into `ncci_mue_limits` filtered by `service_type` and `payer_type`.
+**Data source:** CMS MCR MUE CSV files (Medicare, with MAI) and MCD TXT files (Medicaid, no MAI column — MAI stored as 0 and treated as indicator 2). Loaded quarterly for 2020–2026 via `scripts/load_mue_limits.py`. Each row carries an `effective_date`; the lookup returns the most recent quarterly release whose `effective_date` is on or before the bill's service date.
 
 **When active:** Only when MUE limits are loaded for the bill's service_type/payer_type combination.
 
@@ -260,7 +260,48 @@ NCCI PTP edit pairs and MUE limits are loaded from the database filtered by `ser
 - All other bills → `practitioner` (default; covers the vast majority of physician/professional claims)
 - `outpatient` is not yet auto-detected (requires revenue codes not extracted by the current parser)
 
-**Current data loaded:** All six CMS MCD PTP files (Q1 2026) are available at `data/ncci/`. Three MCR MUE CSV files (Q2 2026, the fresher dataset) are available at `data/ncci/`. Load these using `scripts/load_ncci_edits.py` and `scripts/load_mue_limits.py`.
+**Current data loaded:** CMS MCD PTP files (Q1 2026) for all three service types — loaded via `scripts/load_ncci_edits.py --replace`. MUE limits (MCR CSV for Medicare, MCD TXT for Medicaid) for all quarters 2020–2026 — loaded via `scripts/load_mue_limits.py`. Use `scripts/load_ncci_all.sh` to (re)load all files at once.
+
+**Refreshing quarterly:** CMS releases new NCCI files each quarter (January, April, July, October). For PTP, load the new quarterly file with `--replace` — the file is a full snapshot so old pairs are wiped. For MUE, load without `--replace` — each quarterly file has a distinct `effective_date` and rows are upserted, leaving prior quarters intact for historical lookups.
+
+---
+
+## Date-Aware NCCI Lookups
+
+### Why date-awareness matters
+
+NCCI rules change every quarter. CMS adds new edit pairs, removes old ones, and revises MUE limits. If the engine always applied the *current* quarter's rules to every bill, it would produce wrong results for historical bills — flagging procedures that were not yet bundled at the time of service, or missing edits that were active then but have since been removed.
+
+Both lookups are now scoped to the bill's service date via `rate_date`, which is derived from the earliest service date on the bill.
+
+### MUE lookup (`_load_mue_limits`)
+
+Queries `ncci_mue_limits` with `effective_date <= service_date`, orders by `effective_date DESC`, and keeps the first (most recent qualifying) row per code. This returns the MUE limit from the quarterly release that was in effect on the date of service.
+
+**Example — 2022 bill:** A bill with a service date of 2022-07-15 queries for `effective_date <= 2022-07-15`. The Q3 2022 release (`effective_date = 2022-07-01`) is the most recent qualifying row and is used. The Q1 2026 values — which may differ — are not applied.
+
+### PTP lookup (`_load_ncci_pairs`)
+
+Queries `ncci_edit_pairs` with:
+- `effective_date <= service_date` — the pair must have been active by the date of service
+- `deletion_date IS NULL OR deletion_date >= service_date` — the pair must not have been retired before the date of service
+
+This means a pair added in 2024 is **excluded** from a 2022 bill analysis, and a pair that was active in 2022 but deleted in 2023 is **included**. Without this filter, a 2022 bill would be checked against today's edit rules, which could generate false positives (flagging bundles that didn't exist yet) or false negatives (missing edits that were active in 2022).
+
+**Concrete 2022 example:**
+
+| Pair | CMS effective_date | CMS deletion_date | Applies to 2022-07-15 bill? |
+|------|--------------------|-------------------|-----------------------------|
+| 99213 → 36415 | 2020-01-01 | NULL | Yes — active since 2020, still active |
+| 27447 → 27370 | 2020-01-01 | NULL | Yes — active since 2020, still active |
+| 99291 → 99213 | 2020-01-01 | NULL | Yes — active since 2020, still active |
+| 12345 → 67890 (hypothetical new edit) | 2024-01-01 | NULL | No — added after service date |
+| 11111 → 22222 (hypothetical retired edit) | 2020-01-01 | 2021-12-31 | No — was retired before service date |
+| 33333 → 44444 (hypothetical active-in-2022) | 2020-01-01 | 2023-06-30 | Yes — was still active on 2022-07-15 |
+
+### Fallback when no service date is available
+
+If `rate_date` cannot be derived (no parseable service dates on the bill), `_load_ncci_pairs` falls back to `deletion_date IS NULL` (current active pairs) and `_load_mue_limits` returns any available row for the code. This is documented in both functions.
 
 ---
 
