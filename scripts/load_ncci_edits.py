@@ -41,7 +41,7 @@ from pathlib import Path
 from postgrest.exceptions import APIError
 from supabase import create_client
 
-BATCH_SIZE = 2000
+BATCH_SIZE = 5000
 _RETRY_DELAYS = (10, 30, 60)  # seconds between retries on transient 5xx
 
 
