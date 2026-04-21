@@ -1,140 +1,165 @@
-# NCCI Data Files — Assessment
+# NCCI Data — Reference
 
-**Files location:** `data/ncci/` (6 files, Q1 2026, effective 2026-01-01 – 2026-03-31)
-
----
-
-## What's in the Directory
-
-```
-MCD-PTP-PractitionerServices-Effective_01012026.txt      177 MB
-MCD-PTP-OutpatientHospitalServices-Effective_01012026.txt 132 MB
-MCD-PTP-DMEServices-Effective_01012026.txt                2.5 MB
-MCD-MUE-PractitionerServices-Effective_01012026.txt       510 KB
-MCD-MUE-OutpatientHospitalServices-Effective_01012026.txt 505 KB
-MCD-MUE-DMEServices-Effective_01012026.txt                 92 KB
-```
+**Status: Fully loaded as of 2026-04-21.**
 
 ---
 
-## File Type 1: PTP (Procedure-to-Procedure Edits)
+## Data Files
 
-**What they are:** Each row defines a pair of codes where `Col1` (the "comprehensive" code) cannot be billed together with `Col2` (the "component" code) on the same claim, unless a bypass modifier (typically `59`) is present.
+Located under `data/ncci/{year}/{source}/` for years 2020–2026.
 
-**Columns:**
-```
-Col1                  — Comprehensive HCPCS/CPT code
-Col2                  — Component code
-EffDt                 — Effective date (YYYYMMDD)
-DelDt                 — Deletion date (YYYYMMDD, blank = still active)
-ModifierIndicator     — 0 = modifier not allowed, 1 = modifier may override, 9 = N/A
-PTP Edit Rationale    — Text description
-```
+Two source types:
+- `mcd/` — CMS Medicaid files (`payer_type = medicaid`)
+- `mcr/` — CMS Medicare files (`payer_type = medicare`)
 
-**Are these the right files?** Yes. This is exactly the data the existing `_detect_ncci_unbundling` rule in the engine needs. The rule already uses a `dict[str, set[str]]` of `col1_code → {col2_codes}`, which maps directly to this format.
+### PTP (Procedure-to-Procedure edit pairs)
 
-**Three service-type variants:**
-- **PractitionerServices** — physician/professional claims (most bills users upload will be this type)
-- **OutpatientHospitalServices** — hospital outpatient facility claims (EOBs from hospital visits)
-- **DMEServices** — durable medical equipment supplier claims
+PTP files define code pairs where Col1 (comprehensive) cannot be billed together
+with Col2 (component) on the same claim without a bypass modifier (typically 59).
 
-For most beta users, **PractitionerServices** is the highest-priority file to load. A bill type classifier (or a flag from the user) would allow selecting the right file at analysis time.
+| Source | Format | Naming | Years available |
+|--------|--------|--------|-----------------|
+| MCD | Tab-delimited `.txt`, 6 columns | `MCD-PTP-{ServiceType}-Effective_MMDDYYYY.txt` | 2026 Q1 only |
+| MCR | Tab-delimited `.txt`/`.TXT`, 7 columns | `ccipra-v{ver}r0-f{n}.txt` (practitioner), `ccioph-v{ver}r0-f{n}.txt` (outpatient) | 2026 Q1 only |
 
----
+MCR files have an extra Pre1996 indicator column at position 2 (empty or `*`) — the
+loader detects this automatically by checking whether `row[2]` is a digit.
 
-## File Type 2: MUE (Medically Unlikely Edits)
+MCR deletion date sentinel is `*` (still active); MCD sentinels are `20991231` / `99991231`.
 
-**What they are:** Each row defines the maximum number of units of a given HCPCS/CPT code that can be billed on a single claim line on a single date of service. Billing above the MUE value is a red flag.
+No DME MCR PTP files exist in the CMS Medicare release for this format.
 
-**Columns:**
-```
-HCPCS/CPT Code        — The procedure code
-[ServiceType] MUE Values — Maximum allowed units (integer)
-MUE Rationale         — Reason: "Code Descriptor / CPT Instruction", "CMS Policy", etc.
-```
+### MUE (Medically Unlikely Edit limits)
 
-**Are these the right files?** Yes for future use — but the engine currently has **no MUE detection rule**. To use these files, you would need to:
-1. Create a `ncci_mue_limits` database table
-2. Write a loader script (`scripts/load_mue_limits.py`)
-3. Add `_detect_mue_violations` to the `RulesEngine` class
+MUE files define the maximum billable units of a HCPCS/CPT code per claim line per date.
 
-The MUE check would flag line items where `quantity > mue_value` for a given code/service-date, which is a very high-value check for catching billing quantity inflation.
+| Source | Format | Naming | Years available |
+|--------|--------|--------|-----------------|
+| MCD | Tab-delimited `.txt`/`.TXT`, 3 columns, no adjudication indicator | `MCD-MUE-{ServiceType}-Effective[_-]MMDDYYYY[suffix].txt` | 2020–2026, quarterly |
+| MCR | CSV, 4 columns, includes adjudication indicator | `MCR_MUE_{ServiceType}_Eff_MM-DD-YYYY[suffix].csv` | 2020–2026, quarterly |
+
+MCD files store `adjudication_indicator = 0` (unknown) — engine treats this as a hard denial.
+
+MCR adjudication indicators:
+- `1` = Claim Edit — sum all lines for same code+date
+- `2` = Date of Service: Policy — per-line hard denial
+- `3` = Date of Service: Clinical — per-line, overridable with documentation
 
 ---
 
-## Current Engine Integration
+## Database Tables
 
-The engine's `_detect_ncci_unbundling` rule is wired to a `ncci_edit_pairs` DB table:
+### `ncci_edit_pairs`
 
-```python
-# bills.py:248
-def _load_ncci_pairs(supabase):
-    response = supabase.table("ncci_edit_pairs")
-        .select("column_one_code,column_two_code")
-        .is_("deletion_date", "null")
-        .execute()
-```
-
-DB schema (`ncci_edit_pairs`):
 ```sql
-column_one_code    text   -- comprehensive code
-column_two_code    text   -- component code
+column_one_code    text    -- comprehensive code (Col1)
+column_two_code    text    -- component code (Col2)
 effective_date     date
-deletion_date      date   -- null = still active
-modifier_indicator integer (0, 1, or 9)
+deletion_date      date    -- null = still active
+modifier_indicator integer -- 0 = modifier not allowed, 1 = may override, 9 = N/A
+service_type       text    -- practitioner | outpatient | dme
+payer_type         text    -- medicare | medicaid
 ```
 
-The loader script `scripts/load_ncci_edits.py` was written to load this table, but it has a **format mismatch** with the new `.txt` files.
+Unique constraint on `(column_one_code, column_two_code, service_type, payer_type)`.
 
----
+**Loaded row counts (April 21 2026):**
 
-## Loader Script Issues to Fix
+| service_type | payer_type | rows |
+|---|---|---|
+| practitioner | medicare | 2,323,399 |
+| practitioner | medicaid | 2,216,598 |
+| outpatient | medicare | 1,781,974 |
+| outpatient | medicaid | 1,809,816 |
+| dme | medicaid | 45,202 |
+| dme | medicare | 0 — no MCR DME PTP files published in this format |
 
-The existing `load_ncci_edits.py` expects a CSV file. The `.txt` files are **tab-delimited** with a **multi-line quoted preamble** before the header row. The loader needs these changes:
+### `ncci_mue_limits`
 
-1. **Delimiter:** Change `csv.reader` to use `delimiter='\t'`
-2. **Preamble skipping:** The first several rows are a quoted copyright/disclaimer block. Skip rows until the actual header (`Col1\tCol2\t...`) is found, not just `row[0].isdigit()`
-3. **Column mapping:** The PTP files use `Col1, Col2, EffDt, DelDt, ModifierIndicator...` — map these by position (same as current loader) or by header name after finding the header row
-4. **Service type flag:** Add a `--service-type` argument (`practitioner`, `outpatient`, `dme`) to tag rows, enabling the engine to load the right set based on bill type
-
-**Minimal fix (just make it work):**
-```python
-# Skip preamble: read until we hit a row starting with a 5-char code or "Col1"
-with path.open(newline='', encoding='utf-8-sig') as f:
-    reader = csv.reader(f, delimiter='\t')
-    data_started = False
-    for row in reader:
-        if not data_started:
-            if row and row[0].strip() in ('Col1', 'HCPCS/CPT Code'):
-                data_started = True  # next row is data
-            continue
-        # process row
+```sql
+hcpcs_code              text
+service_type            text    -- practitioner | outpatient | dme
+payer_type              text    -- medicare | medicaid
+effective_date          date
+mue_value               integer -- max billable units; 0 = never separately payable
+adjudication_indicator  integer -- 0 (unknown/MCD), 1, 2, or 3
+mue_rationale           text
 ```
 
----
+Unique constraint on `(hcpcs_code, service_type, payer_type, effective_date)`.
 
-## Recommended Next Steps
+**Loaded row counts (April 21 2026):**
 
-**Priority 1 — Load PTP data (unblocks NCCI rule for production):**
-1. Fix `load_ncci_edits.py` for tab-delimited format + preamble
-2. Run against `MCD-PTP-PractitionerServices-Effective_01012026.txt` first
-3. Optionally tag rows with `service_type = 'practitioner'`
-
-**Priority 2 — Add service-type awareness:**
-- Add `service_type` column to `ncci_edit_pairs` table (migration required)
-- Load all three PTP files
-- Pass bill context (practitioner vs. outpatient vs. DME) to the engine at analysis time
-
-**Priority 3 — Implement MUE detection:**
-1. Create `ncci_mue_limits` table: `(id, hcpcs_code, service_type, mue_value, mue_rationale)`
-2. Write `scripts/load_mue_limits.py`
-3. Add `_detect_mue_violations` rule to `RulesEngine`:
-   - Flag any line item where `item.quantity > mue_value` for that code
-   - Severity: `critical` (quantity inflation is a significant billing error)
-   - Estimated overcharge: `(item.quantity - mue_value) * item.unit_charge`
+| service_type | payer_type | rows |
+|---|---|---|
+| practitioner | medicare | 359,406 |
+| practitioner | medicaid | 343,599 |
+| outpatient | medicare | 357,968 |
+| outpatient | medicaid | 343,379 |
+| dme | medicare | 72,570 |
+| dme | medicaid | 56,013 |
 
 ---
 
-## Note on "MCD" File Prefix
+## Loader Scripts
 
-The `MCD-` prefix in the filenames stands for **Medicare** (from CMS's internal naming convention), not Medicaid. The preamble explicitly states: *"This file should NOT be used by state Medicaid programs as their edit file"* — meaning these are Medicare/commercial payer NCCI edits. State Medicaid programs use separately published state-specific files.
+### `scripts/load_ncci_edits.py`
+
+Loads PTP edit pairs. Handles both MCD (6-column) and MCR (7-column) formats automatically.
+
+```bash
+# Single file
+python3 scripts/load_ncci_edits.py \
+  --file data/ncci/2026/mcd/MCD-PTP-PractitionerServices-Effective_01012026.txt \
+  --service-type practitioner --payer-type medicaid
+
+# Quarterly refresh — deletes existing rows for this (service_type, payer_type) first
+python3 scripts/load_ncci_edits.py \
+  --file data/ncci/2026/mcr/ccipra-v321r0-f1.TXT \
+  --service-type practitioner --payer-type medicare --replace
+```
+
+### `scripts/load_mue_limits.py`
+
+Loads MUE limits. Effective date auto-detected from filename; can be overridden.
+
+```bash
+python3 scripts/load_mue_limits.py \
+  --file data/ncci/2026/mcr/MCR_MUE_PractitionerServices_Eff_04-01-2026.csv \
+  --service-type practitioner --payer-type medicare
+```
+
+### `scripts/load_ncci_all.sh`
+
+Full load across all years. Safe to re-run — all operations are upserts.
+
+```bash
+bash scripts/load_ncci_all.sh
+```
+
+**Known behaviour:** Supabase's Cloudflare proxy occasionally returns 502 during
+sustained bulk loads. The loaders retry with backoff (30/60/120/180s). If a file
+fails after all retries, re-run it individually — upsert is idempotent.
+
+---
+
+## Quarterly Refresh
+
+CMS publishes updated PTP and MUE files each quarter (Jan, Apr, Jul, Oct).
+
+**PTP refresh** (use `--replace` to remove pairs dropped from the new release):
+```bash
+python3 scripts/load_ncci_edits.py \
+  --file data/ncci/{year}/mcd/MCD-PTP-PractitionerServices-Effective_{date}.txt \
+  --service-type practitioner --payer-type medicaid --replace
+```
+
+**MUE refresh** (no `--replace` needed — effective_date partitions the data naturally):
+```bash
+python3 scripts/load_mue_limits.py \
+  --file data/ncci/{year}/mcr/MCR_MUE_PractitionerServices_Eff_{date}.csv \
+  --service-type practitioner --payer-type medicare
+```
+
+For a full refresh across all service types, update `load_ncci_all.sh` to point at
+the new year directory and re-run.
