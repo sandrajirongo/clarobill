@@ -53,13 +53,31 @@ import csv
 import os
 import re
 import sys
+import time
 import uuid
 from datetime import date, datetime
 from pathlib import Path
 
+from postgrest.exceptions import APIError
 from supabase import create_client
 
-BATCH_SIZE = 500
+BATCH_SIZE = 2000
+_RETRY_DELAYS = (10, 30, 60)
+
+
+def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) -> None:
+    """Upsert a batch, retrying up to 3 times on transient 502/503/504 errors."""
+    for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=1):
+        try:
+            client.table(table).upsert(batch, on_conflict=on_conflict).execute()
+            return
+        except APIError as exc:
+            code = exc.args[0].get("code") if exc.args else None
+            is_transient = str(code) in ("502", "503", "504")
+            if not is_transient or delay is None:
+                raise
+            print(f"  Transient {code} on attempt {attempt}, retrying in {delay}s…", file=sys.stderr)
+            time.sleep(delay)
 VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
 VALID_PAYER_TYPES = ("medicare", "medicaid")
 
@@ -278,10 +296,10 @@ def main() -> None:
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i: i + BATCH_SIZE]
-        client.table("ncci_mue_limits").upsert(
-            batch,
-            on_conflict="hcpcs_code,service_type,payer_type,effective_date",
-        ).execute()
+        _upsert_with_retry(
+            client, "ncci_mue_limits", batch,
+            "hcpcs_code,service_type,payer_type,effective_date",
+        )
         inserted += len(batch)
         print(f"  Upserted {inserted}/{len(rows)} rows…")
 
