@@ -51,10 +51,11 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
+import httpx
 from postgrest.exceptions import APIError
-from supabase import create_client
+from supabase import create_client, ClientOptions
 
-BATCH_SIZE = 5000
+BATCH_SIZE = 1000
 _RETRY_DELAYS = (10, 30, 60)  # seconds between attempts on transient 5xx
 
 VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
@@ -66,18 +67,31 @@ _MCR_DATE_RE = re.compile(r"_Eff_(\d{2})-(\d{2})-(\d{4})", re.IGNORECASE)
 _MCD_DATE_RE = re.compile(r"[_-]Effective[_-](\d{2})(\d{2})(\d{4})", re.IGNORECASE)
 
 
-def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) -> None:
-    """Upsert a batch, retrying up to 3 times on transient 502/503/504 errors."""
+def _upsert_with_retry(client, fn_name: str, batch: list[dict]) -> None:
+    """Call a server-side upsert RPC, retrying on transient errors.
+
+    The RPC runs with statement_timeout=300s, bypassing the 30s PostgREST limit.
+    """
     for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=1):
         try:
-            client.table(table).upsert(batch, on_conflict=on_conflict).execute()
+            client.rpc(fn_name, {"p_rows": batch}).execute()
             return
         except APIError as exc:
-            code = exc.args[0].get("code") if exc.args else None
+            arg0 = exc.args[0] if exc.args else {}
+            code = arg0.get("code") if isinstance(arg0, dict) else None
             is_transient = str(code) in ("502", "503", "504")
             if not is_transient or delay is None:
                 raise
             print(f"  Transient {code} on attempt {attempt}, retrying in {delay}s…", file=sys.stderr)
+            time.sleep(delay)
+        except (
+            httpx.RemoteProtocolError, httpx.ConnectError,
+            httpx.ReadError, httpx.ReadTimeout,
+            httpx.WriteError, httpx.TimeoutException,
+        ) as exc:
+            if delay is None:
+                raise
+            print(f"  Network error on attempt {attempt} ({type(exc).__name__}: {exc}), retrying in {delay}s…", file=sys.stderr)
             time.sleep(delay)
 
 
@@ -243,7 +257,9 @@ def main() -> None:
         print(f"Error: Unrecognised extension '{suffix}'. Expected .csv (MCR) or .txt (MCD).", file=sys.stderr)
         sys.exit(1)
 
-    client = create_client(supabase_url, supabase_key)
+    client = create_client(supabase_url, supabase_key, options=ClientOptions(
+        postgrest_client_timeout=360,
+    ))
 
     # Deduplicate on the DB conflict key before upserting. Some CMS files list
     # the same HCPCS code more than once. PostgreSQL raises error 21000 if the
@@ -263,10 +279,7 @@ def main() -> None:
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i: i + BATCH_SIZE]
-        _upsert_with_retry(
-            client, "ncci_mue_limits", batch,
-            "hcpcs_code,service_type,payer_type,effective_date",
-        )
+        _upsert_with_retry(client, "upsert_ncci_mue_batch", batch)
         inserted += len(batch)
         print(f"  Upserted {inserted}/{len(rows)} rows…")
 

@@ -1,31 +1,28 @@
 """Load CMS NCCI Procedure-to-Procedure (PTP) edit pairs into the database.
 
-Supports two file formats:
+Supports two CMS file formats:
 
-  MCD (tab-delimited, Q1 data, .txt files):
-    Multi-line preamble before the header row. Header starts with "Col1\t".
-    Columns: Col1, Col2, EffDt, DelDt, ModifierIndicator, PTP Edit Rationale
+  MCD (Medicaid, tab-delimited .txt):
+    Multi-line preamble before a header row starting with "Col1".
+    6 columns: Col1, Col2, EffDt, DelDt, ModifierIndicator, PTP Edit Rationale
+    Deletion date sentinels: 20991231, 99991231 (= still active)
+    Files: MCD-PTP-*.txt
 
-  MCR (tab-delimited, same format as MCD — no CSV MCR PTP files shipped by CMS):
-    Same format; use --payer-type medicare to tag rows appropriately.
+  MCR (Medicare, tab-delimited .txt/.TXT):
+    Multi-line preamble before a header row starting with "Column 1".
+    7 columns: Col1, Col2, Pre1996Indicator, EffDt, DelDt, ModifierIndicator, Rationale
+    Deletion date sentinel: * (= still active)
+    Files: ccioph-v*-f*.txt (outpatient), ccipra-v*-f*.txt (practitioner)
 
 Usage:
-  # Load MCD PTP Practitioner file as Medicare practitioner edits
-  python scripts/load_ncci_edits.py \
-      --file data/ncci/MCD-PTP-PractitionerServices-Effective_01012026.txt \
-      --service-type practitioner --payer-type medicare
+  python scripts/load_ncci_edits.py \\
+      --file data/ncci/2026/mcd/MCD-PTP-PractitionerServices-Effective_01012026.txt \\
+      --service-type practitioner --payer-type medicaid
 
-  # Load MCD PTP Outpatient file
-  python scripts/load_ncci_edits.py \
-      --file data/ncci/MCD-PTP-OutpatientHospitalServices-Effective_01012026.txt \
+  python scripts/load_ncci_edits.py \\
+      --file data/ncci/2026/mcr/ccioph-v321r0-f1.txt \\
       --service-type outpatient --payer-type medicare
 
-  # Load MCD PTP DME file
-  python scripts/load_ncci_edits.py \
-      --file data/ncci/MCD-PTP-DMEServices-Effective_01012026.txt \
-      --service-type dme --payer-type medicare
-
-  # Load sample data for dev/testing
   python scripts/load_ncci_edits.py --sample
 """
 
@@ -37,35 +34,52 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
+import httpx
 from postgrest.exceptions import APIError
-from supabase import create_client
+from supabase import create_client, ClientOptions
 
-BATCH_SIZE = 5000
+BATCH_SIZE = 1000
 _RETRY_DELAYS = (10, 30, 60)  # seconds between attempts on transient 5xx
 
 VALID_SERVICE_TYPES = ("practitioner", "outpatient", "dme")
 VALID_PAYER_TYPES = ("medicare", "medicaid")
 
 
-def _upsert_with_retry(client, table: str, batch: list[dict], on_conflict: str) -> None:
-    """Upsert a batch, retrying up to 3 times on transient 502/503/504 errors."""
+def _upsert_with_retry(client, fn_name: str, batch: list[dict]) -> None:
+    """Call a server-side upsert RPC, retrying on transient errors.
+
+    The RPC runs with statement_timeout=300s, bypassing the 30s PostgREST limit.
+    """
     for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=1):
         try:
-            client.table(table).upsert(batch, on_conflict=on_conflict).execute()
+            client.rpc(fn_name, {"p_rows": batch}).execute()
             return
         except APIError as exc:
-            code = exc.args[0].get("code") if exc.args else None
+            arg0 = exc.args[0] if exc.args else {}
+            code = arg0.get("code") if isinstance(arg0, dict) else None
             is_transient = str(code) in ("502", "503", "504")
             if not is_transient or delay is None:
                 raise
             print(f"  Transient {code} on attempt {attempt}, retrying in {delay}s…", file=sys.stderr)
             time.sleep(delay)
+        except (
+            httpx.RemoteProtocolError, httpx.ConnectError,
+            httpx.ReadError, httpx.ReadTimeout,
+            httpx.WriteError, httpx.TimeoutException,
+        ) as exc:
+            if delay is None:
+                raise
+            print(f"  Network error on attempt {attempt} ({type(exc).__name__}: {exc}), retrying in {delay}s…", file=sys.stderr)
+            time.sleep(delay)
 
 
 def parse_cms_date(value: str) -> date | None:
-    """Parse a CMS date string (YYYYMMDD). Returns None for the 'active' sentinel."""
+    """Parse a CMS date string (YYYYMMDD). Returns None for any 'still active' sentinel.
+
+    Handles MCD sentinels (20991231, 99991231) and MCR sentinel (*).
+    """
     value = value.strip()
-    if not value or value in ("20991231", "99991231"):
+    if not value or value in ("20991231", "99991231", "*"):
         return None
     try:
         return datetime.strptime(value, "%Y%m%d").date()
@@ -76,8 +90,12 @@ def parse_cms_date(value: str) -> date | None:
 def load_from_file(path: Path, service_type: str, payer_type: str) -> list[dict]:
     """Parse a CMS NCCI PTP tab-delimited file into dicts ready for DB insertion.
 
-    Skips the preamble by reading until the header row (Col1 or "Column 1 Code").
-    Both MCD .txt and any equivalent tab-delimited format are supported.
+    Handles both file formats automatically:
+      MCD (6 columns): Col1, Col2, EffDt, DelDt, Modifier, Rationale
+        Header starts with "Col1"
+      MCR (7 columns): Col1, Col2, Pre1996, EffDt, DelDt, Modifier, Rationale
+        Header starts with "Column 1"
+        The extra Pre1996 column (index 2) is empty or "*" — not a date.
     """
     rows = []
     with path.open(newline="", encoding="latin-1") as f:
@@ -87,14 +105,11 @@ def load_from_file(path: Path, service_type: str, payer_type: str) -> list[dict]
             if not row:
                 continue
 
-            # Detect the header row. CMS ships two formats:
-            #   Older: standalone header row where row[0] is exactly "Col1"
-            #   2026+: header embedded inside a quoted preamble cell, so row[0]
-            #          is a long description that contains "\nCol1\tCol2\t..." —
-            #          check the full row text for that pattern.
             if not header_found:
                 row_text = "\t".join(row).lower()
-                if row_text.strip().startswith("col1") or "\ncol1\t" in row_text:
+                if (row_text.strip().startswith("col1")
+                        or row_text.strip().startswith("column 1")
+                        or "\ncol1\t" in row_text):
                     header_found = True
                 continue  # skip everything up to and including the header
 
@@ -104,12 +119,23 @@ def load_from_file(path: Path, service_type: str, payer_type: str) -> list[dict]
 
             col1 = row[0].strip().zfill(5)
             col2 = row[1].strip().zfill(5)
-            effective = parse_cms_date(row[2])
-            deletion = parse_cms_date(row[3])
 
-            # Modifier indicator may be quoted and have trailing label text
+            # MCR files have a 7-column layout where row[2] is a pre-1996 indicator
+            # ("*" or empty), not a date. MCD files have 6 columns where row[2] IS
+            # the effective date. Detect by checking whether row[2] is a date.
+            if len(row) >= 7 and not row[2].strip().isdigit():
+                # MCR format — shift date/modifier columns right by 1
+                effective = parse_cms_date(row[3])
+                deletion = parse_cms_date(row[4])
+                modifier_col = row[5]
+            else:
+                # MCD format
+                effective = parse_cms_date(row[2])
+                deletion = parse_cms_date(row[3])
+                modifier_col = row[4]
+
             try:
-                modifier_indicator = int(row[4].strip().split()[0])
+                modifier_indicator = int(modifier_col.strip().split()[0])
             except (ValueError, IndexError):
                 modifier_indicator = 9
 
@@ -186,7 +212,9 @@ def main() -> None:
         print("Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.", file=sys.stderr)
         sys.exit(1)
 
-    client = create_client(supabase_url, supabase_key)
+    client = create_client(supabase_url, supabase_key, options=ClientOptions(
+        postgrest_client_timeout=360,
+    ))
 
     if args.sample:
         rows = load_sample()
@@ -226,10 +254,7 @@ def main() -> None:
     inserted = 0
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i : i + BATCH_SIZE]
-        _upsert_with_retry(
-            client, "ncci_edit_pairs", batch,
-            "column_one_code,column_two_code,service_type,payer_type",
-        )
+        _upsert_with_retry(client, "upsert_ncci_pairs_batch", batch)
         inserted += len(batch)
         print(f"  Upserted {inserted}/{len(rows)} rows...")
 

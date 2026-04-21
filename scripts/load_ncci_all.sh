@@ -52,27 +52,53 @@ echo " NCCI Full Load — $(date '+%Y-%m-%d %H:%M')"
 echo " Data root: $DATA_DIR"
 echo "============================================================"
 
-# ── PTP edit pairs (2026 only) ────────────────────────────────────────────────
-# CMS PTP files are cumulative — every historically-active pair is listed with
-# its own effective_date/deletion_date. Only the latest quarterly file is needed.
-# Upsert is sufficient: existing rows are updated in place. No delete needed.
+# ── PTP edit pairs — MCD (Medicaid) ──────────────────────────────────────────
+# CMS PTP files are cumulative snapshots. Only the latest quarterly file per
+# service type is needed — all historically-active pairs are included with their
+# own effective_date/deletion_date. Upsert is sufficient; no delete needed.
 echo ""
-echo "── PTP Edits (Q1 2026, payer_type=medicare) ─────────────────"
+echo "── PTP Edits: Medicaid (MCD files, all years) ───────────────"
 
-for svc_type in practitioner outpatient dme; do
-  case "$svc_type" in
-    practitioner) label="PractitionerServices" ;;
-    outpatient)   label="OutpatientHospitalServices" ;;
-    dme)          label="DMEServices" ;;
-  esac
-  file="$DATA_DIR/2026/mcd/MCD-PTP-${label}-Effective_01012026.txt"
-  if [[ -f "$file" ]]; then
-    echo ""
-    echo "  PTP $svc_type → $(basename "$file")"
-    run_loader $PTP_LOADER --file "$file" --service-type "$svc_type" --payer-type medicare
-  else
-    echo "  WARNING: PTP file not found: $file" >&2
-  fi
+for year_dir in "$DATA_DIR"/*/mcd; do
+  [[ -d "$year_dir" ]] || continue
+  year=$(basename "$(dirname "$year_dir")")
+  for svc_type in practitioner outpatient dme; do
+    case "$svc_type" in
+      practitioner) pattern="MCD-PTP-PractitionerServices*" ;;
+      outpatient)   pattern="MCD-PTP-OutpatientHospitalServices*" ;;
+      dme)          pattern="MCD-PTP-DMEServices*" ;;
+    esac
+    while IFS= read -r -d $'\0' file; do
+      echo ""
+      echo "  PTP medicaid/$svc_type [$year] → $(basename "$file")"
+      run_loader $PTP_LOADER --file "$file" --service-type "$svc_type" --payer-type medicaid
+    done < <(find "$year_dir" -maxdepth 1 -iname "$pattern" -print0 | sort -z)
+  done
+done
+
+# ── PTP edit pairs — MCR (Medicare) ──────────────────────────────────────────
+# CMS Medicare PTP files use a different naming convention and 7-column format.
+# Files are split across f1–f4 per version — load all of them sorted so the
+# latest version (highest v-number) loads last and overwrites earlier data.
+# Naming: ccioph-v{ver}r0-f{n}.txt (outpatient), ccipra-v{ver}r0-f{n}.txt (practitioner)
+echo ""
+echo "── PTP Edits: Medicare (MCR files, all years) ───────────────"
+
+for year_dir in "$DATA_DIR"/*/mcr; do
+  [[ -d "$year_dir" ]] || continue
+  year=$(basename "$(dirname "$year_dir")")
+  for svc_type in practitioner outpatient dme; do
+    case "$svc_type" in
+      practitioner) prefix="ccipra" ;;
+      outpatient)   prefix="ccioph" ;;
+      dme)          prefix="ccidme" ;;
+    esac
+    while IFS= read -r -d $'\0' file; do
+      echo ""
+      echo "  PTP medicare/$svc_type [$year] → $(basename "$file")"
+      run_loader $PTP_LOADER --file "$file" --service-type "$svc_type" --payer-type medicare
+    done < <(find "$year_dir" -maxdepth 1 -iname "${prefix}*.txt" -print0 | sort -z)
+  done
 done
 
 # ── MUE limits — MCR (Medicare, with Adjudication Indicator) ─────────────────
@@ -114,7 +140,7 @@ for year_dir in "$DATA_DIR"/*/mcd; do
       echo ""
       echo "  MUE medicaid/$svc_type [$year] → $(basename "$file")"
       run_loader $MUE_LOADER --file "$file" --service-type "$svc_type" --payer-type medicaid
-    done < <(find "$year_dir" -maxdepth 1 \( -iname "*.txt" \) -name "$pattern" -print0 | sort -z)
+    done < <(find "$year_dir" -maxdepth 1 -iname "*.txt" -iname "$pattern" -print0 | sort -z)
   done
 done
 
