@@ -51,6 +51,13 @@ export async function POST(
     return NextResponse.json({ accepted: true });
   }
 
+  if (!bill.file_path) {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'The uploaded bill file has been removed per our 60-day retention policy and can no longer be analyzed. Please upload the bill again.', step: 'preflight' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 410 }
+    );
+  }
+
   // Forward to Python engine — fire and forget (engine updates bill status async)
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
   const idToken = await getCloudRunIdToken(engineUrl);

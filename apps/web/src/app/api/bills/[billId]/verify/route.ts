@@ -58,6 +58,13 @@ export async function POST(
     return NextResponse.json({ accepted: true });
   }
 
+  if (!bill.file_path) {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'The uploaded bill file has been removed per our 60-day retention policy and can no longer be analyzed. Please upload the bill again.', step: 'verify_bill' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 410 }
+    );
+  }
+
   // Load the selected profile member to get their state/county/zip for rate lookup
   const { data: member } = await supabase
     .from('profile_members')
