@@ -9,7 +9,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class BillStatus(StrEnum):
@@ -69,6 +69,14 @@ class BillingError(BaseModel):
     estimated_overcharge: Decimal
     # Medicare benchmark rate for comparison; None when not applicable
     medicare_benchmark_rate: Decimal | None
+
+    @field_serializer("estimated_overcharge")
+    def _ser_overcharge(self, v: Decimal) -> float:
+        return float(v)
+
+    @field_serializer("medicare_benchmark_rate")
+    def _ser_benchmark(self, v: Decimal | None) -> float | None:
+        return float(v) if v is not None else None
 
 
 class AnalysisResult(BaseModel):
