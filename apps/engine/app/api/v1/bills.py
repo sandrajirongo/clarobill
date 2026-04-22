@@ -155,7 +155,7 @@ async def _run_analysis_pipeline(
             rate_date, locality_code, bill_id, state, county,
         )
         service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
-        ncci_pairs = _load_ncci_pairs(supabase, service_type, payer_type, rate_date)
+        ncci_pairs = _load_ncci_pairs(supabase, cpt_codes, service_type, payer_type, rate_date)
         mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type, rate_date)
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
@@ -286,21 +286,33 @@ def _derive_ncci_context(cpt_codes: list[str], plan_type: str | None) -> tuple[s
 
 def _load_ncci_pairs(
     supabase: Client,
+    cpt_codes: list[str],
     service_type: str = "practitioner",
     payer_type: str = "medicare",
     service_date: date | None = None,
 ) -> dict[str, set[str]]:
-    """Load NCCI PTP edit pairs active on service_date.
+    """Load NCCI PTP edit pairs active on service_date for the CPT codes on this bill.
 
     Filters to pairs whose effective_date <= service_date and deletion_date is
     null or after service_date, so historical bills use the edits in force at
     the time of service rather than today's rules.
+
+    Filters by column_one_code IN (cpt_codes) so only pairs relevant to this
+    bill's codes are fetched. Without this filter the query would match 2M+ rows
+    and PostgREST would return only the first 1000 — making unbundling detection
+    effectively non-functional for any specific bill's code pairs.
     """
+    if not cpt_codes:
+        return {}
+
+    unique_codes = list(set(cpt_codes))
+
     query = (
         supabase.table("ncci_edit_pairs")
         .select("column_one_code,column_two_code")
         .eq("service_type", service_type)
         .eq("payer_type", payer_type)
+        .in_("column_one_code", unique_codes)
     )
     if service_date is not None:
         query = (
@@ -315,6 +327,14 @@ def _load_ncci_pairs(
     pairs: dict[str, set[str]] = {}
     for row in response.data:
         pairs.setdefault(row["column_one_code"], set()).add(row["column_two_code"])
+
+    if not pairs:
+        logger.warning(
+            "No NCCI pairs found for service_type=%s payer_type=%s service_date=%s "
+            "cpt_codes=%s — NCCI_UNBUNDLING detection disabled for this bill.",
+            service_type, payer_type, service_date, unique_codes,
+        )
+
     return pairs
 
 
