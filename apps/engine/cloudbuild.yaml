@@ -1,0 +1,36 @@
+steps:
+  # Build the engine image from apps/engine/ as the build context
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy/clarobill-engine:$COMMIT_SHA
+      - -t
+      - us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy/clarobill-engine:latest
+      - .
+    dir: apps/engine
+
+  # Push both tags
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy/clarobill-engine
+
+  # Deploy the commit-SHA image to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - clarobill-engine
+      - --image
+      - us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy/clarobill-engine:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+options:
+  logging: CLOUD_LOGGING_ONLY
