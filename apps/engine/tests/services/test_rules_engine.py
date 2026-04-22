@@ -83,6 +83,24 @@ class TestDuplicateDetection:
     def test_empty_bill_returns_no_errors(self, engine_with_data: RulesEngine) -> None:
         assert engine_with_data.run([]) == []
 
+    def test_duplicate_instance_not_also_flagged_as_price_outlier(self, engine_with_data: RulesEngine) -> None:
+        # 99214 at $350 is a price outlier (3.5x the $100 Medicare rate).
+        # When the code is billed twice, the duplicate instance must not be counted
+        # as both a DUPLICATE_CHARGE and a PRICE_OUTLIER — that would double-count
+        # the same charge and inflate potential savings above total charges.
+        items = [
+            make_line_item("99214", 350.00),
+            make_line_item("99214", 350.00),
+        ]
+        errors = engine_with_data.run(items)
+        assert len([e for e in errors if e.code == "DUPLICATE_CHARGE"]) == 1
+        # Only the original (non-duplicate) instance should produce a PRICE_OUTLIER.
+        assert len([e for e in errors if e.code == "PRICE_OUTLIER"]) == 1
+        # Total estimated savings must not exceed total charges ($700).
+        total_savings = sum(e.estimated_overcharge for e in errors)
+        total_charges = Decimal("700.00")
+        assert total_savings <= total_charges
+
 
 class TestPriceOutlierDetection:
     def test_flags_charge_above_threshold(self, engine_with_data: RulesEngine) -> None:

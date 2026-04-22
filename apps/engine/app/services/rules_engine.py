@@ -146,17 +146,39 @@ class RulesEngine:
             All detected errors across all rules. May be empty.
         """
         errors: list[DetectedError] = []
-        errors.extend(self._detect_duplicates(line_items))
-        errors.extend(self._detect_price_outliers(line_items))
+
+        duplicate_errors = self._detect_duplicates(line_items)
+        errors.extend(duplicate_errors)
+
+        # The second index in each DUPLICATE_CHARGE error is the line item being disputed
+        # entirely. Flagging that same item as additionally overpriced (PRICE_OUTLIER,
+        # FACILITY_CHARGE_OUTLIER, etc.) double-counts the charge and inflates potential
+        # savings beyond what is achievable. Suppress all other rule errors whose affected
+        # indices are exclusively duplicate instances.
+        duplicate_indices: set[int] = {
+            e.affected_indices[1]
+            for e in duplicate_errors
+            if len(e.affected_indices) >= 2
+        }
+
+        def _without_duplicates(rule_errors: list[DetectedError]) -> list[DetectedError]:
+            if not duplicate_indices:
+                return rule_errors
+            return [
+                e for e in rule_errors
+                if not all(i in duplicate_indices for i in e.affected_indices)
+            ]
+
+        errors.extend(_without_duplicates(self._detect_price_outliers(line_items)))
         errors.extend(self._detect_ncci_unbundling(line_items))
-        errors.extend(self._detect_non_payable_codes(line_items))
-        errors.extend(self._detect_anesthesia_outliers(line_items))
-        errors.extend(self._detect_facility_outliers(line_items))
-        errors.extend(self._detect_ambulance_outliers(line_items))
-        errors.extend(self._detect_terminated_codes(line_items))
-        errors.extend(self._detect_hospital_charge_outliers(line_items))
-        errors.extend(self._detect_negotiated_rate_exceeded(line_items))
-        errors.extend(self._detect_mue_violations(line_items))
+        errors.extend(_without_duplicates(self._detect_non_payable_codes(line_items)))
+        errors.extend(_without_duplicates(self._detect_anesthesia_outliers(line_items)))
+        errors.extend(_without_duplicates(self._detect_facility_outliers(line_items)))
+        errors.extend(_without_duplicates(self._detect_ambulance_outliers(line_items)))
+        errors.extend(_without_duplicates(self._detect_terminated_codes(line_items)))
+        errors.extend(_without_duplicates(self._detect_hospital_charge_outliers(line_items)))
+        errors.extend(_without_duplicates(self._detect_negotiated_rate_exceeded(line_items)))
+        errors.extend(_without_duplicates(self._detect_mue_violations(line_items)))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
