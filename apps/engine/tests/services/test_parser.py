@@ -126,6 +126,53 @@ class TestRealisticBillFormats:
         assert all(i.cpt_code == "99214" for i in items)
 
 
+class TestChargeExtraction:
+    def test_takes_last_amount_when_unit_rate_precedes_total(self, parser: BillParser) -> None:
+        # Unit rate ($125.00) appears before total charge ($250.00) — must take the total
+        text = "99214  Office Visit  1  $125.00  $250.00"
+        items = parser.parse(text)
+        assert items[0].total_charge == 250.00
+
+    def test_takes_last_amount_when_zero_appears_first(self, parser: BillParser) -> None:
+        # Some bill formats have a $0.00 adjustment column before the billable total
+        text = "99214  Office Visit  $0.00  $350.00"
+        items = parser.parse(text)
+        assert items[0].total_charge == 350.00
+
+    def test_single_amount_still_extracted(self, parser: BillParser) -> None:
+        text = "99214  Office Visit  $350.00"
+        items = parser.parse(text)
+        assert items[0].total_charge == 350.00
+
+
+class TestDateExtractionSectionHeader:
+    def test_all_items_under_date_header_get_correct_date(self, parser: BillParser) -> None:
+        # Date appears as a section header above a block of codes — a common real-world format.
+        # All codes in the block must get the header date, not today.
+        text = (
+            "Service Date: 03/15/2026\n"
+            "99214  Office Visit  $350.00\n"
+            "85025  Complete Blood Count  $120.00\n"
+            "36415  Routine Venipuncture  $25.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 3
+        assert all(item.service_date == date(2026, 3, 15) for item in items)
+
+    def test_duplicate_items_under_same_header_get_identical_date(self, parser: BillParser) -> None:
+        # Duplicate detection requires both items to have the same date.
+        # If only the first item gets the header date and the second falls back to today,
+        # the dedup key (cpt_code, service_date) differs and the duplicate is missed.
+        text = (
+            "03/15/2026\n"
+            "99214  Office Visit  $350.00\n"
+            "99214  Office Visit  $350.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 2
+        assert items[0].service_date == items[1].service_date == date(2026, 3, 15)
+
+
 class TestHcpcsCodeExtraction:
     def test_extracts_ambulance_transport_code(self, parser: BillParser) -> None:
         # A0427 = ALS emergency ground transport — HCPCS Level II code

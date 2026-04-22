@@ -208,20 +208,36 @@ class BillParser:
     def _find_charge_in_window(self, lines: list[str], start: int) -> float | None:
         """Search for a dollar amount on the CPT line and up to LOOKAHEAD_LINES below.
 
-        Requires exactly 2 decimal places to avoid matching date fragments.
+        Takes the LAST match on the line — on bills with unit-rate + total-charge columns
+        (the most common real-world format), the rightmost dollar amount is always the
+        total charge. Using .search() (first match) would capture the unit rate instead.
         """
         for j in range(start, min(start + _LOOKAHEAD_LINES + 1, len(lines))):
-            amount_match = _AMOUNT_PATTERN.search(lines[j])
-            if amount_match:
+            matches = _AMOUNT_PATTERN.findall(lines[j])
+            if matches:
                 try:
-                    return float(amount_match.group(1).replace(",", ""))
+                    return float(matches[-1].replace(",", ""))
                 except ValueError:
                     continue
         return None
 
     def _find_date_in_window(self, lines: list[str], start: int) -> date | None:
-        """Search for a date in the CPT line and up to LOOKAHEAD_LINES around it."""
-        for j in range(max(0, start - 1), min(start + _LOOKAHEAD_LINES + 1, len(lines))):
+        """Search for a service date near the CPT code line.
+
+        Two-phase search:
+        1. ±LOOKAHEAD_LINES around the current line — covers inline dates and dates
+           on the immediately adjacent line.
+        2. Global backwards scan through all preceding lines — covers section-header
+           format where a single date appears above a block of multiple line items.
+           Without this, only the first code under a date header gets the correct date;
+           all subsequent codes in the block fall back to today, breaking duplicate
+           detection and rate_date accuracy for all reference data loaders.
+        """
+        for j in range(max(0, start - _LOOKAHEAD_LINES), min(start + _LOOKAHEAD_LINES + 1, len(lines))):
+            parsed = self._extract_date(lines[j])
+            if parsed is not None:
+                return parsed
+        for j in range(start - _LOOKAHEAD_LINES - 1, -1, -1):
             parsed = self._extract_date(lines[j])
             if parsed is not None:
                 return parsed

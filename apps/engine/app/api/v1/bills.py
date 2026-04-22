@@ -58,7 +58,7 @@ async def analyze_bill(
     background_tasks.add_task(
         _run_analysis_pipeline,
         bill_id, body.file_path, body.state, body.county, body.zip_code,
-        body.payer_name, body.plan_name, body.plan_type, supabase,
+        body.payer_name, body.plan_name, body.plan_type, body.user_id, supabase,
     )
 
     return AnalyzeAccepted()
@@ -73,6 +73,7 @@ async def _run_analysis_pipeline(
     payer_name: str | None,
     plan_name: str | None,
     plan_type: str | None,
+    user_id: str,
     supabase: Client,
 ) -> None:
     """Full analysis pipeline — runs in the background after accepting the request.
@@ -85,6 +86,7 @@ async def _run_analysis_pipeline(
       5. AI analysis (Claude)
       6. Persist results and update bill status
     """
+    logger.info("Processing bill %s for user %s", bill_id, user_id)
     try:
         # 1. Download file bytes from Storage
         file_response = supabase.storage.from_("bills").download(file_path)
@@ -381,6 +383,14 @@ def _load_mue_limits(
         code = row["hcpcs_code"]
         if code not in result:
             result[code] = (int(row["mue_value"]), int(row["adjudication_indicator"]))
+
+    if not result:
+        logger.warning(
+            "No MUE limits found for cpt_codes=%s service_type=%s payer_type=%s service_date=%s "
+            "— MUE_EXCEEDED detection disabled for this bill.",
+            list(set(cpt_codes)), service_type, payer_type, service_date,
+        )
+
     return result
 
 

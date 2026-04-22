@@ -36,7 +36,7 @@ def get_async_anthropic_client() -> anthropic.AsyncAnthropic:
 @lru_cache(maxsize=1)
 def get_ai_analysis_service() -> AiAnalysisService:
     """Returns a shared AI analysis service instance."""
-    return AiAnalysisService(client=get_anthropic_client())
+    return AiAnalysisService(client=get_async_anthropic_client())
 
 
 @lru_cache(maxsize=1)

@@ -7,7 +7,6 @@ Produces two outputs:
 All Claude calls are funneled through this module. Test mode returns fixture text.
 """
 
-import asyncio
 import logging
 from decimal import Decimal
 
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 class AiAnalysisService:
     """Generates patient-facing content from billing error analysis using Claude."""
 
-    def __init__(self, client: anthropic.Anthropic, test_mode: bool = False) -> None:
+    def __init__(self, client: anthropic.AsyncAnthropic, test_mode: bool = False) -> None:
         self._client = client
         self._test_mode = test_mode
 
@@ -60,8 +59,7 @@ class AiAnalysisService:
             f"Issues found:\n{error_descriptions}"
         )
 
-        await asyncio.sleep(0)  # Yield to event loop before blocking call
-        message = self._client.messages.create(
+        message = await self._client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
@@ -123,8 +121,7 @@ class AiAnalysisService:
             f"Line items on the bill:\n{line_item_summary}"
         )
 
-        await asyncio.sleep(0)
-        message = self._client.messages.create(
+        message = await self._client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}],

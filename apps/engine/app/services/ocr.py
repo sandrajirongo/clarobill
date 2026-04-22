@@ -4,6 +4,7 @@ All calls to Google Cloud Vision are funneled through this module.
 In test mode, returns fixture data instead of making real API calls.
 """
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -63,7 +64,10 @@ class OcrService:
 
     async def _extract_from_image(self, file_bytes: bytes, mime_type: str) -> str:
         image = vision.Image(content=file_bytes)
-        response = self._client.document_text_detection(image=image)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: self._client.document_text_detection(image=image)
+        )
 
         if response.error.message:
             raise OcrExtractionError(f"Google Vision API error: {response.error.message}")
@@ -84,7 +88,10 @@ class OcrService:
             input_config=input_config,
             features=[feature],
         )
-        response = self._client.batch_annotate_files(requests=[file_request])
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: self._client.batch_annotate_files(requests=[file_request])
+        )
 
         if not response.responses:
             raise OcrExtractionError("No response from Vision API for PDF.")
