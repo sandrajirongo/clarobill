@@ -3,7 +3,8 @@
 Extracts CPT codes, charges, dates, and modifiers from unstructured bill text.
 Supports both single-line formats (traditional provider bills) and multi-line
 formats (insurance EOBs where the charge appears on a separate line from the
-CPT code).
+CPT code), as well as column-interleaved OCR output produced by Google Vision
+when processing structured table PDFs.
 """
 
 import logging
@@ -34,6 +35,14 @@ _ANES_START_END_PATTERN = re.compile(
     r"(?:start|begin|in|incision)[:\s]+(\d{1,2}):(\d{2})"
     r".{0,40}"
     r"(?:end|stop|out|close)[:\s]+(\d{1,2}):(\d{2})",
+    re.IGNORECASE,
+)
+
+# Lines matching this pattern are summary/totals rows — their dollar amounts must not
+# be assigned to individual CPT codes during column-interleaved sequence matching.
+_SUMMARY_LINE_PATTERN = re.compile(
+    r"\b(total|subtotal|balance|payment|insurance|amount\s*due|co[- ]?pay|"
+    r"deductible|adjustment|remittance|billed\s*to)\b",
     re.IGNORECASE,
 )
 
@@ -121,9 +130,13 @@ class ParsedLineItem:
 class BillParser:
     """Parses raw OCR text into structured line items.
 
-    Handles both traditional provider bill format (CPT + description + charge
-    on one line) and insurance EOB format (CPT on one line, charge on the
-    next 1-3 lines).
+    Handles three OCR output layouts:
+      1. Row-major (traditional): CPT + description + charge on one line.
+      2. Multi-line EOB: CPT on one line, charge on the next 1-3 lines.
+      3. Column-interleaved: Vision OCR returns a PDF table column-by-column —
+         all CPT codes appear first, then descriptions, then charges. Proximity
+         search fails here; a sequence-based fallback associates the nth CPT
+         code with the nth unconsumed charge amount in document order.
     """
 
     def parse(self, raw_text: str, bill_date: date | None = None) -> list[ParsedLineItem]:
@@ -134,14 +147,19 @@ class BillParser:
             bill_date: Fallback date if service dates can't be parsed.
 
         Returns:
-            List of parsed line items. Empty if no CPT codes found.
+            List of parsed line items in document order. Empty if no CPT codes found.
         """
         lines = raw_text.splitlines()
-        line_items: list[ParsedLineItem] = []
         fallback_date = bill_date or date.today()
-        # Track processed line indices to avoid duplicate line items when the
-        # same CPT code appears multiple times (e.g. in EOB totals rows)
         processed_line_indices: set[int] = set()
+
+        # Accumulate as (line_idx, item) so we can sort into document order at the end,
+        # regardless of whether items came from pass-1 proximity or pass-2 sequence matching.
+        pending: list[tuple[int, ParsedLineItem]] = []
+        # Lines whose dollar amounts were consumed by pass-1 proximity matching.
+        consumed_amount_lines: set[int] = set()
+        # CPT code lines that had no nearby charge — queued for pass-2 sequence matching.
+        unmatched: list[tuple[int, str, str | None]] = []  # (line_idx, cpt_code, modifier)
 
         for i, line in enumerate(lines):
             if i in processed_line_indices:
@@ -160,27 +178,24 @@ class BillParser:
                 modifier = mod_match.group(1)
 
             # Try to find a charge on the same line first, then look ahead
-            charge = self._find_charge_in_window(lines, i)
+            charge, charge_line = self._find_charge_in_window(lines, i)
             if charge is None:
-                logger.debug("No charge found for code %s at line %d — skipping", cpt_code, i)
+                # No charge found within proximity — save for sequence-based fallback.
+                # This is the normal outcome for column-interleaved table OCR output.
+                logger.debug("No charge found for code %s at line %d — queuing for fallback", cpt_code, i)
+                unmatched.append((i, cpt_code, modifier))
+                processed_line_indices.add(i)
                 continue
 
-            # Extract service date from the code line or the surrounding window
-            service_date = self._find_date_in_window(lines, i) or fallback_date
+            consumed_amount_lines.add(charge_line)
 
-            # Build description from the code line (strip code, modifier,
-            # amounts, and date patterns so we're left with readable text)
+            service_date = self._find_date_in_window(lines, i) or fallback_date
             description = self._extract_description(line, code_match.end())
 
-            # Extract anesthesia time for codes in the 00100–01999 range
             anesthesia_minutes: int | None = None
             if _is_anesthesia_code(cpt_code):
                 anesthesia_minutes = self._find_anesthesia_minutes(lines, i)
 
-            # Extract mileage for ambulance per-mile codes.
-            # Sets quantity to the number of miles and unit_charge to the per-mile rate,
-            # enabling the rules engine to compare unit_charge directly against the AFS
-            # per-mile benchmark rather than the total transport charge.
             quantity = 1
             unit_charge = charge
             if cpt_code in _AMBULANCE_MILEAGE_CODES:
@@ -190,7 +205,7 @@ class BillParser:
                     unit_charge = round(charge / miles, 2)
 
             processed_line_indices.add(i)
-            line_items.append(ParsedLineItem(
+            pending.append((i, ParsedLineItem(
                 cpt_code=cpt_code,
                 description=description,
                 service_date=service_date,
@@ -200,26 +215,119 @@ class BillParser:
                 modifier=modifier,
                 diagnosis_pointers=[],
                 anesthesia_minutes=anesthesia_minutes,
-            ))
+            )))
+
+        # Pass 2: sequence-based matching for column-interleaved codes
+        if unmatched:
+            fallback_items = self._resolve_column_interleaved(
+                lines, unmatched, consumed_amount_lines, fallback_date
+            )
+            pending.extend(fallback_items)
+
+        # Restore document order — pass-1 row-major items at the bottom of the bill
+        # (e.g. the last two row-major items in a hybrid bill) would otherwise appear
+        # before the column-interleaved items that physically precede them on the page.
+        pending.sort(key=lambda x: x[0])
+        line_items = [item for _, item in pending]
 
         logger.info("Parser extracted %d line items from %d lines", len(line_items), len(lines))
         return line_items
 
-    def _find_charge_in_window(self, lines: list[str], start: int) -> float | None:
+    def _find_charge_in_window(self, lines: list[str], start: int) -> tuple[float, int] | tuple[None, None]:
         """Search for a dollar amount on the CPT line and up to LOOKAHEAD_LINES below.
 
         Takes the LAST match on the line — on bills with unit-rate + total-charge columns
         (the most common real-world format), the rightmost dollar amount is always the
         total charge. Using .search() (first match) would capture the unit rate instead.
+
+        Returns:
+            (charge_value, line_index) when found, (None, None) when not found.
         """
         for j in range(start, min(start + _LOOKAHEAD_LINES + 1, len(lines))):
             matches = _AMOUNT_PATTERN.findall(lines[j])
             if matches:
                 try:
-                    return float(matches[-1].replace(",", ""))
+                    return float(matches[-1].replace(",", "")), j
                 except ValueError:
                     continue
-        return None
+        return None, None
+
+    def _resolve_column_interleaved(
+        self,
+        lines: list[str],
+        unmatched: list[tuple[int, str, str | None]],
+        consumed_lines: set[int],
+        fallback_date: date,
+    ) -> list[tuple[int, ParsedLineItem]]:
+        """Associate unmatched CPT codes with charges via document-order sequence matching.
+
+        Google Vision OCR processes structured table PDFs column-by-column rather than
+        row-by-row. All CPT codes appear in a block, followed by descriptions, followed
+        by charges — so charges are 8+ lines from their codes and proximity search misses
+        them entirely. This method collects all unconsumed, non-summary dollar amounts
+        in document order and maps the nth amount to the nth unmatched CPT code.
+        """
+        # One charge per line (last match) from non-consumed, non-summary lines
+        available: list[tuple[int, float]] = []
+        for j, line in enumerate(lines):
+            if j in consumed_lines:
+                continue
+            if _SUMMARY_LINE_PATTERN.search(line):
+                continue
+            matches = _AMOUNT_PATTERN.findall(line)
+            if not matches:
+                continue
+            try:
+                available.append((j, float(matches[-1].replace(",", ""))))
+            except ValueError:
+                pass
+
+        if len(available) < len(unmatched):
+            logger.warning(
+                "Column-interleaved fallback: %d unmatched codes but only %d available charges "
+                "— %d code(s) will be dropped",
+                len(unmatched), len(available), len(unmatched) - len(available),
+            )
+
+        result: list[tuple[int, ParsedLineItem]] = []
+        for idx, (line_idx, cpt_code, modifier) in enumerate(unmatched):
+            if idx >= len(available):
+                break
+
+            _, charge = available[idx]
+            line = lines[line_idx]
+            code_match = _PROCEDURE_CODE_PATTERN.search(line)
+
+            service_date = self._find_date_in_window(lines, line_idx) or fallback_date
+            description = self._extract_description(
+                line, code_match.end() if code_match else len(line)
+            )
+
+            anesthesia_minutes: int | None = None
+            if _is_anesthesia_code(cpt_code):
+                anesthesia_minutes = self._find_anesthesia_minutes(lines, line_idx)
+
+            quantity = 1
+            unit_charge = charge
+            if cpt_code in _AMBULANCE_MILEAGE_CODES:
+                miles = self._find_mileage_quantity(lines, line_idx)
+                if miles is not None and miles > 1:
+                    quantity = miles
+                    unit_charge = round(charge / miles, 2)
+
+            result.append((line_idx, ParsedLineItem(
+                cpt_code=cpt_code,
+                description=description,
+                service_date=service_date,
+                quantity=quantity,
+                unit_charge=unit_charge,
+                total_charge=charge,
+                modifier=modifier,
+                diagnosis_pointers=[],
+                anesthesia_minutes=anesthesia_minutes,
+            )))
+
+        return result
 
     def _find_date_in_window(self, lines: list[str], start: int) -> date | None:
         """Search for a service date near the CPT code line.

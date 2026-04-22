@@ -294,6 +294,134 @@ class TestNpiExtraction:
         assert parser.extract_npi(text) is None
 
 
+class TestColumnInterleavedOcr:
+    """Google Vision OCR returns table PDFs column-by-column rather than row-by-row.
+
+    All CPT codes appear first, then descriptions, then charges — so charges are
+    8+ lines from their codes and proximity search misses them. The sequence-based
+    fallback must assign the nth unconsumed charge to the nth unmatched CPT code.
+    """
+
+    def test_all_codes_extracted_when_charges_are_far_from_codes(self, parser: BillParser) -> None:
+        # Mimics actual Cloud Run log output from the UCSF table-format bill.
+        # Three CPT codes appear first; their charges appear 8–10 lines later.
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "08/12/2023\n"
+            "70553\n"
+            "08/12/2023\n"
+            "70553\n"
+            "Emergency dept visit, moderate complexity\n"
+            "MRI brain, with and without contrast\n"
+            "MRI brain, with and without contrast\n"
+            "1\n"
+            "$845.00\n"
+            "1\n"
+            "$4,250.00\n"
+            "1\n"
+            "$4,250.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 3
+        codes = [i.cpt_code for i in items]
+        assert codes.count("99284") == 1
+        assert codes.count("70553") == 2
+        assert sorted(i.total_charge for i in items) == [845.00, 4250.00, 4250.00]
+
+    def test_mixed_column_interleaved_and_row_major_in_same_bill(self, parser: BillParser) -> None:
+        # First 3 codes are column-interleaved; last 2 are row-major (the hybrid layout
+        # seen in the UCSF bill where the final items happened to be row-major).
+        # All 5 must be extracted with correct charges.
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "08/12/2023\n"
+            "70553\n"
+            "08/12/2023\n"
+            "70553\n"
+            "Emergency dept visit\n"
+            "MRI brain\n"
+            "MRI brain\n"
+            "1\n"
+            "$845.00\n"
+            "1\n"
+            "$4,250.00\n"
+            "1\n"
+            "$4,250.00\n"
+            "08/12/2023  36415  Collection of venous blood  $45.00\n"
+            "08/12/2023  80053  Comprehensive metabolic panel  $189.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 5
+        by_code = {i.cpt_code: i.total_charge for i in items if i.cpt_code not in ("70553",)}
+        assert by_code["99284"] == 845.00
+        assert by_code["36415"] == 45.00
+        assert by_code["80053"] == 189.00
+        assert sum(1 for i in items if i.cpt_code == "70553") == 2
+
+    def test_summary_total_lines_not_assigned_as_code_charges(self, parser: BillParser) -> None:
+        # "Total Charges: $845.00" must not be matched to any CPT code.
+        # The code's actual charge is $845.00 on a plain amount line above the total row.
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "Emergency dept visit\n"
+            "1\n"
+            "$845.00\n"
+            "Total Charges: $845.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].total_charge == 845.00
+
+    def test_service_date_propagates_to_column_interleaved_codes(self, parser: BillParser) -> None:
+        # Dates appear before each CPT code in column order. All three codes must
+        # get 08/12/2023, not today's date (which would break duplicate detection).
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "08/12/2023\n"
+            "70553\n"
+            "08/12/2023\n"
+            "70553\n"
+            "Emergency dept visit\n"
+            "MRI brain\n"
+            "MRI brain\n"
+            "1\n"
+            "$845.00\n"
+            "1\n"
+            "$4,250.00\n"
+            "1\n"
+            "$4,250.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 3
+        assert all(item.service_date == date(2023, 8, 12) for item in items)
+
+    def test_document_order_preserved_in_mixed_bill(self, parser: BillParser) -> None:
+        # Column-interleaved codes physically precede the row-major codes on the page.
+        # The returned list must reflect page order: 99284, 70553, then 36415.
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "08/12/2023\n"
+            "70553\n"
+            "Emergency dept visit\n"
+            "MRI brain\n"
+            "1\n"
+            "$845.00\n"
+            "1\n"
+            "$4,250.00\n"
+            "08/12/2023  36415  Collection of venous blood  $45.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 3
+        assert items[0].cpt_code == "99284"
+        assert items[1].cpt_code == "70553"
+        assert items[2].cpt_code == "36415"
+
+
 class TestNpiLuhnValidation:
     def test_known_valid_npi_passes(self) -> None:
         # CMS-documented valid NPI: 1234567893, checksum = 70
