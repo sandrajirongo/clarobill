@@ -175,6 +175,7 @@ async def _run_analysis_pipeline(
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
+            plan_type=plan_type,
             non_payable_codes=non_payable_codes,
             anesthesia_cf=anesthesia_cf,
             anesthesia_base_units=anesthesia_base_units,
@@ -438,6 +439,13 @@ def _load_medicare_rates(
             indicators[row["hcpc"]] = row
 
     if not indicators:
+        logger.warning(
+            "No Medicare rates found for cpt_codes=%s locality=%s rate_date=%s — "
+            "PRICE_OUTLIER detection disabled for this bill. "
+            "Check that these codes exist in cms_pfs_indicators with proc_stat='A' "
+            "and effective_from <= %s.",
+            unique_codes, locality_code, rate_date_str, rate_date_str,
+        )
         return {}
 
     # Fetch GPCI values — year-based (GPCI values do not change mid-year)

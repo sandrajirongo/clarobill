@@ -26,6 +26,19 @@ class DetectedError:
     medicare_benchmark_rate: Decimal | None
 
 
+# Price outlier thresholds by plan type.
+# Medicare/Medicaid: the Medicare rate IS the payment ceiling — flag anything above 1.05× (rounding tolerance).
+# Commercial: negotiated rates run 1.2–1.6× Medicare; flag above 1.8× to avoid false positives on normal bills.
+# TRICARE/self_pay: tracks Medicare closely; flag above 1.2× to catch egregious overcharges.
+_PRICE_OUTLIER_THRESHOLDS: dict[str, float] = {
+    "medicare":   1.05,
+    "medicaid":   1.05,
+    "commercial": 1.80,
+    "tricare":    1.20,
+    "self_pay":   1.20,
+}
+_PRICE_OUTLIER_DEFAULT_THRESHOLD = 1.80
+
 # Anesthesia outlier thresholds.
 # Base units for legitimate anesthesia codes range from 3 (minor procedures) to
 # 15 (complex cardiac surgery). 25 is a generous ceiling — anything above implies
@@ -42,6 +55,7 @@ class RulesEngine:
         self,
         ncci_edit_pairs: dict[str, set[str]],
         medicare_rates: dict[str, Decimal],
+        plan_type: str | None = None,
         medicare_outlier_threshold: float = 1.8,
         exact_price_threshold: float = 1.1,
         non_payable_codes: dict[str, str] | None = None,
@@ -109,6 +123,7 @@ class RulesEngine:
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
+        self._plan_type = plan_type
         self._medicare_outlier_threshold = medicare_outlier_threshold
         self._exact_price_threshold = exact_price_threshold
         self._non_payable_codes = non_payable_codes or {}
@@ -176,12 +191,16 @@ class RulesEngine:
         return errors
 
     def _detect_price_outliers(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
-        """Flag charges that exceed the Medicare rate by the configured threshold.
+        """Flag charges that exceed the Medicare benchmark rate by a plan-type-aware threshold.
 
-        We compare against the Medicare non-facility rate as a benchmark.
-        Charges at 1.8× the Medicare rate warrant review — they may indicate
-        upcoding, billing for supplies bundled in the procedure, or simple error.
+        Threshold varies by insurance type because the Medicare rate means different things:
+          - Medicare/Medicaid patients: the Medicare rate is the payment ceiling (1.05× tolerance)
+          - Commercial: negotiated rates are 1.2–1.6× Medicare; flag above 1.8×
+          - TRICARE/self_pay: tracks Medicare closely; flag above 1.2×
         """
+        threshold = Decimal(str(
+            _PRICE_OUTLIER_THRESHOLDS.get(self._plan_type or "", _PRICE_OUTLIER_DEFAULT_THRESHOLD)
+        ))
         errors: list[DetectedError] = []
 
         for index, item in enumerate(line_items):
@@ -191,17 +210,26 @@ class RulesEngine:
                 continue
 
             charge = Decimal(str(item.total_charge))
-            if medicare_rate > 0 and charge > medicare_rate * Decimal(str(self._medicare_outlier_threshold)):
+            if medicare_rate > 0 and charge > medicare_rate * threshold:
                 overcharge = charge - medicare_rate
                 label = f" ({item.description})" if item.description else ""
+                if self._plan_type in ("medicare", "medicaid"):
+                    benchmark_context = (
+                        f"The Medicare rate of ${medicare_rate:.2f} is the maximum reimbursable "
+                        f"amount for this service — your charge of ${charge:.2f} exceeds it."
+                    )
+                else:
+                    benchmark_context = (
+                        f"The Medicare benchmark rate is ${medicare_rate:.2f} "
+                        f"— your charge is {charge / medicare_rate:.1f}× that amount."
+                    )
                 errors.append(DetectedError(
                     code="PRICE_OUTLIER",
                     severity="warning",
                     affected_indices=[index],
                     description=(
                         f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
-                        f"{label}. The Medicare benchmark rate is ${medicare_rate:.2f} "
-                        f"— your charge is {charge / medicare_rate:.1f}x that amount. "
+                        f"{label}. {benchmark_context} "
                         f"Consider requesting an itemized bill or asking your provider "
                         f"to justify the difference."
                     ),
