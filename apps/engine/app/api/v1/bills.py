@@ -1,5 +1,7 @@
 """Bill analysis API routes."""
 
+import asyncio
+import functools
 import logging
 import uuid
 from collections import Counter
@@ -1240,11 +1242,20 @@ async def generate_report(
     user_id: str = bill_row.data["user_id"]
     ai_summary: str = analysis_row.data["ai_summary"]
 
-    # Generate dispute letter and PDFs
+    # Generate dispute letter and PDFs.
+    # WeasyPrint is synchronous and CPU-bound — run in thread pool to avoid blocking
+    # the async event loop (and hitting Cloud Run's 60-second request timeout).
     dispute_letter_text = await ai_service.generate_dispute_letter(billing_errors, line_items, file_name)
     generator = ReportGenerator()
-    report_pdf = generator.generate_report_pdf(billing_errors, line_items, file_name, ai_summary)
-    dispute_pdf = generator.generate_dispute_letter_pdf(dispute_letter_text)
+    loop = asyncio.get_running_loop()
+    report_pdf = await loop.run_in_executor(
+        None,
+        functools.partial(generator.generate_report_pdf, billing_errors, line_items, file_name, ai_summary),
+    )
+    dispute_pdf = await loop.run_in_executor(
+        None,
+        functools.partial(generator.generate_dispute_letter_pdf, dispute_letter_text),
+    )
 
     # Upload PDFs to Supabase Storage (private bucket: 'reports')
     report_path = f"{user_id}/{bill_id}/report.pdf"

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { stripe, getPriceTier } from '@/lib/stripe';
+import { getCloudRunIdToken } from '@/lib/gcp-auth';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 // ─── BETA MODE ────────────────────────────────────────────────────────────────
@@ -85,14 +86,25 @@ export async function POST(
     );
 
     const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
-    const reportRes = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
+    const idToken = await getCloudRunIdToken(engineUrl);
+    // Fire report generation without awaiting — PDF + email can take 30–60s,
+    // which would exceed the Vercel function timeout. Payment is already recorded;
+    // the report will be generated and emailed in the background.
+    void fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+        ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
+      },
       body: JSON.stringify({ user_email: user.email, user_id: user.id }),
+    }).then(async (res) => {
+      if (!res.ok) {
+        console.error('[beta-checkout] Report generation failed for bill %s, status %d', billId, res.status);
+      }
+    }).catch((err: unknown) => {
+      console.error('[beta-checkout] Report generation request error for bill %s:', billId, err);
     });
-    if (!reportRes.ok) {
-      console.error('[beta-checkout] Report generation failed for bill %s, status %d', billId, reportRes.status);
-    }
 
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
