@@ -171,6 +171,11 @@ class BillParser:
 
             cpt_code = code_match.group(1)
 
+            # Exclude ZIP codes: "San Francisco, CA 94143" — the state abbreviation
+            # immediately before a 5-digit number identifies it as a ZIP, not a CPT code.
+            if re.search(r",\s*[A-Z]{2}\s+$", line[: code_match.start()]):
+                continue
+
             # Extract optional modifier from the procedure code line
             modifier: str | None = None
             mod_match = _MODIFIER_PATTERN.search(line)
@@ -266,10 +271,28 @@ class BillParser:
         by charges — so charges are 8+ lines from their codes and proximity search misses
         them entirely. This method collects all unconsumed, non-summary dollar amounts
         in document order and maps the nth amount to the nth unmatched CPT code.
+
+        The search for available charges stops at the first summary/total line that
+        appears after the last unmatched CPT code. This prevents footer amounts (the
+        standalone "$9,579.00" line under "TOTAL CHARGES" in a payment summary section)
+        from being picked up and assigned to individual codes.
         """
-        # One charge per line (last match) from non-consumed, non-summary lines
+        # Stop collecting charges at the first summary line that follows the last CPT code.
+        # "TOTAL CHARGES\n$9,579.00" — the $9,579 line appears on its own with no keyword,
+        # so line-level filtering alone misses it. The boundary stops collection before it.
+        last_unmatched_line = unmatched[-1][0]
+        upper_bound = len(lines)
+        for j in range(last_unmatched_line + 1, len(lines)):
+            if _SUMMARY_LINE_PATTERN.search(lines[j]):
+                upper_bound = j
+                break
+
+        # One charge per line (last match) from non-consumed, non-summary lines,
+        # up to the boundary established above.
         available: list[tuple[int, float]] = []
         for j, line in enumerate(lines):
+            if j >= upper_bound:
+                break
             if j in consumed_lines:
                 continue
             if _SUMMARY_LINE_PATTERN.search(line):

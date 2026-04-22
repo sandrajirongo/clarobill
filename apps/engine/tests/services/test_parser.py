@@ -294,6 +294,94 @@ class TestNpiExtraction:
         assert parser.extract_npi(text) is None
 
 
+class TestZipCodeExclusion:
+    def test_zip_code_in_address_not_extracted_as_cpt(self, parser: BillParser) -> None:
+        # "San Francisco, CA 94143" — 94143 matches the 5-digit CPT pattern but is a ZIP code.
+        # It must not be extracted as a line item.
+        text = (
+            "UCSF MEDICAL CENTER\n"
+            "505 Parnassus Ave\n"
+            "San Francisco, CA 94143\n"
+            "99214  Office Visit  $350.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].cpt_code == "99214"
+
+    def test_zip_code_exclusion_does_not_affect_column_interleaved_codes(self, parser: BillParser) -> None:
+        # ZIP in header must be excluded while column-interleaved CPT codes are still matched.
+        text = (
+            "Some Hospital\n"
+            "123 Main St, CA 90210\n"
+            "08/12/2023\n"
+            "99284\n"
+            "08/12/2023\n"
+            "70553\n"
+            "Emergency dept visit\n"
+            "MRI brain\n"
+            "1\n"
+            "$845.00\n"
+            "1\n"
+            "$4,250.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 2
+        codes = [i.cpt_code for i in items]
+        assert "99284" in codes
+        assert "70553" in codes
+        assert "90210" not in codes
+
+
+class TestFooterAmountExclusion:
+    def test_total_charges_footer_not_assigned_as_code_charge(self, parser: BillParser) -> None:
+        # "TOTAL CHARGES\n$9,579.00" — the $9,579 is on its own line with no keyword,
+        # but the upper-bound search stops collection before it.
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "08/12/2023\n"
+            "70553\n"
+            "Emergency dept visit\n"
+            "MRI brain\n"
+            "1\n"
+            "$845.00\n"
+            "1\n"
+            "$4,250.00\n"
+            "TOTAL CHARGES\n"
+            "$9,579.00\n"
+            "PAYMENT SUMMARY\n"
+            "Total Charges\n"
+            "$9,579.00\n"
+            "Balance Due\n"
+            "$1,234.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 2
+        charges = sorted(i.total_charge for i in items)
+        assert charges == [845.00, 4250.00]
+
+    def test_payment_summary_amounts_not_assigned_as_code_charges(self, parser: BillParser) -> None:
+        # Adjustment and balance amounts in the payment summary must not be picked up.
+        text = (
+            "08/12/2023\n"
+            "99284\n"
+            "Emergency dept visit\n"
+            "1\n"
+            "$845.00\n"
+            "TOTAL CHARGES\n"
+            "$845.00\n"
+            "PAYMENT SUMMARY\n"
+            "Insurance Payment\n"
+            "($600.00)\n"
+            "Balance Due\n"
+            "$245.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].cpt_code == "99284"
+        assert items[0].total_charge == 845.00
+
+
 class TestColumnInterleavedOcr:
     """Google Vision OCR returns table PDFs column-by-column rather than row-by-row.
 

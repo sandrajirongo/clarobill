@@ -53,8 +53,8 @@ class AiAnalysisService:
 
         prompt = (
             "You are helping a patient understand potential errors in their medical bill. "
-            "Summarize the following billing issues in 2-3 plain-English sentences. "
-            "Be specific about what was found and how much the patient might save. "
+            "Write 2-3 plain-English sentences summarizing what was found and how much the patient might save. "
+            "Use plain prose only — no Markdown, no bold, no headers, no bullet points, no emojis. "
             f"Total potential overcharge: ${total_overcharge:.2f}.\n\n"
             f"Issues found:\n{error_descriptions}"
         )
