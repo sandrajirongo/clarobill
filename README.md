@@ -75,7 +75,7 @@ Credentials (`clarobill-vision-sa` service account).
 5. Results teaser — see total potential savings before paying
 6. Pay → receive full PDF report + dispute letter by email
 
-### Rules engine (10 rules)
+### Rules engine (11 rules)
 | Rule | Benchmark | Severity |
 |------|-----------|----------|
 | `NEGOTIATED_RATE_EXCEEDED` | Insurer's contracted rate (MRF) | Critical |
@@ -85,9 +85,12 @@ Credentials (`clarobill-vision-sa` service account).
 | `NON_PAYABLE_CODE` | CMS inactive/bundled codes | Critical/Warning |
 | `TERMINATED_CODE_BILLED` | CMS HCPCS termination dates | Critical |
 | `ANESTHESIA_OUTLIER` | CMS base units + locality CF | Critical |
+| `MUE_EXCEEDED` | CMS Medically Unlikely Edit limits | Critical/Warning |
 | `FACILITY_CHARGE_OUTLIER` | CMS OPPS cap | Warning |
 | `AMBULANCE_CHARGE_OUTLIER` | CMS Ambulance Fee Schedule | Warning |
-| `PRICE_OUTLIER` | Medicare fee schedule rate | Warning |
+| `PRICE_OUTLIER` | Medicare fee schedule (plan-type-aware threshold) | Warning |
+
+`PRICE_OUTLIER` thresholds: medicare/medicaid 1.05×, tricare/self_pay 1.20×, commercial/unknown 1.80×.
 
 See `docs/rules-engine.md` for complete rule documentation.
 
@@ -212,16 +215,22 @@ Key engine variables:
 
 ### Deploy the engine to Cloud Run
 
-```bash
-gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/clarobill-prd/clarobill-engine/engine:latest \
-  apps/engine/
+**Engine deploys automatically.** Any push to `main` that touches `apps/engine/**`
+triggers the Cloud Build trigger `engine-deploy-on-push`, which builds the Docker
+image, pushes it to Artifact Registry, and deploys to the `clarobill-engine`
+Cloud Run service. No manual deploy needed.
 
-gcloud run deploy clarobill-engine \
-  --image us-central1-docker.pkg.dev/clarobill-prd/clarobill-engine/engine:latest \
-  --region us-central1 \
-  --service-account clarobill-vision-sa@clarobill-prd.iam.gserviceaccount.com \
+**Manual deploy / rollback:**
+```bash
+# Build and deploy HEAD manually
+gcloud builds submit \
+  --config apps/engine/cloudbuild.yaml \
   --project clarobill-prd
+
+# Roll back to a specific commit
+gcloud run services update clarobill-engine \
+  --image us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy/clarobill-engine:<COMMIT_SHA> \
+  --region us-central1
 ```
 
 ### Deploy the MRF pipeline

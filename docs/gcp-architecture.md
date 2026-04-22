@@ -43,7 +43,18 @@ is required. It is the authoritative reference for infrastructure setup and IAM.
                           ┌─────────────────────────────────┐
                           │       Cloud Run Service          │
                           │   clarobill-engine (FastAPI)     │──► patient bill analysis
-                          │   (Railway/Fly.io in prod)       │    OCR + rules engine
+                          └──────────────────────────────────┘    OCR + rules engine
+                                         ▲
+                          ┌──────────────┴──────────────────┐
+                          │         Cloud Build              │
+                          │  trigger: engine-deploy-on-push  │
+                          │  fires on push to main           │
+                          │  when apps/engine/** changes     │
+                          └──────────────────────────────────┘
+                                         ▲
+                          ┌──────────────┴──────────────────┐
+                          │  GitHub: sandrajirongo/clarobill │
+                          │  branch: main                    │
                           └──────────────────────────────────┘
                                          │
                           ┌──────────────▼──────────────────┐
@@ -206,7 +217,9 @@ per hospital. Loaded by the parser from CMS MRF v2.0.0 files.
 
 ---
 
-### 5. Artifact Registry — `clarobill-pipeline`
+### 5. Artifact Registry
+
+#### `clarobill-pipeline`
 
 **Repository:** `us-central1-docker.pkg.dev/clarobill-prd/clarobill-pipeline`  
 **Image:** `mrf-pipeline:latest`
@@ -214,6 +227,35 @@ per hospital. Loaded by the parser from CMS MRF v2.0.0 files.
 Stores the Docker image used by both Cloud Run Jobs. The image is built by
 `gcloud builds submit` in Cloud Build and pushed here. Both jobs are updated
 to use the new image digest after each build.
+
+#### `cloud-run-source-deploy`
+
+**Repository:** `us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy`  
+**Image:** `clarobill-engine:$COMMIT_SHA` and `clarobill-engine:latest`
+
+Stores the FastAPI engine image. Built and pushed automatically by the Cloud Build
+trigger on every push to main that touches `apps/engine/**`. Both a commit-SHA tag
+(for rollback) and `latest` are pushed on each build.
+
+### 6. Cloud Build — Engine Auto-Deploy Trigger
+
+**Trigger name:** `rmgpgab-clarobill-engine-us-central1-sandrajirongo-clarobillwrs`  
+**Event:** Push to branch `^main$`  
+**Included files filter:** `apps/engine/**`  
+**Build config:** `apps/engine/cloudbuild.yaml`  
+**Repository:** `sandrajirongo/clarobill` (GitHub App connection)
+
+**What it does on each trigger:**
+1. Builds the Docker image from `apps/engine/` as the build context
+2. Pushes `clarobill-engine:$COMMIT_SHA` and `clarobill-engine:latest` to `cloud-run-source-deploy`
+3. Deploys `clarobill-engine:$COMMIT_SHA` to the `clarobill-engine` Cloud Run service in `us-central1`
+
+**Rollback:** To roll back to a specific commit, deploy the commit-SHA image manually:
+```bash
+gcloud run services update clarobill-engine \
+  --image us-central1-docker.pkg.dev/clarobill-prd/cloud-run-source-deploy/clarobill-engine:<COMMIT_SHA> \
+  --region us-central1
+```
 
 ---
 
@@ -268,10 +310,24 @@ project-level IAM role. Scope is strictly limited to triggering the two jobs.
 
 ---
 
+### Cloud Build Service Account
+
+**Email:** `1034973715010@cloudbuild.gserviceaccount.com`  
+**Used by:** Cloud Build trigger (`engine-deploy-on-push`)
+
+| Permission | Role | Why required |
+|------------|------|-------------|
+| Deploy to Cloud Run | `roles/run.developer` on project | Required to call `gcloud run services update` in the build steps. Without this the deploy step returns 403. |
+| Act as engine runtime SA | `roles/iam.serviceAccountUser` on `clarobill-vision-sa` | Cloud Run requires the deployer to have impersonation rights over the service's runtime SA. Without this the deploy step fails with a permission error even if `run.developer` is granted. |
+
+**Does NOT have:** BigQuery access, GCS access, Supabase credentials, or Scheduler permissions.
+
+---
+
 ### `clarobill-vision-sa`
 
 **Email:** `clarobill-vision-sa@clarobill-prd.iam.gserviceaccount.com`  
-**Used by:** FastAPI engine (running on Railway/Fly.io)
+**Used by:** FastAPI engine (Cloud Run service `clarobill-engine`)
 
 | Permission | Role | Why required |
 |------------|------|-------------|
@@ -283,10 +339,10 @@ project-level IAM role. Scope is strictly limited to triggering the two jobs.
 invoker, or Scheduler permissions. It reads BigQuery data and calls Vision API
 only.
 
-**Credential management:** A JSON key for this SA is stored as an environment
-variable (`GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_SERVICE_ACCOUNT_JSON`) in
-the Railway/Fly.io deployment environment. It is never committed to the repo.
-On Cloud Run the runtime SA provides ADC automatically without a key file.
+**Credential management:** The engine runs on Cloud Run with this SA as the runtime
+service account. Application Default Credentials are provided automatically by Cloud
+Run — no JSON key file needed. The SA is never stored in the repo or in environment
+variables.
 
 ---
 
