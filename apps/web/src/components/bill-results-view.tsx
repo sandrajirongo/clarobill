@@ -285,7 +285,16 @@ function DownloadButton({ billId, type, label }: {
       const res = await fetch(`/api/bills/${billId}/download?type=${type}`);
       if (!res.ok) return;
       const { url } = await res.json() as { url: string };
-      window.open(url, '_blank');
+      // window.open() is blocked by popup blockers when called from an async callback
+      // (user gesture context is lost after the fetch). A programmatic <a> click
+      // navigates as a link and is not subject to the same restriction.
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } finally {
       setLoading(false);
     }
