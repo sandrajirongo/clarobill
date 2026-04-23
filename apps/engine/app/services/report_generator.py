@@ -82,10 +82,16 @@ class ReportGenerator:
         pdf.set_auto_page_break(auto=True, margin=24)
         pdf.add_page()
 
-        # DejaVu Sans: Unicode TTF — handles all characters Claude may output
+        # DejaVu Sans: Unicode TTF — handles all characters Claude may output.
+        # Oblique is in fonts-dejavu (full package); fall back to Regular if absent
+        # so a partial font install never blocks PDF generation entirely.
         pdf.add_font("DejaVu", style="",  fname=_dejavu("DejaVuSans.ttf"))
         pdf.add_font("DejaVu", style="B", fname=_dejavu("DejaVuSans-Bold.ttf"))
-        pdf.add_font("DejaVu", style="I", fname=_dejavu("DejaVuSans-Oblique.ttf"))
+        try:
+            pdf.add_font("DejaVu", style="I", fname=_dejavu("DejaVuSans-Oblique.ttf"))
+        except FileNotFoundError:
+            logger.warning("DejaVuSans-Oblique.ttf not found — italic falls back to Regular")
+            pdf.add_font("DejaVu", style="I", fname=_dejavu("DejaVuSans.ttf"))
 
         w = pdf.w - pdf.l_margin - pdf.r_margin  # usable width: 170mm
 
