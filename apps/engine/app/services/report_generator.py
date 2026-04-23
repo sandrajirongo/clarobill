@@ -33,6 +33,27 @@ _MUTED = (107, 124, 106)
 _RULE = (220, 220, 215)
 _GRAY = (140, 140, 140)
 
+# Helvetica is a Latin-1 core PDF font — Claude output routinely contains
+# typographic Unicode characters outside that range. Map the common ones to
+# ASCII equivalents before any text touches fpdf2.
+_LATIN1_MAP = str.maketrans({
+    "—": "--",   # em dash
+    "–": "-",    # en dash
+    "‘": "'",    # left single quote
+    "’": "'",    # right single quote
+    "“": '"',    # left double quote
+    "”": '"',    # right double quote
+    "…": "...",  # ellipsis
+    "•": "-",    # bullet
+    " ": " ",    # non-breaking space
+    "·": "-",    # middle dot
+})
+
+
+def _s(text: str) -> str:
+    """Sanitize text for fpdf2 Latin-1 core fonts."""
+    return text.translate(_LATIN1_MAP).encode("latin-1", errors="replace").decode("latin-1")
+
 
 class ReportGenerator:
     """Builds the branded analysis report PDF and the editable dispute letter DOCX."""
@@ -63,7 +84,7 @@ class ReportGenerator:
         # ── Letterhead ──────────────────────────────────────────────────────
         pdf.set_font("Helvetica", "B", 22)
         pdf.set_text_color(*_SAGE)
-        name_display = bill_file_name[:60]
+        name_display = _s(bill_file_name[:60])
         name_px = pdf.get_string_width(name_display) + 2
         pdf.cell(w - name_px, 10, "ClaroBill", align="L")
         pdf.set_font("Helvetica", "", 9)
@@ -109,7 +130,7 @@ class ReportGenerator:
         section("Summary")
         pdf.set_font("Helvetica", "", 10)
         pdf.set_text_color(*_BODY)
-        pdf.multi_cell(0, 5.5, ai_summary)
+        pdf.multi_cell(0, 5.5, _s(ai_summary))
         pdf.ln(8)
 
         # ── Findings ────────────────────────────────────────────────────────
@@ -133,10 +154,10 @@ class ReportGenerator:
                 pdf.set_line_width(0.2)
                 pdf.set_font("Helvetica", "B", 9)
                 pdf.set_text_color(*_BODY)
-                pdf.cell(cw[0], 7, e.code.replace("_", " ").title()[:28], border="B")
+                pdf.cell(cw[0], 7, _s(e.code.replace("_", " ").title()[:28]), border="B")
                 pdf.set_font("Helvetica", "", 9)
-                pdf.cell(cw[1], 7, e.severity.capitalize(), border="B")
-                pdf.cell(cw[2], 7, e.description[:65], border="B")
+                pdf.cell(cw[1], 7, _s(e.severity.capitalize()), border="B")
+                pdf.cell(cw[2], 7, _s(e.description[:65]), border="B")
                 pdf.set_font("Helvetica", "B", 9)
                 pdf.cell(cw[3], 7, f"${e.estimated_overcharge:.2f}", border="B", align="R")
                 pdf.ln()
@@ -159,13 +180,13 @@ class ReportGenerator:
             pdf.set_line_width(0.2)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(*_BODY)
-            pdf.cell(cw2[0], 7, item.cpt_code, border="B")
-            pdf.cell(cw2[1], 7, item.description[:55], border="B")
-            pdf.cell(cw2[2], 7, str(item.service_date), border="B")
+            pdf.cell(cw2[0], 7, _s(item.cpt_code), border="B")
+            pdf.cell(cw2[1], 7, _s(item.description[:55]), border="B")
+            pdf.cell(cw2[2], 7, _s(str(item.service_date)), border="B")
             pdf.set_font("Helvetica", "B", 9)
             pdf.cell(cw2[3], 7, f"${item.total_charge:.2f}", border="B", align="R")
             pdf.set_font("Helvetica", "", 9)
-            pdf.cell(cw2[4], 7, item.modifier or "-", border="B")
+            pdf.cell(cw2[4], 7, _s(item.modifier or "-"), border="B")
             pdf.ln()
 
         # ── Footer ───────────────────────────────────────────────────────────

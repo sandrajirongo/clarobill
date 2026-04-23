@@ -64,6 +64,18 @@ class TestGenerateReportPdf:
         pdf = generator.generate_report_pdf([], items, "bill.pdf", "Summary.")
         assert pdf[:4] == b"%PDF"
 
+    def test_unicode_in_ai_summary_does_not_crash(self, generator: ReportGenerator) -> None:
+        # Claude routinely outputs em dashes, smart quotes, ellipses
+        summary = "You were overcharged — by $350. “Doubt the bill,” we say…"
+        pdf = generator.generate_report_pdf([], [], "bill.pdf", summary)
+        assert pdf[:4] == b"%PDF"
+
+    def test_unicode_in_error_description_does_not_crash(self, generator: ReportGenerator) -> None:
+        errors = [make_error("DUPLICATE_CHARGE", 100.00)]
+        errors[0] = errors[0].model_copy(update={"description": "Charged twice — see line 3"})
+        pdf = generator.generate_report_pdf(errors, [], "bill.pdf", "Summary.")
+        assert pdf[:4] == b"%PDF"
+
 
 def _python_docx_available() -> bool:
     try:
