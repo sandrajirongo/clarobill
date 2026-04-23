@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { createSupabaseServerClient, createSupabaseServiceClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 // GET /api/bills/[billId]/download?type=report|dispute-letter
@@ -53,12 +53,17 @@ export async function GET(
     );
   }
 
-  // Signed URL valid for 60 seconds — enough to open in a new tab
-  const { data: signedUrl, error } = await supabase.storage
+  // Ownership is verified via RLS above (user-scoped query returned the row).
+  // Signed URL creation requires the service role — private bucket storage RLS
+  // policies do not grant the user client permission to call createSignedUrl,
+  // even for objects in their own folder.
+  const service = createSupabaseServiceClient();
+  const { data: signedUrl, error } = await service.storage
     .from('reports')
     .createSignedUrl(storagePath, 60);
 
   if (error || !signedUrl?.signedUrl) {
+    console.error('[download] createSignedUrl failed for bill %s type %s:', billId, type, error?.message);
     return NextResponse.json(
       { error: { code: 'ANALYSIS_FAILED', detail: 'Could not generate download link.', step: 'download' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 500 }
