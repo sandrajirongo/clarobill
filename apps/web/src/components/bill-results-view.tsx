@@ -57,7 +57,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
 
     const interval = setInterval(async () => {
       count++;
-      if (count >= 18) {
+      if (count >= 6) {
         clearInterval(interval);
         setReportTimedOut(true);
         return;
@@ -222,8 +222,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
                 <div>
                   <p className={s.reportPendingTitle}>Generating your report…</p>
                   <p className={s.reportPendingSub}>
-                    Your full PDF report and ready-to-send dispute letter are being created.
-                    This usually takes under a minute — the page will update automatically.
+                    Your PDF report and dispute letter are being created. This takes about 30 seconds.
                   </p>
                 </div>
               </div>
