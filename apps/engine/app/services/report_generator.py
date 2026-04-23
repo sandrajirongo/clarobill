@@ -85,8 +85,7 @@ class ReportGenerator:
             run.font.name = "Georgia"
             run.font.size = Pt(11)
             run.bold = bold
-            if bold:
-                run.font.color.rgb = RGBColor(0x2D, 0x4A, 0x2A)  # sage
+            run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
 
         # Split on blank lines → paragraphs
         paragraphs = [blk.strip() for blk in dispute_letter_text.split("\n\n") if blk.strip()]
