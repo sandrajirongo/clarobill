@@ -1185,7 +1185,7 @@ async def generate_report(
     Idempotent — safe to call more than once for the same bill.
     """
     # Load the bill and existing analysis
-    bill_row = supabase.table("bills").select("id,file_name,file_path,user_id").eq("id", bill_id).single().execute()
+    bill_row = supabase.table("bills").select("id,file_name,file_path,user_id,hospital_name,payer_name").eq("id", bill_id).single().execute()
     if not bill_row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found.")
 
@@ -1240,28 +1240,33 @@ async def generate_report(
 
     file_name: str = bill_row.data["file_name"]
     user_id: str = bill_row.data["user_id"]
+    hospital_name: str | None = bill_row.data.get("hospital_name")
+    payer_name: str | None = bill_row.data.get("payer_name")
     ai_summary: str = analysis_row.data["ai_summary"]
 
-    # Generate dispute letter and PDFs.
-    # WeasyPrint is synchronous and CPU-bound — run in thread pool to avoid blocking
-    # the async event loop (and hitting Cloud Run's 60-second request timeout).
-    dispute_letter_text = await ai_service.generate_dispute_letter(billing_errors, line_items, file_name)
+    # Generate dispute letter text (Claude) then build output files.
+    # WeasyPrint (report PDF) is synchronous and CPU-bound — run in thread pool.
+    # python-docx (dispute letter) is fast in-memory; no executor needed.
+    dispute_letter_text = await ai_service.generate_dispute_letter(
+        billing_errors, line_items, file_name,
+        hospital_name=hospital_name, payer_name=payer_name,
+    )
     generator = ReportGenerator()
     loop = asyncio.get_running_loop()
     report_pdf = await loop.run_in_executor(
         None,
         functools.partial(generator.generate_report_pdf, billing_errors, line_items, file_name, ai_summary),
     )
-    dispute_pdf = await loop.run_in_executor(
-        None,
-        functools.partial(generator.generate_dispute_letter_pdf, dispute_letter_text),
-    )
+    dispute_docx = generator.generate_dispute_letter_docx(dispute_letter_text)
 
-    # Upload PDFs to Supabase Storage (private bucket: 'reports')
+    # Upload to Supabase Storage (private bucket: 'reports')
     report_path = f"{user_id}/{bill_id}/report.pdf"
-    dispute_path = f"{user_id}/{bill_id}/dispute-letter.pdf"
+    dispute_path = f"{user_id}/{bill_id}/dispute-letter.docx"
     supabase.storage.from_("reports").upload(report_path, report_pdf, {"content-type": "application/pdf", "upsert": "true"})
-    supabase.storage.from_("reports").upload(dispute_path, dispute_pdf, {"content-type": "application/pdf", "upsert": "true"})
+    supabase.storage.from_("reports").upload(
+        dispute_path, dispute_docx,
+        {"content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "upsert": "true"},
+    )
 
     # Store storage paths in analysis_results
     supabase.table("analysis_results").update({
@@ -1269,12 +1274,12 @@ async def generate_report(
         "dispute_letter_url": dispute_path,
     }).eq("bill_id", bill_id).execute()
 
-    # Send email with both PDFs attached
+    # Send email with report PDF + dispute letter DOCX attached
     email_service.send_report_email(
         to_email=body.user_email,
         bill_file_name=file_name,
         report_pdf=report_pdf,
-        dispute_letter_pdf=dispute_pdf,
+        dispute_letter_docx=dispute_docx,
     )
 
     logger.info("Report generated and emailed for bill %s", bill_id)

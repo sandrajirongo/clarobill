@@ -65,22 +65,50 @@ class TestBuildReportHtml:
 
     def test_includes_disclaimer(self, generator: ReportGenerator) -> None:
         html = generator._build_report_html([], [], "bill.pdf", "Summary.")
-        assert "Disclaimer" in html
+        assert "informational purposes only" in html
 
     def test_no_errors_notice_shown_when_empty(self, generator: ReportGenerator) -> None:
         html = generator._build_report_html([], [], "bill.pdf", "Clean bill.")
         assert "No billing errors were detected" in html
 
 
-class TestBuildDisputeLetterHtml:
-    def test_includes_letter_text(self, generator: ReportGenerator) -> None:
-        letter = "Dear Billing Department,\n\nI dispute this charge.\n\nSincerely,\n[YOUR NAME]"
-        html = generator._build_dispute_letter_html(letter)
-        assert "I dispute this charge" in html
+def _python_docx_available() -> bool:
+    try:
+        import docx  # noqa: PLC0415, F401
+        return True
+    except ImportError:
+        return False
 
-    def test_includes_placeholder_instruction(self, generator: ReportGenerator) -> None:
-        html = generator._build_dispute_letter_html("Letter text.")
-        assert "YOUR NAME" in html
+
+python_docx_available = pytest.mark.skipif(
+    not _python_docx_available(),
+    reason="python-docx not installed",
+)
+
+
+class TestDisputeLetterDocx:
+    @python_docx_available
+    def test_returns_bytes(self, generator: ReportGenerator) -> None:
+        letter = "Dear Billing Department,\n\nI dispute this charge.\n\nSincerely,\n[YOUR NAME]"
+        result = generator.generate_dispute_letter_docx(letter)
+        assert isinstance(result, bytes)
+        assert len(result) > 0
+
+    @python_docx_available
+    def test_docx_magic_bytes(self, generator: ReportGenerator) -> None:
+        result = generator.generate_dispute_letter_docx("Dispute 1:\n\nCharged twice.\n\nSincerely,\n[YOUR NAME]")
+        # DOCX is a ZIP archive — starts with PK magic bytes
+        assert result[:2] == b"PK"
+
+    @python_docx_available
+    def test_dispute_header_bold(self, generator: ReportGenerator) -> None:
+        from docx import Document  # noqa: PLC0415
+        from io import BytesIO  # noqa: PLC0415
+        letter = "Dispute 1: Duplicate charge.\n\nYou were charged twice for CPT 99214.\n\nSincerely,\n[YOUR NAME]"
+        result = generator.generate_dispute_letter_docx(letter)
+        doc = Document(BytesIO(result))
+        bold_runs = [r for p in doc.paragraphs for r in p.runs if r.bold]
+        assert any("Dispute 1" in r.text for r in bold_runs)
 
 
 def _weasyprint_available() -> bool:
@@ -109,8 +137,8 @@ class TestPdfGeneration:
         assert len(pdf) > 0
         assert pdf[:4] == b"%PDF"
 
-    @weasyprint_available
-    def test_generate_dispute_letter_pdf_returns_bytes(self, generator: ReportGenerator) -> None:
-        pdf = generator.generate_dispute_letter_pdf("Dear Provider,\n\n[YOUR NAME]")
-        assert isinstance(pdf, bytes)
-        assert pdf[:4] == b"%PDF"
+    @python_docx_available
+    def test_generate_dispute_letter_docx_returns_bytes(self, generator: ReportGenerator) -> None:
+        docx_bytes = generator.generate_dispute_letter_docx("Dear Provider,\n\nDispute 1:\n\nCharged twice.\n\n[YOUR NAME]")
+        assert isinstance(docx_bytes, bytes)
+        assert docx_bytes[:2] == b"PK"

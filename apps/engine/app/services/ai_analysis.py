@@ -74,6 +74,8 @@ class AiAnalysisService:
         errors: list[BillingError],
         line_items: list[ParsedLineItem],
         bill_file_name: str,
+        hospital_name: str | None = None,
+        payer_name: str | None = None,
     ) -> str:
         """Generate a formal dispute letter the patient can send to their provider.
 
@@ -81,9 +83,11 @@ class AiAnalysisService:
             errors: Detected billing errors from the rules engine.
             line_items: Parsed line items from the bill.
             bill_file_name: Original file name — used to identify the bill in the letter.
+            hospital_name: Provider name extracted from the bill or user input, if available.
+            payer_name: Insurer name from user verification, if available.
 
         Returns:
-            Full text of a formal dispute letter (Markdown formatting).
+            Plain-text dispute letter with no Markdown formatting, ready for DOCX conversion.
         """
         if not errors:
             return ""
@@ -96,25 +100,40 @@ class AiAnalysisService:
             f"- {e.code}: {e.description} (estimated overcharge: ${e.estimated_overcharge:.2f})"
             for e in errors
         )
-        # Build a summary of the line items for reference
         line_item_summary = "\n".join(
             f"  - CPT {item.cpt_code}: {item.description}, ${item.total_charge:.2f}, "
             f"date {item.service_date}"
-            for item in line_items[:20]  # Cap at 20 items to stay within token budget
+            for item in line_items[:20]
+        )
+
+        recipient_line = (
+            f"{hospital_name}\nBilling Department" if hospital_name
+            else "Billing Department\n[PROVIDER NAME AND ADDRESS]"
+        )
+        insurer_line = (
+            f"Insurance: {payer_name}" if payer_name else ""
         )
 
         prompt = (
             "You are a medical billing advocate helping a patient write a formal dispute letter "
             "to their healthcare provider. Write a professional, firm, and specific dispute letter "
             "based on the billing errors below.\n\n"
-            "Instructions:\n"
-            "- Address it to 'Billing Department' (the patient will add the provider name)\n"
-            "- Include a placeholder [YOUR NAME] and [YOUR DATE OF BIRTH] for the patient to fill in\n"
-            "- Reference each specific error with CPT codes and dates\n"
-            "- Cite the total disputed amount\n"
-            "- Request an itemized bill and a corrected statement within 30 days\n"
-            "- Keep it under 400 words\n"
-            "- Use formal letter format with today's date as [DATE]\n\n"
+            "CRITICAL FORMATTING RULES — follow exactly:\n"
+            "- Plain text only. No Markdown. No asterisks, no pound signs, no dashes as bullets.\n"
+            "- Separate every section with a blank line.\n"
+            "- Label each dispute item as 'Dispute 1:', 'Dispute 2:', etc. on its own line, "
+            "followed by a blank line, then the detail paragraph.\n"
+            "- No bold, no italics, no underline, no lists.\n\n"
+            "Letter structure (use exactly this order):\n"
+            "1. Today's date as [DATE]\n"
+            f"2. Recipient block (already filled in — use as-is):\n{recipient_line}\n"
+            "3. Subject line: Re: Billing Dispute — [bill reference]\n"
+            "4. Salutation: Dear Billing Department,\n"
+            "5. Opening paragraph (1-2 sentences citing the total disputed amount)\n"
+            "6. One section per billing error, each starting with 'Dispute N:'\n"
+            "7. Closing paragraph requesting itemized bill and corrected statement within 30 days\n"
+            f"8. Closing: Sincerely,\n\n[YOUR NAME]\n[YOUR DATE OF BIRTH]\n{insurer_line}\n"
+            "   Member ID: [YOUR MEMBER ID]\n\n"
             f"Bill reference: {bill_file_name}\n"
             f"Total disputed amount: ${total_overcharge:.2f}\n\n"
             f"Billing errors found:\n{error_list}\n\n"

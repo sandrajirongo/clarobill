@@ -37,7 +37,7 @@ class EmailService:
         to_email: str,
         bill_file_name: str,
         report_pdf: bytes,
-        dispute_letter_pdf: bytes,
+        dispute_letter_docx: bytes,
     ) -> None:
         """Send the analysis report and dispute letter to the patient.
 
@@ -45,36 +45,37 @@ class EmailService:
             to_email: Recipient email address.
             bill_file_name: Original bill filename — used in the subject line.
             report_pdf: Full analysis report PDF bytes.
-            dispute_letter_pdf: Dispute letter PDF bytes.
+            dispute_letter_docx: Editable dispute letter Word document bytes.
         """
         if self._test_mode:
             logger.info(
                 "TEST MODE — email not sent. report=%d bytes, letter=%d bytes",
                 len(report_pdf),
-                len(dispute_letter_pdf),
+                len(dispute_letter_docx),
             )
             return
 
         message = Mail(
             from_email=self._from_email,
             to_emails=to_email,
-            subject=f"Your Clarobill Report — {bill_file_name}",
+            subject=f"Your ClaroBill Report — {bill_file_name}",
             html_content=self._email_body_html(bill_file_name),
         )
 
+        docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         message.attachment = [
-            self._make_attachment(report_pdf, "clarobill-report.pdf", "clarobill-report"),
-            self._make_attachment(dispute_letter_pdf, "dispute-letter.pdf", "dispute-letter"),
+            self._make_attachment(report_pdf, "clarobill-report.pdf", "clarobill-report", "application/pdf"),
+            self._make_attachment(dispute_letter_docx, "dispute-letter.docx", "dispute-letter", docx_mime),
         ]
 
         response = self._client.send(message)
         logger.info("Report email sent, status=%s", response.status_code)
 
     @staticmethod
-    def _make_attachment(pdf_bytes: bytes, filename: str, content_id: str) -> Attachment:
+    def _make_attachment(file_bytes: bytes, filename: str, content_id: str, mime_type: str) -> Attachment:
         attachment = Attachment()
-        attachment.file_content = FileContent(base64.b64encode(pdf_bytes).decode())
-        attachment.file_type = FileType("application/pdf")
+        attachment.file_content = FileContent(base64.b64encode(file_bytes).decode())
+        attachment.file_type = FileType(mime_type)
         attachment.file_name = FileName(filename)
         attachment.disposition = Disposition("attachment")
         attachment.content_id = ContentId(content_id)
@@ -90,10 +91,11 @@ class EmailService:
           <p>Your medical bill analysis is ready.</p>
           <p>We've attached two documents to this email:</p>
           <ul>
-            <li><strong>Clarobill Report</strong> — a full breakdown of findings and potential
+            <li><strong>ClaroBill Report (PDF)</strong> — a full breakdown of findings and potential
               overcharges on <em>{bill_file_name}</em>.</li>
-            <li><strong>Dispute Letter</strong> — a ready-to-send letter you can submit to
-              your provider. Fill in your name, date of birth, and today's date before sending.</li>
+            <li><strong>Dispute Letter (Word document)</strong> — an editable letter addressed to
+              your provider's billing department. Open it in Word or Google Docs, fill in the
+              highlighted placeholders, and send.</li>
           </ul>
           <p>If you have questions, reply to this email.</p>
           <hr style="border:none;border-top:1px solid #eee;margin:32px 0">

@@ -1,33 +1,38 @@
-"""Report generator — converts analysis results into PDF documents.
+"""Report generator — converts analysis results into PDF and DOCX documents.
 
-Produces two PDFs:
-  1. Full analysis report — findings, error details, line item table
-  2. Dispute letter — ready-to-send letter for the patient
+Produces two outputs:
+  1. Full analysis report — branded PDF (findings, line items, AI summary)
+  2. Dispute letter — editable DOCX the patient fills in and sends
 
-HTML is built with Python string formatting; weasyprint converts to PDF.
+HTML → PDF via WeasyPrint (synchronous, run in executor by the caller).
+Dispute letter → DOCX via python-docx (fast, in-memory).
 
 Prerequisite: A 'reports' Supabase Storage bucket must exist and be private.
 Create it in the Supabase dashboard: Storage → New Bucket → name: 'reports', private: true.
 """
 
 import logging
+import re
 from decimal import Decimal
+from io import BytesIO
 
 from app.models.bill import BillingError
 from app.services.parser import ParsedLineItem
 
 logger = logging.getLogger(__name__)
 
-# Severity badge colours used in the report HTML
-_SEVERITY_COLOUR = {
-    "critical": "#c0392b",
-    "warning": "#e67e22",
-    "info": "#2980b9",
+_SEVERITY_BADGE = {
+    "critical": ("CRITICAL", "#991b1b", "#fee2e2"),
+    "warning": ("WARNING", "#92400e", "#fef3c7"),
+    "info": ("INFO", "#1e40af", "#dbeafe"),
 }
+
+# Matches lines that begin a dispute section in the Claude plain-text output
+_DISPUTE_HEADER_RE = re.compile(r"^Dispute\s+\d+\s*:", re.IGNORECASE)
 
 
 class ReportGenerator:
-    """Builds HTML and converts to PDF bytes for the analysis report and dispute letter."""
+    """Builds the branded analysis report PDF and the editable dispute letter DOCX."""
 
     def generate_report_pdf(
         self,
@@ -36,31 +41,84 @@ class ReportGenerator:
         bill_file_name: str,
         ai_summary: str,
     ) -> bytes:
-        """Generate the full analysis report as a PDF.
+        """Generate the full analysis report as a branded PDF.
 
-        Args:
-            errors: Detected billing errors.
-            line_items: Parsed line items from the bill.
-            bill_file_name: Original uploaded file name.
-            ai_summary: Plain-English summary from Claude.
-
-        Returns:
-            PDF bytes.
+        This method is synchronous (WeasyPrint) — the caller must run it in a
+        thread pool executor so it does not block the asyncio event loop.
         """
         html = self._build_report_html(errors, line_items, bill_file_name, ai_summary)
         return self._html_to_pdf(html)
 
-    def generate_dispute_letter_pdf(self, dispute_letter_text: str) -> bytes:
-        """Convert a plain-text dispute letter to a PDF.
+    def generate_dispute_letter_docx(self, dispute_letter_text: str) -> bytes:
+        """Convert the plain-text dispute letter to an editable Word document (.docx).
 
-        Args:
-            dispute_letter_text: Text output from AiAnalysisService.generate_dispute_letter().
-
-        Returns:
-            PDF bytes.
+        The letter is parsed into paragraphs split on blank lines. Lines matching
+        'Dispute N:' are rendered as bold section headers so the patient can navigate
+        each dispute item easily before editing.
         """
-        html = self._build_dispute_letter_html(dispute_letter_text)
-        return self._html_to_pdf(html)
+        from docx import Document  # noqa: PLC0415
+        from docx.shared import Pt, RGBColor  # noqa: PLC0415
+        from docx.oxml.ns import qn  # noqa: PLC0415
+        from docx.oxml import OxmlElement  # noqa: PLC0415
+
+        doc = Document()
+
+        # Page margins
+        for section in doc.sections:
+            from docx.shared import Inches  # noqa: PLC0415
+            section.top_margin = Inches(1)
+            section.bottom_margin = Inches(1)
+            section.left_margin = Inches(1.25)
+            section.right_margin = Inches(1.25)
+
+        # Default body style
+        style = doc.styles["Normal"]
+        style.font.name = "Georgia"
+        style.font.size = Pt(11)
+
+        def _add_para(text: str, bold: bool = False, space_before: int = 0, space_after: int = 10) -> None:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(space_before)
+            p.paragraph_format.space_after = Pt(space_after)
+            p.paragraph_format.line_spacing = Pt(14)
+            run = p.add_run(text)
+            run.font.name = "Georgia"
+            run.font.size = Pt(11)
+            run.bold = bold
+            if bold:
+                run.font.color.rgb = RGBColor(0x2D, 0x4A, 0x2A)  # sage
+
+        # Split on blank lines → paragraphs
+        paragraphs = [blk.strip() for blk in dispute_letter_text.split("\n\n") if blk.strip()]
+
+        for block in paragraphs:
+            # Each block may contain multiple lines (e.g., recipient address block)
+            lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+            if not lines:
+                continue
+
+            first_line = lines[0]
+            is_dispute_header = bool(_DISPUTE_HEADER_RE.match(first_line))
+
+            if is_dispute_header:
+                # "Dispute N:" line bold, rest of block as regular paragraph
+                _add_para(first_line, bold=True, space_before=8, space_after=4)
+                body = " ".join(lines[1:])
+                if body:
+                    _add_para(body, space_after=10)
+            elif len(lines) > 1:
+                # Multi-line block (address block, closing) — one paragraph per line
+                for ln in lines:
+                    _add_para(ln, space_after=2)
+                # Extra gap after the block
+                doc.add_paragraph().paragraph_format.space_after = Pt(6)
+            else:
+                _add_para(first_line, space_after=10)
+
+        buf = BytesIO()
+        doc.save(buf)
+        logger.info("Generated dispute letter DOCX (%d bytes)", buf.tell())
+        return buf.getvalue()
 
     def _build_report_html(
         self,
@@ -69,36 +127,52 @@ class ReportGenerator:
         bill_file_name: str,
         ai_summary: str,
     ) -> str:
-        """Build the report HTML string. Separated from PDF conversion for testability."""
         total_charges = sum(Decimal(str(item.total_charge)) for item in line_items)
         total_savings = sum(e.estimated_overcharge for e in errors)
-        estimated_fair = total_charges - total_savings
+
+        def _badge(severity: str) -> str:
+            label, color, bg = _SEVERITY_BADGE.get(severity, ("INFO", "#1e40af", "#dbeafe"))
+            return (
+                f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;'
+                f'background:{bg};color:{color};font-size:9px;font-weight:700;'
+                f'letter-spacing:0.5px;text-transform:uppercase">{label}</span>'
+            )
 
         error_rows = "".join(
             f"""<tr>
-              <td><span style="color:{_SEVERITY_COLOUR.get(e.severity, '#333')};font-weight:bold">
-                {e.severity.upper()}</span></td>
-              <td>{e.code.replace('_', ' ').title()}</td>
-              <td>{e.description}</td>
-              <td style="text-align:right">${e.estimated_overcharge:.2f}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{_badge(e.severity)}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};font-weight:600">{e.code.replace('_', ' ').title()}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{e.description}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};text-align:right;font-weight:700;color:#2D4A2A">${e.estimated_overcharge:.2f}</td>
             </tr>"""
-            for e in errors
+            for i, e in enumerate(errors)
         )
 
         line_item_rows = "".join(
             f"""<tr>
-              <td>{item.cpt_code}</td>
-              <td>{item.description[:60]}</td>
-              <td>{item.service_date}</td>
-              <td style="text-align:right">${item.total_charge:.2f}</td>
-              <td>{item.modifier or "—"}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};font-weight:600">{item.cpt_code}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{item.description[:60]}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{item.service_date}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};text-align:right">${item.total_charge:.2f}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};color:#6b7c6a">{item.modifier or '—'}</td>
             </tr>"""
-            for item in line_items
+            for i, item in enumerate(line_items)
         )
 
-        no_errors_notice = (
-            "" if errors else
-            '<p style="color:#27ae60;font-weight:bold">No billing errors were detected.</p>'
+        findings_table = (
+            f"""<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:11px">
+              <thead>
+                <tr>
+                  <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Severity</th>
+                  <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Type</th>
+                  <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Description</th>
+                  <th style="background:#2D4A2A;color:#C8F060;text-align:right;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Est. Overcharge</th>
+                </tr>
+              </thead>
+              <tbody>{error_rows}</tbody>
+            </table>"""
+            if errors else
+            '<p style="color:#2D4A2A;font-weight:600;padding:12px 0">No billing errors were detected.</p>'
         )
 
         return f"""<!DOCTYPE html>
@@ -106,34 +180,40 @@ class ReportGenerator:
 <head>
   <meta charset="UTF-8">
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;1,9..144,700&family=Syne:wght@400;600;700&display=swap');
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: Georgia, "Times New Roman", serif; color: #1a1a2e;
-            font-size: 12px; line-height: 1.6; padding: 48px; }}
-    .header {{ background: #1a1a2e; color: white; padding: 24px 32px;
-               margin: -48px -48px 40px -48px; }}
-    .header h1 {{ font-size: 22px; font-weight: bold; letter-spacing: 0.5px; }}
-    .header p {{ font-size: 11px; color: #aab; margin-top: 4px; }}
-    h2 {{ font-size: 15px; color: #1a1a2e; margin: 32px 0 12px; border-bottom: 1px solid #e0e0e0;
-          padding-bottom: 6px; }}
-    .summary-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 24px 0; }}
-    .card {{ border: 1px solid #ddd; border-radius: 6px; padding: 16px; text-align: center; }}
-    .card .value {{ font-size: 22px; font-weight: bold; color: #1a1a2e; }}
-    .card .label {{ font-size: 10px; color: #888; margin-top: 4px; text-transform: uppercase; }}
-    .savings .value {{ color: #27ae60; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11px; }}
-    th {{ background: #f5f7fa; text-align: left; padding: 10px 12px; font-size: 10px;
-          text-transform: uppercase; letter-spacing: 0.4px; color: #555; }}
-    td {{ padding: 9px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }}
-    .ai-summary {{ background: #f8f9ff; border-left: 3px solid #1a1a2e; padding: 16px 20px;
-                   margin: 16px 0; font-style: italic; font-size: 12px; color: #333; }}
-    .footer {{ margin-top: 48px; padding-top: 16px; border-top: 1px solid #e0e0e0;
-               font-size: 9px; color: #999; line-height: 1.5; }}
+    body {{ font-family: 'Syne', Arial, sans-serif; color: #1a2e18;
+            background: #F4F2EC; font-size: 12px; line-height: 1.6; padding: 48px; }}
+    .header {{ background: #2D4A2A; padding: 28px 36px; margin: -48px -48px 40px -48px; }}
+    .logo {{ font-family: 'Fraunces', Georgia, serif; font-size: 28px; font-weight: 700;
+             font-style: italic; letter-spacing: -0.5px; }}
+    .logo .claro {{ color: #C8F060; }}
+    .logo .bill {{ color: white; font-style: normal; }}
+    .header-sub {{ font-size: 11px; color: #8aab86; margin-top: 6px; font-family: 'Syne', Arial, sans-serif; }}
+    h2 {{ font-family: 'Fraunces', Georgia, serif; font-size: 16px; color: #2D4A2A;
+          margin: 36px 0 14px; padding-bottom: 8px;
+          border-bottom: 2px solid #C8F060; }}
+    .summary-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 28px 0; }}
+    .card {{ background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center; }}
+    .card-savings {{ background: #2D4A2A; border-color: #2D4A2A; }}
+    .value {{ font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 700; color: #2D4A2A; }}
+    .value-savings {{ color: #C8F060; }}
+    .label {{ font-size: 9px; color: #6b7c6a; margin-top: 6px;
+              text-transform: uppercase; letter-spacing: 0.7px; font-family: 'Syne', Arial, sans-serif; }}
+    .label-savings {{ color: #8aab86; }}
+    .ai-summary {{ background: white; border-left: 4px solid #C8F060; padding: 18px 22px;
+                   margin: 16px 0 4px; font-size: 13px; color: #1a2e18; line-height: 1.75;
+                   font-style: italic; }}
+    .footer {{ margin-top: 52px; padding-top: 16px; border-top: 1px solid #d4d0c8;
+               font-size: 9px; color: #888; line-height: 1.6; }}
+    .watermark {{ font-family: 'Fraunces', Georgia, serif; font-size: 10px;
+                  color: #2D4A2A; font-style: italic; margin-bottom: 6px; }}
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Clarobill — Medical Bill Analysis Report</h1>
-    <p>Bill: {bill_file_name} &nbsp;|&nbsp; Generated by Clarobill AI</p>
+    <div class="logo"><span class="claro">Claro</span><span class="bill">Bill</span></div>
+    <div class="header-sub">Medical Bill Analysis Report &nbsp;|&nbsp; {bill_file_name}</div>
   </div>
 
   <div class="summary-grid">
@@ -141,9 +221,9 @@ class ReportGenerator:
       <div class="value">${total_charges:.2f}</div>
       <div class="label">Total Charges</div>
     </div>
-    <div class="card savings">
-      <div class="value">${total_savings:.2f}</div>
-      <div class="label">Potential Savings</div>
+    <div class="card card-savings">
+      <div class="value value-savings">${total_savings:.2f}</div>
+      <div class="label label-savings">Potential Savings</div>
     </div>
     <div class="card">
       <div class="value">{len(errors)}</div>
@@ -155,54 +235,36 @@ class ReportGenerator:
   <div class="ai-summary">{ai_summary}</div>
 
   <h2>Findings</h2>
-  {no_errors_notice}
-  {'<table><thead><tr><th>Severity</th><th>Type</th><th>Description</th><th>Est. Overcharge</th></tr></thead><tbody>' + error_rows + '</tbody></table>' if errors else ''}
+  {findings_table}
 
   <h2>Line Items</h2>
-  <table>
+  <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:11px">
     <thead>
-      <tr><th>CPT Code</th><th>Description</th><th>Service Date</th><th>Charge</th><th>Modifier</th></tr>
+      <tr>
+        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">CPT Code</th>
+        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Description</th>
+        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Service Date</th>
+        <th style="background:#2D4A2A;color:#C8F060;text-align:right;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Charge</th>
+        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Modifier</th>
+      </tr>
     </thead>
     <tbody>{line_item_rows}</tbody>
   </table>
 
   <div class="footer">
-    <strong>Disclaimer:</strong> This report is generated by an automated analysis tool and is for
-    informational purposes only. It does not constitute legal or medical advice. Billing error
-    determinations are based on publicly available CMS data and AI analysis — consult a qualified
-    medical billing advocate for formal disputes. Clarobill is not responsible for outcomes of
-    disputes filed based on this report.
+    <div class="watermark">ClaroBill</div>
+    This report is generated by an automated analysis tool for informational purposes only.
+    It does not constitute legal or medical advice. Billing error determinations are based on
+    publicly available CMS data and AI analysis — consult a qualified medical billing advocate
+    for formal disputes. ClaroBill is not responsible for outcomes of disputes filed based on
+    this report.
   </div>
-</body>
-</html>"""
-
-    def _build_dispute_letter_html(self, dispute_letter_text: str) -> str:
-        """Wrap plain-text dispute letter in a clean PDF-ready HTML shell."""
-        # Convert newlines to <br> and preserve paragraph breaks
-        formatted = dispute_letter_text.replace("\n\n", "</p><p>").replace("\n", "<br>")
-        return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {{ font-family: Georgia, "Times New Roman", serif; color: #1a1a2e;
-            font-size: 12px; line-height: 1.8; padding: 72px; max-width: 600px; margin: 0 auto; }}
-    p {{ margin-bottom: 16px; }}
-    .header-note {{ font-size: 9px; color: #999; margin-bottom: 40px; font-style: italic; }}
-  </style>
-</head>
-<body>
-  <p class="header-note">Generated by Clarobill — fill in [YOUR NAME], [YOUR DATE OF BIRTH],
-  and [DATE] before sending.</p>
-  <p>{formatted}</p>
 </body>
 </html>"""
 
     @staticmethod
     def _html_to_pdf(html: str) -> bytes:
-        """Convert an HTML string to PDF bytes using weasyprint."""
-        from weasyprint import HTML  # noqa: PLC0415 — deferred import avoids startup cost
-
+        from weasyprint import HTML  # noqa: PLC0415
         pdf_bytes = HTML(string=html).write_pdf()
-        logger.info("Generated PDF (%d bytes)", len(pdf_bytes))
+        logger.info("Generated report PDF (%d bytes)", len(pdf_bytes))
         return pdf_bytes
