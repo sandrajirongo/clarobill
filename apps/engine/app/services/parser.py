@@ -285,7 +285,10 @@ class BillParser:
         last_unmatched_line = unmatched[-1][0]
         upper_bound = len(lines)
         for j in range(last_unmatched_line + 1, len(lines)):
-            if _SUMMARY_LINE_PATTERN.search(lines[j]):
+            # Require a dollar amount on the same line as the summary keyword so that
+            # column headers like "TOTAL CHARGES" (no amount) don't set the boundary
+            # before the actual charge values that follow them in column-interleaved output.
+            if _SUMMARY_LINE_PATTERN.search(lines[j]) and _AMOUNT_PATTERN.search(lines[j]):
                 upper_bound = j
                 break
 

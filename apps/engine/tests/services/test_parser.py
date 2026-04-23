@@ -518,6 +518,35 @@ class TestColumnInterleavedOcr:
         assert len(items) == 3
         assert all(item.service_date == date(2023, 8, 12) for item in items)
 
+    def test_charges_extracted_when_total_charges_is_column_header(self, parser: BillParser) -> None:
+        # Google Vision column-interleaved: "TOTAL CHARGES" is a column header that
+        # appears between the CPT codes and their values. The old upper_bound logic
+        # stopped scanning at the first summary keyword, excluding all charges.
+        # The fix: only stop when the summary keyword is on the same line as an amount.
+        text = (
+            "03/15/2025\n"
+            "99024\n"
+            "03/15/2025\n"
+            "99213\n"
+            "03/15/2025\n"
+            "99214\n"
+            "Post-op follow-up visit\n"
+            "Office visit\n"
+            "Office visit, extended\n"
+            "TOTAL CHARGES\n"        # column header — no amount on this line
+            "$285.00\n"
+            "$350.00\n"
+            "$450.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 3
+        codes = [i.cpt_code for i in items]
+        assert "99024" in codes
+        assert "99213" in codes
+        assert "99214" in codes
+        charges = sorted(i.total_charge for i in items)
+        assert charges == [285.00, 350.00, 450.00]
+
     def test_document_order_preserved_in_mixed_bill(self, parser: BillParser) -> None:
         # Column-interleaved codes physically precede the row-major codes on the page.
         # The returned list must reflect page order: 99284, 70553, then 36415.
