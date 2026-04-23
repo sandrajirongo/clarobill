@@ -121,7 +121,7 @@ def load_indicators_pprrvu(path: Path, effective_from: date) -> list[dict]:
             "year": year,
             "effective_from": effective_from_str,
             "hcpc": raw[0].strip(),
-            "modifier": raw[1].strip(),
+            "modifier": raw[1].strip() or None,
             "sdesc": raw[2].strip() or None,
             "proc_stat": raw[3].strip() or None,
             "rvu_work": _float(raw[5]),
@@ -162,10 +162,10 @@ def load_indicators(path: Path, effective_from: date) -> list[dict]:
         reader = csv.DictReader(f)
         for row in reader:
             hcpc = row["hcpc"].strip()
-            modifier = row["modifier"].strip()
+            modifier = row["modifier"].strip() or None
             year = int(row["year"].strip())
 
-            key = (effective_from_str, hcpc, modifier)
+            key = (effective_from_str, hcpc, modifier or "")
             record = {
                 "id": str(uuid.uuid4()),
                 "year": year,
@@ -247,13 +247,28 @@ def load_localities(path: Path) -> list[dict]:
     return rows
 
 
-def upsert_batches(client, table: str, rows: list[dict], conflict_cols: str) -> None:
-    """Upsert rows in batches, printing progress."""
+def upsert_batches(
+    client,
+    table: str,
+    rows: list[dict],
+    conflict_cols: str | None = None,
+) -> None:
+    """Insert rows in batches, skipping rows that violate unique constraints.
+
+    For cms_pfs_indicators, modifier is nullable so ON CONFLICT (col, ..., modifier) is
+    not valid — PostgreSQL requires non-null columns in explicit conflict targets.
+    The partial unique indexes (WHERE modifier IS NULL / IS NOT NULL) handle uniqueness
+    at the DB level; ignore_duplicates=True emits ON CONFLICT DO NOTHING which works
+    with all unique constraints/indexes including partial ones.
+    """
     total = len(rows)
     inserted = 0
     for i in range(0, total, BATCH_SIZE):
         batch = rows[i : i + BATCH_SIZE]
-        client.table(table).upsert(batch, on_conflict=conflict_cols).execute()
+        if conflict_cols:
+            client.table(table).upsert(batch, on_conflict=conflict_cols).execute()
+        else:
+            client.table(table).upsert(batch, ignore_duplicates=True).execute()
         inserted += len(batch)
         print(f"  Upserted {inserted}/{total} rows into {table}...")
     print(f"  Done — {inserted} rows loaded into {table}.")
@@ -308,7 +323,10 @@ def main() -> None:
         indicators = load_indicators_pprrvu(args.indicators, args.effective_from)
     else:
         indicators = load_indicators(args.indicators, args.effective_from)
-    upsert_batches(client, "cms_pfs_indicators", indicators, "effective_from,hcpc,modifier")
+    # No explicit conflict_cols — modifier is nullable so partial unique indexes handle
+    # deduplication via ON CONFLICT DO NOTHING. In-file duplicates are already removed
+    # by the key-based dedup inside load_indicators / load_indicators_pprrvu.
+    upsert_batches(client, "cms_pfs_indicators", indicators)
 
     if args.localities is not None:
         print(f"\nLoading localities from {args.localities.name}...")

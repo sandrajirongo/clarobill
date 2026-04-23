@@ -442,13 +442,13 @@ def _load_medicare_rates(
     rate_date_str = rate_date.isoformat()
 
     # Fetch RVU components — pick the most recent quarterly release ≤ service date.
-    # modifier IS NULL selects the base (no-modifier) row; modifier='' would match
-    # empty string which is never stored — the column is NULL when no modifier applies.
+    # Base (no-modifier) rows may have modifier=NULL or modifier='' depending on
+    # which loader run produced the data. Match both to be safe.
     indicators_resp = (
         supabase.table("cms_pfs_indicators")
         .select("hcpc,rvu_work,nfac_pe_rvu,rvu_mp,nfac_total_rvu,conv_fact,proc_stat")
         .in_("hcpc", unique_codes)
-        .is_("modifier", "null")
+        .or_("modifier.is.null,modifier.eq.")
         .eq("proc_stat", "A")
         .lte("effective_from", rate_date_str)
         .order("effective_from", desc=True)
@@ -531,7 +531,7 @@ def _load_non_payable_codes(
         .select("hcpc,proc_stat")
         .in_("hcpc", list(set(cpt_codes)))
         .in_("proc_stat", ["I", "B", "N"])
-        .is_("modifier", "null")
+        .or_("modifier.is.null,modifier.eq.")
         .lte("effective_from", rate_date.isoformat())
         .order("effective_from", desc=True)
         .execute()
@@ -672,7 +672,7 @@ def _load_opps_rates(
         supabase.table("cms_opps_cap")
         .select("hcpc,facility_price")
         .in_("hcpc", list(set(cpt_codes)))
-        .is_("modifier", "null")
+        .or_("modifier.is.null,modifier.eq.")
         .eq("locality_code", locality_code)
         .lte("effective_from", rate_date.isoformat())
         .order("effective_from", desc=True)
