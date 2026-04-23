@@ -171,8 +171,8 @@ class TestNcciUnbundling:
 
     def test_component_charge_counted_once_across_multiple_ncci_pairs(self) -> None:
         # 36415 ($25) is a component of both 99213 AND 27447.
-        # When all three codes appear on the same bill, 36415 should only be counted
-        # once in total savings — not once per comprehensive code.
+        # When all three codes appear on the same bill, one finding is emitted for 36415
+        # (not two) — it mentions both comprehensive codes in the description.
         engine = RulesEngine(
             ncci_edit_pairs={"99213": {"36415"}, "27447": {"36415"}},
             medicare_rates={},
@@ -184,10 +184,12 @@ class TestNcciUnbundling:
         ]
         errors = engine.run(items)
         ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
-        assert len(ncci_errors) == 2
-        total_ncci_savings = sum(e.estimated_overcharge for e in ncci_errors)
-        # $25 counted once — the second NCCI error that references 36415 has overcharge=0
-        assert total_ncci_savings == Decimal("25.00")
+        # One finding per component code — not one per NCCI pair
+        assert len(ncci_errors) == 1
+        assert ncci_errors[0].estimated_overcharge == Decimal("25.00")
+        # Description should mention both comprehensive codes
+        assert "99213" in ncci_errors[0].description
+        assert "27447" in ncci_errors[0].description
 
     def test_savings_cannot_exceed_total_charges(self) -> None:
         # Regression guard: total estimated_overcharge across all errors must never

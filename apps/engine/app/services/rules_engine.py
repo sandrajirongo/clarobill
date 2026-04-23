@@ -300,51 +300,57 @@ class RulesEngine:
         for index, item in enumerate(line_items):
             cpt_to_indices.setdefault(item.cpt_code, []).append(index)
 
-        all_component_indices: set[int] = set()
-        counted_component_indices: set[int] = set()
-
+        # Group by component (col2): map col2_code → list of col1_codes it should be bundled into.
+        # This produces one finding per component code regardless of how many comprehensive
+        # codes are present on the bill — avoids multiple $0.00 overcharge cards for the same
+        # component while preserving full detail in the description for the dispute letter.
+        component_to_col1s: dict[str, list[str]] = {}
         for col1_code, component_codes in self._ncci_pairs.items():
             if col1_code not in cpt_to_indices:
                 continue
-
             for col2_code in component_codes:
                 if col2_code not in cpt_to_indices:
                     continue
-
-                col2_indices = cpt_to_indices[col2_code]
-
-                # Modifier 59 on the component overrides this NCCI edit
-                col2_items = [line_items[i] for i in col2_indices]
-                has_modifier_override = any(item.modifier == "59" for item in col2_items)
-                if has_modifier_override:
+                col2_items = [line_items[i] for i in cpt_to_indices[col2_code]]
+                if any(item.modifier == "59" for item in col2_items):
                     continue
+                component_to_col1s.setdefault(col2_code, []).append(col1_code)
 
-                all_component_indices.update(col2_indices)
+        all_component_indices: set[int] = set()
 
-                # Only count the overcharge for component indices not yet accounted for.
-                # When the same col2 appears in multiple pairs (different col1 codes are
-                # both present on the bill), its charge is already captured in the first
-                # NCCI error. Subsequent errors report the violation but overcharge = 0.
-                new_indices = [i for i in col2_indices if i not in counted_component_indices]
-                overcharge = sum(
-                    (Decimal(str(line_items[i].total_charge)) for i in new_indices),
-                    Decimal("0"),
+        for col2_code, col1_codes in component_to_col1s.items():
+            col2_indices = cpt_to_indices[col2_code]
+            all_component_indices.update(col2_indices)
+
+            all_col1_indices: list[int] = []
+            for c in col1_codes:
+                all_col1_indices.extend(cpt_to_indices[c])
+
+            overcharge = sum(
+                (Decimal(str(line_items[i].total_charge)) for i in col2_indices),
+                Decimal("0"),
+            )
+
+            if len(col1_codes) == 1:
+                bundled_into = f"CPT {col1_codes[0]}"
+            else:
+                bundled_into = (
+                    ", ".join(f"CPT {c}" for c in col1_codes[:-1])
+                    + f" and CPT {col1_codes[-1]}"
                 )
-                counted_component_indices.update(col2_indices)
 
-                all_affected = cpt_to_indices[col1_code] + col2_indices
-                errors.append(DetectedError(
-                    code="NCCI_UNBUNDLING",
-                    severity="critical",
-                    affected_indices=tuple(all_affected),
-                    description=(
-                        f"CPT {col2_code} should be bundled into CPT {col1_code} per CMS NCCI "
-                        f"edits. Billing both separately may be improper. "
-                        f"Potential overcharge: ${overcharge:.2f}."
-                    ),
-                    estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=None,
-                ))
+            errors.append(DetectedError(
+                code="NCCI_UNBUNDLING",
+                severity="critical",
+                affected_indices=tuple(dict.fromkeys(all_col1_indices + col2_indices)),
+                description=(
+                    f"CPT {col2_code} should be bundled into {bundled_into} per CMS NCCI "
+                    f"edits. Billing these codes separately may be improper. "
+                    f"Potential overcharge: ${overcharge:.2f}."
+                ),
+                estimated_overcharge=overcharge,
+                medicare_benchmark_rate=None,
+            ))
 
         return errors, all_component_indices
 
