@@ -4,9 +4,10 @@ Produces two outputs:
   1. Full analysis report — branded PDF via fpdf2 (pure Python, < 1 second)
   2. Dispute letter — editable DOCX the patient fills in and sends
 
-fpdf2 uses DejaVu Sans (a Unicode TTF font, installed via fonts-dejavu-core)
+fpdf2 uses DejaVu Sans Regular and Bold (Unicode TTF, installed via fonts-dejavu)
 so any character Claude outputs — em dashes, smart quotes, etc. — renders
-correctly without a sanitizer or character-map workaround.
+correctly without a sanitizer or character-map workaround. Italic/Oblique is
+intentionally omitted: each additional TTF adds ~7s of fontTools subsetting.
 
 Prerequisite: A 'reports' Supabase Storage bucket must exist and be private.
 """
@@ -54,7 +55,7 @@ def _dejavu(name: str) -> str:
         if p.exists():
             return str(p)
     raise FileNotFoundError(
-        f"{name} not found. Install fonts-dejavu-core (Debian) or matplotlib (dev)."
+        f"{name} not found. Install fonts-dejavu (Debian) or matplotlib (dev)."
     )
 
 
@@ -70,9 +71,10 @@ class ReportGenerator:
     ) -> bytes:
         """Generate the full analysis report as a branded letterhead PDF.
 
-        Pure Python via fpdf2 — no system dependencies, completes in < 1 second.
-        The caller may still run this in a thread pool executor if needed to avoid
-        blocking the asyncio event loop on large bills.
+        Pure Python via fpdf2 — no system dependencies beyond DejaVu TTF fonts.
+        fontTools subsetting runs at output() time (~14s for Regular + Bold).
+        Callers should run this in a thread pool executor to avoid blocking the
+        asyncio event loop.
         """
         total_charges = sum(Decimal(str(item.total_charge)) for item in line_items)
         total_savings = sum(e.estimated_overcharge for e in errors)
@@ -83,15 +85,10 @@ class ReportGenerator:
         pdf.add_page()
 
         # DejaVu Sans: Unicode TTF — handles all characters Claude may output.
-        # Oblique is in fonts-dejavu (full package); fall back to Regular if absent
-        # so a partial font install never blocks PDF generation entirely.
+        # Only Regular + Bold are registered. Each additional TTF variant adds ~7s
+        # of fontTools subsetting to PDF output time; Oblique is omitted intentionally.
         pdf.add_font("DejaVu", style="",  fname=_dejavu("DejaVuSans.ttf"))
         pdf.add_font("DejaVu", style="B", fname=_dejavu("DejaVuSans-Bold.ttf"))
-        try:
-            pdf.add_font("DejaVu", style="I", fname=_dejavu("DejaVuSans-Oblique.ttf"))
-        except FileNotFoundError:
-            logger.warning("DejaVuSans-Oblique.ttf not found — italic falls back to Regular")
-            pdf.add_font("DejaVu", style="I", fname=_dejavu("DejaVuSans.ttf"))
 
         w = pdf.w - pdf.l_margin - pdf.r_margin  # usable width: 170mm
 
@@ -150,7 +147,7 @@ class ReportGenerator:
         # ── Findings ────────────────────────────────────────────────────────
         section("Findings")
         if not errors:
-            pdf.set_font("DejaVu", "I", 10)
+            pdf.set_font("DejaVu", "", 10)
             pdf.set_text_color(*_MUTED)
             pdf.cell(0, 6, "No billing errors were detected.", new_x="LMARGIN", new_y="NEXT")
         else:
@@ -210,7 +207,7 @@ class ReportGenerator:
         fy = pdf.get_y()
         pdf.line(pdf.l_margin, fy, pdf.w - pdf.r_margin, fy)
         pdf.ln(4)
-        pdf.set_font("DejaVu", "I", 9)
+        pdf.set_font("DejaVu", "B", 9)
         pdf.set_text_color(*_SAGE)
         pdf.cell(0, 5, "ClaroBill", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("DejaVu", "", 8)

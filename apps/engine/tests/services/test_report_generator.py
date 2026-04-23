@@ -1,7 +1,9 @@
 """Tests for the report generator.
 
-Tests HTML generation directly (fast, no system deps).
-PDF conversion requires weasyprint + cairo/pango — tested only when available.
+PDF generation requires fpdf2 (installed in the Cloud Run container via
+pyproject.toml) and the DejaVu fonts (installed via the Dockerfile). Both are
+absent from the local dev venv, so PDF tests are skipped when fpdf2 is
+unavailable. DOCX tests are guarded separately by _python_docx_available().
 """
 
 from datetime import date
@@ -11,7 +13,23 @@ import pytest
 
 from app.models.bill import BillingError, BillingErrorCode, ErrorSeverity
 from app.services.parser import ParsedLineItem
-from app.services.report_generator import ReportGenerator
+
+
+def _fpdf_available() -> bool:
+    try:
+        from fpdf import FPDF  # noqa: PLC0415
+        return isinstance(FPDF, type)  # MagicMock stubs are not real classes
+    except ImportError:
+        return False
+
+
+fpdf_available = pytest.mark.skipif(
+    not _fpdf_available(),
+    reason="fpdf2 not installed (requires container environment)",
+)
+
+
+from app.services.report_generator import ReportGenerator  # noqa: E402
 
 
 def make_error(code: str, overcharge: float) -> BillingError:
@@ -44,32 +62,38 @@ def generator() -> ReportGenerator:
 
 
 class TestGenerateReportPdf:
+    @fpdf_available
     def test_returns_valid_pdf(self, generator: ReportGenerator) -> None:
         pdf = generator.generate_report_pdf([], [], "my-bill.pdf", "No errors found.")
         assert isinstance(pdf, bytes)
         assert pdf[:4] == b"%PDF"
 
+    @fpdf_available
     def test_non_empty_with_errors(self, generator: ReportGenerator) -> None:
         errors = [make_error("DUPLICATE_CHARGE", 350.00)]
         items = [make_line_item("99214", 350.00)]
         pdf = generator.generate_report_pdf(errors, items, "bill.pdf", "Found 1 error.")
         assert len(pdf) > 500
 
+    @fpdf_available
     def test_no_errors_still_generates(self, generator: ReportGenerator) -> None:
         pdf = generator.generate_report_pdf([], [], "clean-bill.pdf", "Clean bill.")
         assert pdf[:4] == b"%PDF"
 
+    @fpdf_available
     def test_multiple_line_items(self, generator: ReportGenerator) -> None:
         items = [make_line_item("99214", 350.00), make_line_item("85025", 120.00)]
         pdf = generator.generate_report_pdf([], items, "bill.pdf", "Summary.")
         assert pdf[:4] == b"%PDF"
 
+    @fpdf_available
     def test_unicode_in_ai_summary_does_not_crash(self, generator: ReportGenerator) -> None:
         # Claude routinely outputs em dashes, smart quotes, ellipses
-        summary = "You were overcharged — by $350. “Doubt the bill,” we say…"
+        summary = "You were overcharged \u2014 by $350. \u201cDoubt the bill,\u201d we say\u2026"
         pdf = generator.generate_report_pdf([], [], "bill.pdf", summary)
         assert pdf[:4] == b"%PDF"
 
+    @fpdf_available
     def test_unicode_in_error_description_does_not_crash(self, generator: ReportGenerator) -> None:
         errors = [make_error("DUPLICATE_CHARGE", 100.00)]
         errors[0] = errors[0].model_copy(update={"description": "Charged twice — see line 3"})
@@ -79,8 +103,8 @@ class TestGenerateReportPdf:
 
 def _python_docx_available() -> bool:
     try:
-        import docx  # noqa: PLC0415, F401
-        return True
+        from docx import Document  # noqa: PLC0415
+        return isinstance(Document, type)  # MagicMock stubs are not real classes
     except ImportError:
         return False
 

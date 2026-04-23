@@ -43,7 +43,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     return () => { cancelled = true; clearInterval(interval); };
   }, [analysis, bill.id, router]);
 
-  // After payment, poll the analysis API directly every 5s for up to 90s.
+  // After payment, poll the analysis API directly every 5s for up to 120s.
   // We do NOT call router.refresh() on every tick — router from useRouter() is not
   // a stable reference in Next.js App Router, so putting it in deps causes the effect
   // to re-run on every refresh and reset the counter to zero (infinite loop).
@@ -57,7 +57,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
 
     const interval = setInterval(async () => {
       count++;
-      if (count >= 6) {
+      if (count >= 24) {
         clearInterval(interval);
         setReportTimedOut(true);
         return;

@@ -58,9 +58,10 @@ export async function GET(
   // policies do not grant the user client permission to call createSignedUrl,
   // even for objects in their own folder.
   const service = createSupabaseServiceClient();
+  const downloadFilename = type === 'report' ? 'clarobill-report.pdf' : 'dispute-letter.docx';
   const { data: signedUrl, error } = await service.storage
     .from('reports')
-    .createSignedUrl(storagePath, 60);
+    .createSignedUrl(storagePath, 60, { download: downloadFilename });
 
   if (error || !signedUrl?.signedUrl) {
     // createSignedUrl returns an error when the object path doesn't exist in storage —
