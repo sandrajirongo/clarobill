@@ -139,6 +139,16 @@ class RulesEngine:
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
 
+        Waterfall deduplication ensures potential savings are never double-counted:
+          1. DUPLICATE_CHARGE and NCCI_UNBUNDLING mean a line item is fully removed
+             from the bill. Pricing rules (PRICE_OUTLIER, FACILITY_CHARGE_OUTLIER, etc.)
+             on a line that will not exist are meaningless and would inflate savings.
+             These are suppressed for any index that is fully removed.
+          2. Multiple NCCI pairs can share the same component code. If 93010 is a
+             component of both 93000 and 99284, its charge is counted only in the first
+             NCCI error; subsequent errors set estimated_overcharge=0. All errors still
+             appear in the report and dispute letter — the savings total is just accurate.
+
         Args:
             line_items: Parsed line items from the bill.
 
@@ -149,36 +159,37 @@ class RulesEngine:
 
         duplicate_errors = self._detect_duplicates(line_items)
         errors.extend(duplicate_errors)
-
-        # The second index in each DUPLICATE_CHARGE error is the line item being disputed
-        # entirely. Flagging that same item as additionally overpriced (PRICE_OUTLIER,
-        # FACILITY_CHARGE_OUTLIER, etc.) double-counts the charge and inflates potential
-        # savings beyond what is achievable. Suppress all other rule errors whose affected
-        # indices are exclusively duplicate instances.
+        # Index [1] in each DUPLICATE_CHARGE is the instance being fully removed.
         duplicate_indices: set[int] = {
             e.affected_indices[1]
             for e in duplicate_errors
             if len(e.affected_indices) >= 2
         }
 
-        def _without_duplicates(rule_errors: list[DetectedError]) -> list[DetectedError]:
-            if not duplicate_indices:
+        ncci_errors, ncci_component_indices = self._detect_ncci_unbundling(line_items)
+        errors.extend(ncci_errors)
+
+        # Line items that are fully removed from the bill — either a duplicate instance
+        # or an NCCI component code. Pricing rules must not run on these indices.
+        fully_removed_indices = duplicate_indices | ncci_component_indices
+
+        def _without_removed(rule_errors: list[DetectedError]) -> list[DetectedError]:
+            if not fully_removed_indices:
                 return rule_errors
             return [
                 e for e in rule_errors
-                if not all(i in duplicate_indices for i in e.affected_indices)
+                if not all(i in fully_removed_indices for i in e.affected_indices)
             ]
 
-        errors.extend(_without_duplicates(self._detect_price_outliers(line_items)))
-        errors.extend(self._detect_ncci_unbundling(line_items))
-        errors.extend(_without_duplicates(self._detect_non_payable_codes(line_items)))
-        errors.extend(_without_duplicates(self._detect_anesthesia_outliers(line_items)))
-        errors.extend(_without_duplicates(self._detect_facility_outliers(line_items)))
-        errors.extend(_without_duplicates(self._detect_ambulance_outliers(line_items)))
-        errors.extend(_without_duplicates(self._detect_terminated_codes(line_items)))
-        errors.extend(_without_duplicates(self._detect_hospital_charge_outliers(line_items)))
-        errors.extend(_without_duplicates(self._detect_negotiated_rate_exceeded(line_items)))
-        errors.extend(_without_duplicates(self._detect_mue_violations(line_items)))
+        errors.extend(_without_removed(self._detect_price_outliers(line_items)))
+        errors.extend(_without_removed(self._detect_non_payable_codes(line_items)))
+        errors.extend(_without_removed(self._detect_anesthesia_outliers(line_items)))
+        errors.extend(_without_removed(self._detect_facility_outliers(line_items)))
+        errors.extend(_without_removed(self._detect_ambulance_outliers(line_items)))
+        errors.extend(_without_removed(self._detect_terminated_codes(line_items)))
+        errors.extend(_without_removed(self._detect_hospital_charge_outliers(line_items)))
+        errors.extend(_without_removed(self._detect_negotiated_rate_exceeded(line_items)))
+        errors.extend(_without_removed(self._detect_mue_violations(line_items)))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -261,12 +272,24 @@ class RulesEngine:
 
         return errors
 
-    def _detect_ncci_unbundling(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+    def _detect_ncci_unbundling(
+        self,
+        line_items: list[ParsedLineItem],
+    ) -> tuple[list[DetectedError], set[int]]:
         """Detect NCCI (National Correct Coding Initiative) edit pair violations.
 
         CMS maintains a table of procedure code pairs where one code is "bundled"
         into another. Billing both separately is called unbundling and is considered
         improper billing. Modifier 59 (distinct procedure) can override some pairs.
+
+        Returns (errors, component_indices) where component_indices is the set of all
+        line item indices that are NCCI component (col2) codes — used by run() to
+        suppress pricing errors on line items that are being fully removed.
+
+        If the same component code (col2) is flagged by multiple NCCI pairs, its charge
+        is counted only in the first error. Subsequent errors set estimated_overcharge=0
+        to prevent summing the same dollars multiple times into the savings total. All
+        errors are still included so the dispute letter covers every coding violation.
 
         # Medicare allows modifier 59 to override NCCI edits when procedures are
         # performed on distinct anatomical sites or distinct patient encounters.
@@ -277,6 +300,9 @@ class RulesEngine:
         for index, item in enumerate(line_items):
             cpt_to_indices.setdefault(item.cpt_code, []).append(index)
 
+        all_component_indices: set[int] = set()
+        counted_component_indices: set[int] = set()
+
         for col1_code, component_codes in self._ncci_pairs.items():
             if col1_code not in cpt_to_indices:
                 continue
@@ -285,17 +311,28 @@ class RulesEngine:
                 if col2_code not in cpt_to_indices:
                     continue
 
-                # Check if modifier 59 is present on the component code
-                col2_items = [line_items[i] for i in cpt_to_indices[col2_code]]
+                col2_indices = cpt_to_indices[col2_code]
+
+                # Modifier 59 on the component overrides this NCCI edit
+                col2_items = [line_items[i] for i in col2_indices]
                 has_modifier_override = any(item.modifier == "59" for item in col2_items)
                 if has_modifier_override:
                     continue
 
-                all_affected = cpt_to_indices[col1_code] + cpt_to_indices[col2_code]
+                all_component_indices.update(col2_indices)
+
+                # Only count the overcharge for component indices not yet accounted for.
+                # When the same col2 appears in multiple pairs (different col1 codes are
+                # both present on the bill), its charge is already captured in the first
+                # NCCI error. Subsequent errors report the violation but overcharge = 0.
+                new_indices = [i for i in col2_indices if i not in counted_component_indices]
                 overcharge = sum(
-                    (Decimal(str(line_items[i].total_charge)) for i in cpt_to_indices[col2_code]),
+                    (Decimal(str(line_items[i].total_charge)) for i in new_indices),
                     Decimal("0"),
                 )
+                counted_component_indices.update(col2_indices)
+
+                all_affected = cpt_to_indices[col1_code] + col2_indices
                 errors.append(DetectedError(
                     code="NCCI_UNBUNDLING",
                     severity="critical",
@@ -309,7 +346,7 @@ class RulesEngine:
                     medicare_benchmark_rate=None,
                 ))
 
-        return errors
+        return errors, all_component_indices
 
     def _detect_non_payable_codes(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Flag CPT codes that CMS has marked as non-payable under the Physician Fee Schedule.

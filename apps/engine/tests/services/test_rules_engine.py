@@ -151,6 +151,61 @@ class TestNcciUnbundling:
         ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
         assert len(ncci_errors) == 0
 
+    def test_component_suppresses_price_outlier_on_same_index(self) -> None:
+        # 36415 ($25) is a component of 99213 — it should be fully removed.
+        # Even though $25 exceeds the Medicare rate of $3, no PRICE_OUTLIER should fire
+        # for 36415 because its charge is already counted in the NCCI overcharge.
+        engine = RulesEngine(
+            ncci_edit_pairs={"99213": {"36415"}},
+            medicare_rates={"99213": Decimal("75.00"), "36415": Decimal("3.00")},
+        )
+        items = [make_line_item("99213", 95.00), make_line_item("36415", 25.00)]
+        errors = engine.run(items)
+        ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
+        outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
+        assert len(ncci_errors) == 1
+        assert ncci_errors[0].estimated_overcharge == Decimal("25.00")
+        # 36415 must not also appear as a PRICE_OUTLIER — that would double-count
+        component_outliers = [e for e in outlier_errors if 1 in e.affected_indices]
+        assert len(component_outliers) == 0
+
+    def test_component_charge_counted_once_across_multiple_ncci_pairs(self) -> None:
+        # 36415 ($25) is a component of both 99213 AND 27447.
+        # When all three codes appear on the same bill, 36415 should only be counted
+        # once in total savings — not once per comprehensive code.
+        engine = RulesEngine(
+            ncci_edit_pairs={"99213": {"36415"}, "27447": {"36415"}},
+            medicare_rates={},
+        )
+        items = [
+            make_line_item("99213", 95.00),
+            make_line_item("27447", 8500.00),
+            make_line_item("36415", 25.00),
+        ]
+        errors = engine.run(items)
+        ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
+        assert len(ncci_errors) == 2
+        total_ncci_savings = sum(e.estimated_overcharge for e in ncci_errors)
+        # $25 counted once — the second NCCI error that references 36415 has overcharge=0
+        assert total_ncci_savings == Decimal("25.00")
+
+    def test_savings_cannot_exceed_total_charges(self) -> None:
+        # Regression guard: total estimated_overcharge across all errors must never
+        # exceed the sum of all line item charges on the bill.
+        engine = RulesEngine(
+            ncci_edit_pairs={"99213": {"36415"}, "27447": {"36415"}},
+            medicare_rates={"99213": Decimal("75.00"), "27447": Decimal("5000.00")},
+        )
+        items = [
+            make_line_item("99213", 95.00),
+            make_line_item("27447", 8500.00),
+            make_line_item("36415", 25.00),
+        ]
+        errors = engine.run(items)
+        total_charges = sum(Decimal(str(item.total_charge)) for item in items)
+        total_savings = sum(e.estimated_overcharge for e in errors)
+        assert total_savings <= total_charges
+
 
 class TestNonPayableCodeDetection:
     @pytest.fixture()
