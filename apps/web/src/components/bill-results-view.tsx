@@ -43,29 +43,41 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     return () => { cancelled = true; clearInterval(interval); };
   }, [analysis, bill.id, router]);
 
-  // After payment, report + dispute letter are generated async.
-  // Poll every 5s for up to 90s, then show a timeout state with a retry option.
-  //
-  // Dependency is a stable boolean, NOT the analysis object. router.refresh() returns
-  // a new analysis object reference on every call — if we depend on analysis directly
-  // the effect re-runs on every refresh, resetting refreshCount to 0 and looping forever.
-  const reportReady = !!(analysis?.reportUrl || analysis?.disputeLetterUrl);
+  // After payment, poll the analysis API directly every 5s for up to 90s.
+  // We do NOT call router.refresh() on every tick — router from useRouter() is not
+  // a stable reference in Next.js App Router, so putting it in deps causes the effect
+  // to re-run on every refresh and reset the counter to zero (infinite loop).
+  // Instead: poll the API directly, call router.refresh() exactly once when the URL appears.
+  const reportAlreadyReady = !!(analysis?.reportUrl || analysis?.disputeLetterUrl);
   useEffect(() => {
-    if (!hasPaid || analysis === null) return;
-    if (reportReady) return;
+    if (!hasPaid || !analysis || reportAlreadyReady) return;
 
-    let refreshCount = 0;
-    const MAX_REFRESHES = 18; // 18 × 5s = 90s
-    const interval = setInterval(() => {
-      refreshCount++;
-      router.refresh();
-      if (refreshCount >= MAX_REFRESHES) {
+    const billId = bill.id;
+    let count = 0;
+
+    const interval = setInterval(async () => {
+      count++;
+      if (count >= 18) {
         clearInterval(interval);
         setReportTimedOut(true);
+        return;
       }
+      try {
+        const res = await fetch(`/api/bills/${billId}/analysis`);
+        if (!res.ok) return;
+        const data = await res.json() as { analysis?: { reportUrl?: string | null; disputeLetterUrl?: string | null } };
+        if (data.analysis?.reportUrl || data.analysis?.disputeLetterUrl) {
+          clearInterval(interval);
+          router.refresh();
+        }
+      } catch { /* network blip — keep polling */ }
     }, 5000);
+
     return () => clearInterval(interval);
-  }, [hasPaid, reportReady, router]); // eslint-disable-line react-hooks/exhaustive-deps
+  // router is captured in closure but not in deps — it's not a stable reference.
+  // hasPaid and reportAlreadyReady are stable booleans that only change meaningfully.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPaid, reportAlreadyReady]);
 
   // Loading state — engine still processing
   if (analysis === null) {
