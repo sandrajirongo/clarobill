@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
 import { getPriceTier } from '@/lib/pricing';
+import { DownloadButton } from '@/components/download-button';
 import s from './bill-results-view.module.css';
 
 interface BillResultsViewProps {
@@ -205,10 +206,10 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
             <p className={s.cardLabel}>Your Documents</p>
             <div className={s.downloadRow}>
               {analysis.reportUrl && (
-                <DownloadButton billId={bill.id} type="report" label="Download Report" />
+                <DownloadButton billId={bill.id} type="report" label="Download Report" className={s.downloadBtn} />
               )}
               {analysis.disputeLetterUrl && (
-                <DownloadButton billId={bill.id} type="dispute-letter" label="Download Dispute Letter" />
+                <DownloadButton billId={bill.id} type="dispute-letter" label="Download Dispute Letter" className={s.downloadBtn} />
               )}
             </div>
           </div>
@@ -272,37 +273,3 @@ function PaywallCard({ count }: { count: number }): JSX.Element {
   );
 }
 
-function DownloadButton({ billId, type, label }: {
-  billId: string;
-  type: 'report' | 'dispute-letter';
-  label: string;
-}): JSX.Element {
-  const [loading, setLoading] = useState(false);
-
-  async function handleDownload(): Promise<void> {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/bills/${billId}/download?type=${type}`);
-      if (!res.ok) return;
-      const { url } = await res.json() as { url: string };
-      // window.open() is blocked by popup blockers when called from an async callback
-      // (user gesture context is lost after the fetch). A programmatic <a> click
-      // navigates as a link and is not subject to the same restriction.
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <button onClick={handleDownload} disabled={loading} className={s.downloadBtn}>
-      {loading ? 'Generating link…' : label}
-    </button>
-  );
-}

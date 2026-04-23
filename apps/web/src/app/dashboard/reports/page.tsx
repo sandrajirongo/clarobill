@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { DownloadButton } from '@/components/download-button';
 import s from '../dashboard.module.css';
 
 export default async function ReportsPage(): Promise<JSX.Element> {
@@ -85,10 +86,10 @@ export default async function ReportsPage(): Promise<JSX.Element> {
                   </div>
                   <div className={s.reportBtns}>
                     {result.report_url && (
-                      <DownloadButton billId={result.bill_id} type="report" label={t('report')} />
+                      <DownloadButton billId={result.bill_id} type="report" label={`↓ ${t('report')}`} className={s.dlBtn} />
                     )}
                     {result.dispute_letter_url && (
-                      <DownloadButton billId={result.bill_id} type="dispute-letter" label={t('disputeLetter')} />
+                      <DownloadButton billId={result.bill_id} type="dispute-letter" label={`↓ ${t('disputeLetter')}`} className={s.dlBtn} />
                     )}
                     {isClean && (
                       <Link href={`/dashboard/bills/${result.bill_id}`} className={s.dlBtn}>
@@ -106,23 +107,3 @@ export default async function ReportsPage(): Promise<JSX.Element> {
   );
 }
 
-function DownloadButton({
-  billId,
-  type,
-  label,
-}: {
-  billId: string;
-  type: 'report' | 'dispute-letter';
-  label: string;
-}): JSX.Element {
-  return (
-    <a
-      href={`/api/bills/${billId}/download?type=${type}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={s.dlBtn}
-    >
-      ↓ {label}
-    </a>
-  );
-}
