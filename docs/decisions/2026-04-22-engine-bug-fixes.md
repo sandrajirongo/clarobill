@@ -60,23 +60,29 @@ Also verify: a clean bill with no NCCI pairs present must still return zero
 
 ## Bug 2 — Price Outlier Not Firing
 
-**Status:** pending
+**Status:** fixed (commit 260c43f)
 
 ### What broke
-Bill 2 (designed with a charge 4× the Medicare non-facility rate) returned zero
-errors. No `PRICE_OUTLIER` error was flagged.
+Any bill returned zero `PRICE_OUTLIER` errors regardless of how overpriced the charges were.
 
 ### Root cause
-Two compounding issues:
+Three compounding issues:
 
-**Issue A — Empty `medicare_rates` dict:**
-`_load_medicare_rates()` filters `cms_pfs_indicators` with `.eq("proc_stat", "A")`.
-If the CPT code on the test bill has any proc_stat other than `'A'` in the DB — or
-has no row at all — `medicare_rates` is an empty dict. The rules engine then hits
-`continue` for every line item (no rate to compare against) and silently produces
-zero price outlier errors. There is no log warning when this happens.
+**Issue A — Wrong modifier filter (NULL vs empty string):**
+`_load_medicare_rates()` and `_load_non_payable_codes()` both filtered
+`cms_pfs_indicators` with `.eq("modifier", "")`. The modifier column is stored
+as `NULL` (not empty string) for base/no-modifier rows. `modifier = ''` never
+matches `NULL`, so both functions always returned empty dicts — permanently
+disabling PRICE_OUTLIER and non-payable code detection for every bill.
+Fixed in commit 260c43f: changed `.eq("modifier", "")` → `.is_("modifier", "null")`
+in both queries.
 
-**Issue B — Wrong threshold for plan type:**
+**Issue B — Empty `medicare_rates` dict (original analysis):**
+`_load_medicare_rates()` also filters with `.eq("proc_stat", "A")`.
+If the CPT code has any proc_stat other than `'A'` in the DB, `medicare_rates`
+is empty. A `WARNING` log was added so this is now visible in Cloud Run logs.
+
+**Issue C — Wrong threshold for plan type:**
 The engine uses a single `medicare_outlier_threshold = 1.8` for all insurance types.
 This is correct for commercial insurance but wrong for:
 - Medicare patients: Medicare rate IS the payment; anything above it is an overcharge

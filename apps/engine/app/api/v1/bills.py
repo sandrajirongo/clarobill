@@ -158,7 +158,11 @@ async def _run_analysis_pipeline(
             rate_date, locality_code, bill_id, state, county,
         )
         service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
-        ncci_pairs = _load_ncci_pairs(supabase, cpt_codes, service_type, payer_type, rate_date)
+        # Always include both practitioner and outpatient service_types — outpatient hospital
+        # bills are not reliably detected without revenue codes, so querying both is the safe
+        # default. The column_one_code IN filter keeps query size small regardless.
+        ncci_service_types = list({service_type, "practitioner", "outpatient"})
+        ncci_pairs = _load_ncci_pairs(supabase, cpt_codes, ncci_service_types, payer_type, rate_date)
         mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type, rate_date)
         medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
         non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
@@ -291,7 +295,7 @@ def _derive_ncci_context(cpt_codes: list[str], plan_type: str | None) -> tuple[s
 def _load_ncci_pairs(
     supabase: Client,
     cpt_codes: list[str],
-    service_type: str = "practitioner",
+    service_types: list[str] | None = None,
     payer_type: str = "medicare",
     service_date: date | None = None,
 ) -> dict[str, set[str]]:
@@ -305,16 +309,22 @@ def _load_ncci_pairs(
     bill's codes are fetched. Without this filter the query would match 2M+ rows
     and PostgREST would return only the first 1000 — making unbundling detection
     effectively non-functional for any specific bill's code pairs.
+
+    Queries all relevant service_types simultaneously. Both 'practitioner' and
+    'outpatient' are always included because outpatient hospital service type is
+    not reliably auto-detected (requires revenue code parsing not yet implemented).
+    Querying both is safe — the column_one_code filter keeps the result small.
     """
     if not cpt_codes:
         return {}
 
     unique_codes = list(set(cpt_codes))
+    effective_service_types = list(set(service_types or ["practitioner", "outpatient"]))
 
     query = (
         supabase.table("ncci_edit_pairs")
         .select("column_one_code,column_two_code")
-        .eq("service_type", service_type)
+        .in_("service_type", effective_service_types)
         .eq("payer_type", payer_type)
         .in_("column_one_code", unique_codes)
     )
@@ -334,9 +344,9 @@ def _load_ncci_pairs(
 
     if not pairs:
         logger.warning(
-            "No NCCI pairs found for service_type=%s payer_type=%s service_date=%s "
+            "No NCCI pairs found for service_types=%s payer_type=%s service_date=%s "
             "cpt_codes=%s — NCCI_UNBUNDLING detection disabled for this bill.",
-            service_type, payer_type, service_date, unique_codes,
+            effective_service_types, payer_type, service_date, unique_codes,
         )
 
     return pairs
@@ -662,7 +672,7 @@ def _load_opps_rates(
         supabase.table("cms_opps_cap")
         .select("hcpc,facility_price")
         .in_("hcpc", list(set(cpt_codes)))
-        .eq("modifier", "")
+        .is_("modifier", "null")
         .eq("locality_code", locality_code)
         .lte("effective_from", rate_date.isoformat())
         .order("effective_from", desc=True)
