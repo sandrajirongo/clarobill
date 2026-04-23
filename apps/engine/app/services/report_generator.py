@@ -171,21 +171,55 @@ class ReportGenerator:
             aligns = ["L", "L", "L", "R"]
             pdf.set_font("DejaVu", "B", 8)
             pdf.set_text_color(*_MUTED)
-            for h, c, a in zip(hdrs, cw, aligns):
+            for h, c, a in zip(hdrs, cw, aligns, strict=True):
                 pdf.cell(c, 5, h, border="B", align=a)
             pdf.ln()
+            _desc_lh = 5.0  # line height for wrapped description text
             for e in errors:
                 pdf.set_draw_color(*_RULE)
                 pdf.set_line_width(0.2)
+
+                # Pre-calculate wrapped description lines so we know the row height
+                # before drawing any cell. Must set the body font first so
+                # get_string_width() uses the correct glyph metrics.
+                pdf.set_font("DejaVu", "", 9)
+                desc_lines = pdf.multi_cell(cw[2], _desc_lh, e.description, split_only=True)
+                row_h = max(7.0, len(desc_lines) * _desc_lh)
+
+                y0 = pdf.get_y()
+                if y0 + row_h > pdf.page_break_trigger:
+                    pdf.add_page()
+                    y0 = pdf.get_y()
+
+                # Finding (bold) — clip narrow column
                 pdf.set_font("DejaVu", "B", 9)
                 pdf.set_text_color(*_BODY)
-                pdf.cell(cw[0], 7, _clip(e.code.replace("_", " ").title(), cw[0] - 1), border="B")
+                code_text = _clip(e.code.replace("_", " ").title(), cw[0] - 1)
+                pdf.cell(cw[0], row_h, code_text, border="B")
+
+                # Severity — clip narrow column
                 pdf.set_font("DejaVu", "", 9)
-                pdf.cell(cw[1], 7, _clip(e.severity.capitalize(), cw[1] - 1), border="B")
-                pdf.cell(cw[2], 7, _clip(e.description, cw[2] - 1), border="B")
+                pdf.cell(cw[1], row_h, _clip(e.severity.capitalize(), cw[1] - 1), border="B")
+
+                # Description — draw the border-only placeholder at full row height,
+                # then render wrapped text lines on top via explicit set_xy positioning.
+                x_desc = pdf.get_x()
+                pdf.cell(cw[2], row_h, "", border="B")
+
+                # Est. Overcharge (bold) — clip narrow column
                 pdf.set_font("DejaVu", "B", 9)
-                pdf.cell(cw[3], 7, _clip(f"${e.estimated_overcharge:.2f}", cw[3] - 1), border="B", align="R")
+                overcharge_text = _clip(f"${e.estimated_overcharge:.2f}", cw[3] - 1)
+                pdf.cell(cw[3], row_h, overcharge_text, border="B", align="R")
                 pdf.ln()
+
+                # Render each description line at its exact position
+                pdf.set_font("DejaVu", "", 9)
+                pdf.set_text_color(*_BODY)
+                for i, line_text in enumerate(desc_lines):
+                    pdf.set_xy(x_desc, y0 + i * _desc_lh)
+                    pdf.cell(cw[2], _desc_lh, line_text)
+
+                pdf.set_xy(pdf.l_margin, y0 + row_h)
 
         pdf.ln(8)
 
@@ -197,22 +231,44 @@ class ReportGenerator:
         li_aligns = ["L", "L", "L", "R", "L"]
         pdf.set_font("DejaVu", "B", 8)
         pdf.set_text_color(*_MUTED)
-        for h, c, a in zip(li_hdrs, cw2, li_aligns):
+        for h, c, a in zip(li_hdrs, cw2, li_aligns, strict=True):
             pdf.cell(c, 5, h, border="B", align=a)
         pdf.ln()
+        _li_lh = 5.0  # line height for wrapped line-item description
         for item in line_items:
             pdf.set_draw_color(*_RULE)
             pdf.set_line_width(0.2)
             pdf.set_font("DejaVu", "", 9)
             pdf.set_text_color(*_BODY)
-            pdf.cell(cw2[0], 7, _clip(item.cpt_code, cw2[0] - 1), border="B")
-            pdf.cell(cw2[1], 7, _clip(item.description, cw2[1] - 1), border="B")
-            pdf.cell(cw2[2], 7, _clip(str(item.service_date), cw2[2] - 1), border="B")
+
+            li_desc_lines = pdf.multi_cell(cw2[1], _li_lh, item.description, split_only=True)
+            row_h2 = max(7.0, len(li_desc_lines) * _li_lh)
+
+            y0 = pdf.get_y()
+            if y0 + row_h2 > pdf.page_break_trigger:
+                pdf.add_page()
+                y0 = pdf.get_y()
+
+            pdf.cell(cw2[0], row_h2, _clip(item.cpt_code, cw2[0] - 1), border="B")
+
+            x_li_desc = pdf.get_x()
+            pdf.cell(cw2[1], row_h2, "", border="B")
+
+            pdf.cell(cw2[2], row_h2, _clip(str(item.service_date), cw2[2] - 1), border="B")
             pdf.set_font("DejaVu", "B", 9)
-            pdf.cell(cw2[3], 7, _clip(f"${item.total_charge:.2f}", cw2[3] - 1), border="B", align="R")
+            charge_text = _clip(f"${item.total_charge:.2f}", cw2[3] - 1)
+            pdf.cell(cw2[3], row_h2, charge_text, border="B", align="R")
             pdf.set_font("DejaVu", "", 9)
-            pdf.cell(cw2[4], 7, _clip(item.modifier or "-", cw2[4] - 1), border="B")
+            pdf.cell(cw2[4], row_h2, _clip(item.modifier or "-", cw2[4] - 1), border="B")
             pdf.ln()
+
+            pdf.set_font("DejaVu", "", 9)
+            pdf.set_text_color(*_BODY)
+            for i, line_text in enumerate(li_desc_lines):
+                pdf.set_xy(x_li_desc, y0 + i * _li_lh)
+                pdf.cell(cw2[1], _li_lh, line_text)
+
+            pdf.set_xy(pdf.l_margin, y0 + row_h2)
 
         # ── Footer ───────────────────────────────────────────────────────────
         pdf.ln(10)

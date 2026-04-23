@@ -12,7 +12,6 @@ import logging
 import sendgrid
 from sendgrid.helpers.mail import (
     Attachment,
-    ContentId,
     Disposition,
     FileContent,
     FileName,
@@ -64,8 +63,8 @@ class EmailService:
 
         docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         message.attachment = [
-            self._make_attachment(report_pdf, "clarobill-report.pdf", "clarobill-report", "application/pdf"),
-            self._make_attachment(dispute_letter_docx, "dispute-letter.docx", "dispute-letter", docx_mime),
+            self._make_attachment(report_pdf, "clarobill-report.pdf", "application/pdf"),
+            self._make_attachment(dispute_letter_docx, "dispute-letter.docx", docx_mime),
         ]
 
         response = self._client.send(message)
@@ -76,13 +75,14 @@ class EmailService:
         logger.info("Report email sent, status=%s", response.status_code)
 
     @staticmethod
-    def _make_attachment(file_bytes: bytes, filename: str, content_id: str, mime_type: str) -> Attachment:
+    def _make_attachment(file_bytes: bytes, filename: str, mime_type: str) -> Attachment:
         attachment = Attachment()
         attachment.file_content = FileContent(base64.b64encode(file_bytes).decode())
         attachment.file_type = FileType(mime_type)
         attachment.file_name = FileName(filename)
         attachment.disposition = Disposition("attachment")
-        attachment.content_id = ContentId(content_id)
+        # No Content-ID — only set when embedding inline via cid: references in HTML body.
+        # Having it on a disposition:attachment part causes some clients to render inline.
         return attachment
 
     @staticmethod
