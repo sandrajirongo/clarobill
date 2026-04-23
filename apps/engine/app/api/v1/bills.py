@@ -1168,22 +1168,27 @@ def _map_errors_to_line_items(
     return result
 
 
-@router.post("/{bill_id}/report", response_model=ReportGenerated, status_code=status.HTTP_200_OK)
+@router.post("/{bill_id}/report", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("5/hour")  # PDF generation + email — tighter limit than analysis
 async def generate_report(
     request: Request,
     bill_id: str,
     body: ReportRequest,
+    background_tasks: BackgroundTasks,
     supabase: Client = Depends(get_supabase_client),
     ai_service: AiAnalysisService = Depends(get_ai_analysis_service),
     email_service: EmailService = Depends(get_email_service),
-) -> ReportGenerated:
-    """Generate the full PDF report and dispute letter, then email them to the patient.
+) -> dict[str, str]:
+    """Kick off report + dispute letter generation as a background task.
 
-    Called by the Next.js webhook after a successful Stripe payment.
-    Idempotent — safe to call more than once for the same bill.
+    Returns 202 immediately so the caller (checkout route) never times out
+    waiting for a 30-60s synchronous response. The frontend polls for
+    report_url to appear in the analysis record.
+
+    Idempotency: skips if a valid file already exists in storage.
+    If report_url is set but the file is missing (stale from a crashed run),
+    regenerates rather than returning a broken download.
     """
-    # Load the bill and existing analysis
     bill_row = supabase.table("bills").select("id,file_name,file_path,user_id,hospital_name,payer_name").eq("id", bill_id).single().execute()
     if not bill_row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found.")
@@ -1198,90 +1203,122 @@ async def generate_report(
     if not analysis_row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
 
-    # Idempotency — don't regenerate if already done
-    if analysis_row.data.get("report_url"):
-        logger.info("Report already generated for bill %s, skipping", bill_id)
-        return ReportGenerated()
-
-    # Reload parsed line items from DB
-    items_row = (
-        supabase.table("line_items")
-        .select("cpt_code,description,service_date,quantity,unit_charge,total_charge,modifier,diagnosis_pointers")
-        .eq("bill_id", bill_id)
-        .execute()
-    )
-    line_items = [
-        ParsedLineItem(
-            cpt_code=r["cpt_code"],
-            description=r["description"],
-            service_date=date.fromisoformat(r["service_date"]),
-            quantity=r["quantity"],
-            unit_charge=float(r["unit_charge"]),
-            total_charge=float(r["total_charge"]),
-            modifier=r["modifier"],
-            diagnosis_pointers=r["diagnosis_pointers"],
-        )
-        for r in items_row.data
-    ]
-
-    # Reconstruct BillingError list from stored JSONB
-    billing_errors = [
-        BillingError(
-            code=BillingErrorCode(e["code"]),
-            severity=ErrorSeverity(e["severity"]),
-            affected_line_item_ids=e["affected_line_item_ids"],
-            description=e["description"],
-            estimated_overcharge=Decimal(str(e["estimated_overcharge"])),
-            medicare_benchmark_rate=Decimal(str(e["medicare_benchmark_rate"])) if e.get("medicare_benchmark_rate") else None,
-        )
-        for e in analysis_row.data["errors"]
-    ]
-
-    file_name: str = bill_row.data["file_name"]
     user_id: str = bill_row.data["user_id"]
-    hospital_name: str | None = bill_row.data.get("hospital_name")
-    payer_name: str | None = bill_row.data.get("payer_name")
-    ai_summary: str = analysis_row.data["ai_summary"]
-
-    # Claude (dispute letter) and fpdf2 (report PDF) are independent — run in parallel.
-    # fpdf2 is CPU-bound so it runs in a thread pool executor to avoid blocking the event loop.
-    generator = ReportGenerator()
-    loop = asyncio.get_running_loop()
-    dispute_letter_text, report_pdf = await asyncio.gather(
-        ai_service.generate_dispute_letter(
-            billing_errors, line_items, file_name,
-            hospital_name=hospital_name, payer_name=payer_name,
-        ),
-        loop.run_in_executor(
-            None,
-            lambda: generator.generate_report_pdf(billing_errors, line_items, file_name, ai_summary),
-        ),
-    )
-    # python-docx is fast (pure in-memory) — no executor needed
-    dispute_docx = generator.generate_dispute_letter_docx(dispute_letter_text)
-
-    # Upload to Supabase Storage (private bucket: 'reports')
+    existing_url: str | None = analysis_row.data.get("report_url")
     report_path = f"{user_id}/{bill_id}/report.pdf"
-    dispute_path = f"{user_id}/{bill_id}/dispute-letter.docx"
-    supabase.storage.from_("reports").upload(report_path, report_pdf, {"content-type": "application/pdf", "upsert": "true"})
-    supabase.storage.from_("reports").upload(
-        dispute_path, dispute_docx,
-        {"content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "upsert": "true"},
+
+    # Idempotency: skip only if the file actually exists in storage.
+    # A set report_url with a missing file (stale from a crashed run) must regenerate.
+    if existing_url:
+        try:
+            probe = supabase.storage.from_("reports").create_signed_url(existing_url, 10)
+            if probe.get("signedURL") or probe.get("signedUrl"):
+                logger.info("Report already exists in storage for bill %s, skipping", bill_id)
+                return {"status": "already_done"}
+        except Exception:
+            logger.info("report_url set for bill %s but file missing — will regenerate", bill_id)
+            # Clear stale URL so the frontend polling shows correct state
+            supabase.table("analysis_results").update(
+                {"report_url": None, "dispute_letter_url": None}
+            ).eq("bill_id", bill_id).execute()
+
+    background_tasks.add_task(
+        _do_generate_report,
+        bill_id=bill_id,
+        body=body,
+        bill_data=bill_row.data,
+        analysis_data=analysis_row.data,
+        supabase=supabase,
+        ai_service=ai_service,
+        email_service=email_service,
     )
+    logger.info("Report generation queued for bill %s", bill_id)
+    return {"status": "processing"}
 
-    # Store storage paths in analysis_results
-    supabase.table("analysis_results").update({
-        "report_url": report_path,
-        "dispute_letter_url": dispute_path,
-    }).eq("bill_id", bill_id).execute()
 
-    # Send email with report PDF + dispute letter DOCX attached
-    email_service.send_report_email(
-        to_email=body.user_email,
-        bill_file_name=file_name,
-        report_pdf=report_pdf,
-        dispute_letter_docx=dispute_docx,
-    )
+async def _do_generate_report(
+    bill_id: str,
+    body: ReportRequest,
+    bill_data: dict,
+    analysis_data: dict,
+    supabase: Client,
+    ai_service: AiAnalysisService,
+    email_service: EmailService,
+) -> None:
+    """Background task: generate PDF + DOCX, upload to storage, email the patient."""
+    try:
+        file_name: str = bill_data["file_name"]
+        user_id: str = bill_data["user_id"]
+        hospital_name: str | None = bill_data.get("hospital_name")
+        payer_name: str | None = bill_data.get("payer_name")
+        ai_summary: str = analysis_data["ai_summary"]
 
-    logger.info("Report generated and emailed for bill %s", bill_id)
-    return ReportGenerated()
+        items_row = (
+            supabase.table("line_items")
+            .select("cpt_code,description,service_date,quantity,unit_charge,total_charge,modifier,diagnosis_pointers")
+            .eq("bill_id", bill_id)
+            .execute()
+        )
+        line_items = [
+            ParsedLineItem(
+                cpt_code=r["cpt_code"],
+                description=r["description"],
+                service_date=date.fromisoformat(r["service_date"]),
+                quantity=r["quantity"],
+                unit_charge=float(r["unit_charge"]),
+                total_charge=float(r["total_charge"]),
+                modifier=r["modifier"],
+                diagnosis_pointers=r["diagnosis_pointers"],
+            )
+            for r in items_row.data
+        ]
+
+        billing_errors = [
+            BillingError(
+                code=BillingErrorCode(e["code"]),
+                severity=ErrorSeverity(e["severity"]),
+                affected_line_item_ids=e["affected_line_item_ids"],
+                description=e["description"],
+                estimated_overcharge=Decimal(str(e["estimated_overcharge"])),
+                medicare_benchmark_rate=Decimal(str(e["medicare_benchmark_rate"])) if e.get("medicare_benchmark_rate") else None,
+            )
+            for e in analysis_data["errors"]
+        ]
+
+        generator = ReportGenerator()
+        loop = asyncio.get_running_loop()
+        dispute_letter_text, report_pdf = await asyncio.gather(
+            ai_service.generate_dispute_letter(
+                billing_errors, line_items, file_name,
+                hospital_name=hospital_name, payer_name=payer_name,
+            ),
+            loop.run_in_executor(
+                None,
+                lambda: generator.generate_report_pdf(billing_errors, line_items, file_name, ai_summary),
+            ),
+        )
+        dispute_docx = generator.generate_dispute_letter_docx(dispute_letter_text)
+
+        report_path = f"{user_id}/{bill_id}/report.pdf"
+        dispute_path = f"{user_id}/{bill_id}/dispute-letter.docx"
+        supabase.storage.from_("reports").upload(report_path, report_pdf, {"content-type": "application/pdf", "upsert": "true"})
+        supabase.storage.from_("reports").upload(
+            dispute_path, dispute_docx,
+            {"content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "upsert": "true"},
+        )
+
+        supabase.table("analysis_results").update({
+            "report_url": report_path,
+            "dispute_letter_url": dispute_path,
+        }).eq("bill_id", bill_id).execute()
+
+        email_service.send_report_email(
+            to_email=body.user_email,
+            bill_file_name=file_name,
+            report_pdf=report_pdf,
+            dispute_letter_docx=dispute_docx,
+        )
+        logger.info("Report generated and emailed for bill %s", bill_id)
+
+    except Exception:
+        logger.exception("Report generation background task failed for bill %s", bill_id)

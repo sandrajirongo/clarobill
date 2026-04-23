@@ -63,10 +63,13 @@ export async function GET(
     .createSignedUrl(storagePath, 60);
 
   if (error || !signedUrl?.signedUrl) {
-    console.error('[download] createSignedUrl failed for bill %s type %s:', billId, type, error?.message);
+    // createSignedUrl returns an error when the object path doesn't exist in storage —
+    // this happens when the report generation background task hasn't completed yet
+    // or failed silently. Return 404 so the frontend can show "not ready" rather than "server error".
+    console.error('[download] createSignedUrl failed for bill %s type %s — file may not exist yet:', billId, type, error?.message);
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail: 'Could not generate download link.', step: 'download' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
-      { status: 500 }
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Document not ready. Please try again in a moment.', step: 'download' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 404 }
     );
   }
 
