@@ -169,14 +169,12 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         {/* Paywall CTA — only shown when errors exist to unlock */}
         {showPaywall && (
           <div className={s.paywallCta}>
-            <h2 className={s.paywallCtaTitle}>Get the Full Report</h2>
-            <p className={s.paywallCtaSub}>
-              Unlock all findings, a detailed PDF report, and a ready-to-send dispute letter.
-            </p>
-            <div className={s.paywallTierRow}>
-              <span className={s.paywallTierLabel}>{priceTier.label}</span>
-              <span className={s.paywallCtaPrice}>{priceTier.priceDisplay}</span>
-              <span className={s.paywallTierRange}>{priceTier.range} found</span>
+            <p className={s.paywallCtaPrice}>{priceTier.priceDisplay}</p>
+            <p className={s.paywallOneTime}>one-time · no subscription</p>
+            <div className={s.paywallBenefits}>
+              <span>All findings</span>
+              <span>PDF report</span>
+              <span>Dispute letter</span>
             </div>
             {checkoutError && <p className={s.paywallError}>{checkoutError}</p>}
             <button
@@ -184,7 +182,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
               disabled={isStartingCheckout}
               className={s.paywallBtn}
             >
-              {isStartingCheckout ? 'Redirecting…' : 'Get Full Report & Dispute Letter'}
+              {isStartingCheckout ? 'Redirecting…' : 'Unlock Report'}
             </button>
           </div>
         )}
@@ -284,10 +282,7 @@ function ErrorCard({ error }: { error: BillingError }): JSX.Element {
 function PaywallCard({ count }: { count: number }): JSX.Element {
   return (
     <div className={s.paywallCard}>
-      <p className={s.paywallText}>
-        <span className={s.paywallCount}>{count} more issue{count > 1 ? 's' : ''}</span>{' '}
-        hidden — unlock the full report to see all findings.
-      </p>
+      <span className={s.paywallCount}>+{count} more hidden</span>
     </div>
   );
 }
