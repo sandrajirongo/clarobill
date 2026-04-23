@@ -13,6 +13,7 @@ Prerequisite: A 'reports' Supabase Storage bucket must exist and be private.
 
 import logging
 import re
+import unicodedata
 from decimal import Decimal
 from io import BytesIO
 
@@ -33,26 +34,40 @@ _MUTED = (107, 124, 106)
 _RULE = (220, 220, 215)
 _GRAY = (140, 140, 140)
 
-# Helvetica is a Latin-1 core PDF font — Claude output routinely contains
-# typographic Unicode characters outside that range. Map the common ones to
-# ASCII equivalents before any text touches fpdf2.
+# Helvetica is a Latin-1 core PDF font. Claude output routinely contains
+# typographic Unicode outside that range. Integer code-point keys avoid any
+# source-file encoding ambiguity.
 _LATIN1_MAP = str.maketrans({
-    "—": "--",   # em dash
-    "–": "-",    # en dash
-    "‘": "'",    # left single quote
-    "’": "'",    # right single quote
-    "“": '"',    # left double quote
-    "”": '"',    # right double quote
-    "…": "...",  # ellipsis
-    "•": "-",    # bullet
-    " ": " ",    # non-breaking space
-    "·": "-",    # middle dot
+    0x2014: "--",   # em dash
+    0x2013: "-",    # en dash
+    0x2012: "-",    # figure dash
+    0x2015: "-",    # horizontal bar
+    0x2011: "-",    # non-breaking hyphen
+    0x2018: "'",    # left single quote
+    0x2019: "'",    # right single quote
+    0x201C: '"',    # left double quote
+    0x201D: '"',    # right double quote
+    0x2026: "...",  # ellipsis
+    0x2022: "-",    # bullet
+    0x00A0: " ",    # non-breaking space
+    0x00B7: "-",    # middle dot
+    0x2032: "'",    # prime
+    0x2033: '"',    # double prime
+    0x2039: "<",    # single left-angle quote
+    0x203A: ">",    # single right-angle quote
 })
 
 
 def _s(text: str) -> str:
-    """Sanitize text for fpdf2 Latin-1 core fonts."""
-    return text.translate(_LATIN1_MAP).encode("latin-1", errors="replace").decode("latin-1")
+    """Sanitize text for fpdf2 Latin-1 core fonts.
+
+    1. Map common typographic Unicode code points to ASCII equivalents.
+    2. NFKC-normalize (decomposes ligatures, normalises widths).
+    3. Encode as Latin-1, replacing any remaining out-of-range chars with '?'.
+    """
+    text = text.translate(_LATIN1_MAP)
+    text = unicodedata.normalize("NFKC", text)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
 class ReportGenerator:
