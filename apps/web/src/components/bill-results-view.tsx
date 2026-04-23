@@ -206,10 +206,9 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
             {reportTimedOut ? (
               <div className={s.reportPendingWrap}>
                 <div>
-                  <p className={s.reportPendingTitle}>Taking longer than expected</p>
+                  <p className={s.reportPendingTitle}>Check your email</p>
                   <p className={s.reportPendingSub}>
-                    Check your email — your report may already be there. If not, you can
-                    visit the <Link href="/dashboard/reports" className={s.inlineLink}>Reports tab</Link> or try generating again.
+                    Your report should have been sent to your inbox. If you don&apos;t see it, check your spam folder or try generating again below.
                   </p>
                   <button onClick={handleGetFullReport} disabled={isStartingCheckout} className={s.retryBtn}>
                     {isStartingCheckout ? 'Please wait…' : 'Try again'}
@@ -222,7 +221,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
                 <div>
                   <p className={s.reportPendingTitle}>Generating your report…</p>
                   <p className={s.reportPendingSub}>
-                    Your PDF report and dispute letter are being created. This takes about 30 seconds.
+                    This takes about 3 minutes. We&apos;ll email your report and dispute letter to you — no need to stay on this page.
                   </p>
                 </div>
               </div>

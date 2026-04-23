@@ -126,6 +126,20 @@ class ReportGenerator:
             pdf.cell(col, 5, lbl.upper(), align="L")
         pdf.ln(12)
 
+        # ── Cell text helpers ────────────────────────────────────────────────
+        def _clip(text: str, col_width: float, ellipsis: str = "…") -> str:
+            """Truncate text so its rendered width fits within col_width mm.
+
+            Must be called after set_font() so get_string_width() uses the
+            correct typeface. Character-count truncation is unreliable because
+            glyph widths vary; fpdf2 cell() does not clip — it bleeds.
+            """
+            if pdf.get_string_width(text) <= col_width:
+                return text
+            while text and pdf.get_string_width(text + ellipsis) > col_width:
+                text = text[:-1]
+            return text + ellipsis if text else ""
+
         # ── Section helper ───────────────────────────────────────────────────
         def section(title: str) -> None:
             pdf.set_font("DejaVu", "B", 8)
@@ -165,12 +179,12 @@ class ReportGenerator:
                 pdf.set_line_width(0.2)
                 pdf.set_font("DejaVu", "B", 9)
                 pdf.set_text_color(*_BODY)
-                pdf.cell(cw[0], 7, e.code.replace("_", " ").title()[:28], border="B")
+                pdf.cell(cw[0], 7, _clip(e.code.replace("_", " ").title(), cw[0] - 1), border="B")
                 pdf.set_font("DejaVu", "", 9)
-                pdf.cell(cw[1], 7, e.severity.capitalize(), border="B")
-                pdf.cell(cw[2], 7, e.description[:65], border="B")
+                pdf.cell(cw[1], 7, _clip(e.severity.capitalize(), cw[1] - 1), border="B")
+                pdf.cell(cw[2], 7, _clip(e.description, cw[2] - 1), border="B")
                 pdf.set_font("DejaVu", "B", 9)
-                pdf.cell(cw[3], 7, f"${e.estimated_overcharge:.2f}", border="B", align="R")
+                pdf.cell(cw[3], 7, _clip(f"${e.estimated_overcharge:.2f}", cw[3] - 1), border="B", align="R")
                 pdf.ln()
 
         pdf.ln(8)
@@ -191,13 +205,13 @@ class ReportGenerator:
             pdf.set_line_width(0.2)
             pdf.set_font("DejaVu", "", 9)
             pdf.set_text_color(*_BODY)
-            pdf.cell(cw2[0], 7, item.cpt_code, border="B")
-            pdf.cell(cw2[1], 7, item.description[:55], border="B")
-            pdf.cell(cw2[2], 7, str(item.service_date), border="B")
+            pdf.cell(cw2[0], 7, _clip(item.cpt_code, cw2[0] - 1), border="B")
+            pdf.cell(cw2[1], 7, _clip(item.description, cw2[1] - 1), border="B")
+            pdf.cell(cw2[2], 7, _clip(str(item.service_date), cw2[2] - 1), border="B")
             pdf.set_font("DejaVu", "B", 9)
-            pdf.cell(cw2[3], 7, f"${item.total_charge:.2f}", border="B", align="R")
+            pdf.cell(cw2[3], 7, _clip(f"${item.total_charge:.2f}", cw2[3] - 1), border="B", align="R")
             pdf.set_font("DejaVu", "", 9)
-            pdf.cell(cw2[4], 7, item.modifier or "-", border="B")
+            pdf.cell(cw2[4], 7, _clip(item.modifier or "-", cw2[4] - 1), border="B")
             pdf.ln()
 
         # ── Footer ───────────────────────────────────────────────────────────
