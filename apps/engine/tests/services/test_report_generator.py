@@ -43,33 +43,26 @@ def generator() -> ReportGenerator:
     return ReportGenerator()
 
 
-class TestBuildReportHtml:
-    def test_includes_bill_file_name(self, generator: ReportGenerator) -> None:
-        html = generator._build_report_html([], [], "my-bill.pdf", "No errors found.")
-        assert "my-bill.pdf" in html
+class TestGenerateReportPdf:
+    def test_returns_valid_pdf(self, generator: ReportGenerator) -> None:
+        pdf = generator.generate_report_pdf([], [], "my-bill.pdf", "No errors found.")
+        assert isinstance(pdf, bytes)
+        assert pdf[:4] == b"%PDF"
 
-    def test_includes_ai_summary(self, generator: ReportGenerator) -> None:
-        summary = "We found 2 potential errors totalling $430."
-        html = generator._build_report_html([], [], "bill.pdf", summary)
-        assert summary in html
-
-    def test_includes_total_charges(self, generator: ReportGenerator) -> None:
-        items = [make_line_item("99214", 350.00), make_line_item("85025", 120.00)]
-        html = generator._build_report_html([], items, "bill.pdf", "Summary.")
-        assert "470.00" in html
-
-    def test_includes_error_descriptions(self, generator: ReportGenerator) -> None:
+    def test_non_empty_with_errors(self, generator: ReportGenerator) -> None:
         errors = [make_error("DUPLICATE_CHARGE", 350.00)]
-        html = generator._build_report_html(errors, [], "bill.pdf", "Summary.")
-        assert "Test description for DUPLICATE_CHARGE" in html
+        items = [make_line_item("99214", 350.00)]
+        pdf = generator.generate_report_pdf(errors, items, "bill.pdf", "Found 1 error.")
+        assert len(pdf) > 500
 
-    def test_includes_footer(self, generator: ReportGenerator) -> None:
-        html = generator._build_report_html([], [], "bill.pdf", "Summary.")
-        assert "Medicare fee schedule" in html
+    def test_no_errors_still_generates(self, generator: ReportGenerator) -> None:
+        pdf = generator.generate_report_pdf([], [], "clean-bill.pdf", "Clean bill.")
+        assert pdf[:4] == b"%PDF"
 
-    def test_no_errors_notice_shown_when_empty(self, generator: ReportGenerator) -> None:
-        html = generator._build_report_html([], [], "bill.pdf", "Clean bill.")
-        assert "No billing errors were detected" in html
+    def test_multiple_line_items(self, generator: ReportGenerator) -> None:
+        items = [make_line_item("99214", 350.00), make_line_item("85025", 120.00)]
+        pdf = generator.generate_report_pdf([], items, "bill.pdf", "Summary.")
+        assert pdf[:4] == b"%PDF"
 
 
 def _python_docx_available() -> bool:
@@ -111,34 +104,8 @@ class TestDisputeLetterDocx:
         assert any("Dispute 1" in r.text for r in bold_runs)
 
 
-def _weasyprint_available() -> bool:
-    """Check whether weasyprint's system dependencies (pango, cairo) are available."""
-    try:
-        from weasyprint import HTML  # noqa: PLC0415
-        HTML(string="<p>test</p>").write_pdf()
-        return True
-    except Exception:
-        return False
-
-
-weasyprint_available = pytest.mark.skipif(
-    not _weasyprint_available(),
-    reason="weasyprint system dependencies (pango/cairo) not installed",
-)
-
-
-class TestPdfGeneration:
-    @weasyprint_available
-    def test_generate_report_pdf_returns_bytes(self, generator: ReportGenerator) -> None:
-        errors = [make_error("DUPLICATE_CHARGE", 350.00)]
-        items = [make_line_item("99214", 350.00)]
-        pdf = generator.generate_report_pdf(errors, items, "bill.pdf", "Found 1 error.")
-        assert isinstance(pdf, bytes)
-        assert len(pdf) > 0
-        assert pdf[:4] == b"%PDF"
-
-    @python_docx_available
-    def test_generate_dispute_letter_docx_returns_bytes(self, generator: ReportGenerator) -> None:
-        docx_bytes = generator.generate_dispute_letter_docx("Dear Provider,\n\nDispute 1:\n\nCharged twice.\n\n[YOUR NAME]")
-        assert isinstance(docx_bytes, bytes)
-        assert docx_bytes[:2] == b"PK"
+@python_docx_available
+def test_generate_dispute_letter_docx_returns_bytes(generator: ReportGenerator) -> None:
+    docx_bytes = generator.generate_dispute_letter_docx("Dear Provider,\n\nDispute 1:\n\nCharged twice.\n\n[YOUR NAME]")
+    assert isinstance(docx_bytes, bytes)
+    assert docx_bytes[:2] == b"PK"

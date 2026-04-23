@@ -141,59 +141,31 @@
 
 /* Paywall CTA block */
 .paywallCta {
-  background: var(--sage);
+  background: var(--white);
+  border: 1px solid var(--border);
   border-radius: 1.25rem;
-  padding: 2.5rem 2rem 2rem;
+  padding: 2rem;
   text-align: center;
-  position: relative;
-  overflow: hidden;
-}
-.paywallCta::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse 70% 55% at 50% 120%, rgba(200, 240, 96, .12), transparent 65%);
-  pointer-events: none;
 }
 .paywallCtaPrice {
   font-family: var(--fd);
-  font-size: 3.5rem;
+  font-size: 3rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--sage);
   line-height: 1;
-  position: relative;
-  margin-bottom: .3rem;
+  margin-bottom: .4rem;
 }
 .paywallOneTime {
-  font-size: .75rem;
-  color: rgba(255, 255, 255, .35);
+  font-size: .78rem;
+  color: var(--txt3);
   margin-bottom: 1.5rem;
-  position: relative;
-  letter-spacing: .03em;
+  letter-spacing: .02em;
 }
-.paywallBenefits {
-  display: flex;
-  gap: .5rem;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 1.75rem;
-  position: relative;
-}
-.paywallBenefits span {
-  font-size: .72rem;
-  font-weight: 600;
-  color: rgba(200, 240, 96, .75);
-  background: rgba(200, 240, 96, .08);
-  border: 1px solid rgba(200, 240, 96, .18);
-  border-radius: var(--r-full);
-  padding: .28rem .85rem;
-  letter-spacing: .03em;
-}
-.paywallError { font-size: .82rem; color: #FCA5A5; margin-bottom: .75rem; position: relative; }
+.paywallError { font-size: .82rem; color: #B91C1C; margin-bottom: .75rem; }
 .paywallBtn {
   width: 100%;
-  background: var(--accent);
-  color: var(--sage-dark);
+  background: var(--sage);
+  color: var(--white);
   font-family: var(--fb);
   font-weight: 700;
   font-size: .95rem;
@@ -202,7 +174,6 @@
   border: none;
   cursor: pointer;
   transition: opacity .15s, transform .1s;
-  position: relative;
 }
 .paywallBtn:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
 .paywallBtn:disabled { opacity: .55; cursor: not-allowed; }

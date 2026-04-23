@@ -1,7 +1,6 @@
 """Bill analysis API routes."""
 
 import asyncio
-import functools
 import logging
 import uuid
 from collections import Counter
@@ -1244,10 +1243,8 @@ async def generate_report(
     payer_name: str | None = bill_row.data.get("payer_name")
     ai_summary: str = analysis_row.data["ai_summary"]
 
-    # Claude (dispute letter) and WeasyPrint (report PDF) are independent — run in parallel.
-    # WeasyPrint is synchronous/CPU-bound so it runs in a thread pool executor.
-    # asyncio.gather() starts both concurrently; total wall time ≈ max(claude, weasyprint)
-    # instead of claude + weasyprint sequentially.
+    # Claude (dispute letter) and fpdf2 (report PDF) are independent — run in parallel.
+    # fpdf2 is CPU-bound so it runs in a thread pool executor to avoid blocking the event loop.
     generator = ReportGenerator()
     loop = asyncio.get_running_loop()
     dispute_letter_text, report_pdf = await asyncio.gather(
@@ -1257,7 +1254,7 @@ async def generate_report(
         ),
         loop.run_in_executor(
             None,
-            functools.partial(generator.generate_report_pdf, billing_errors, line_items, file_name, ai_summary),
+            lambda: generator.generate_report_pdf(billing_errors, line_items, file_name, ai_summary),
         ),
     )
     # python-docx is fast (pure in-memory) — no executor needed

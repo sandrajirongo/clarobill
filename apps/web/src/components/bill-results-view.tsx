@@ -170,12 +170,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         {showPaywall && (
           <div className={s.paywallCta}>
             <p className={s.paywallCtaPrice}>{priceTier.priceDisplay}</p>
-            <p className={s.paywallOneTime}>one-time · no subscription</p>
-            <div className={s.paywallBenefits}>
-              <span>All findings</span>
-              <span>PDF report</span>
-              <span>Dispute letter</span>
-            </div>
+            <p className={s.paywallOneTime}>one-time · all findings + PDF report + dispute letter</p>
             {checkoutError && <p className={s.paywallError}>{checkoutError}</p>}
             <button
               onClick={handleGetFullReport}
