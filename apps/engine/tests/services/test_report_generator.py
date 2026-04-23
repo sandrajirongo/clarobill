@@ -63,9 +63,9 @@ class TestBuildReportHtml:
         html = generator._build_report_html(errors, [], "bill.pdf", "Summary.")
         assert "Test description for DUPLICATE_CHARGE" in html
 
-    def test_includes_disclaimer(self, generator: ReportGenerator) -> None:
+    def test_includes_footer(self, generator: ReportGenerator) -> None:
         html = generator._build_report_html([], [], "bill.pdf", "Summary.")
-        assert "informational purposes only" in html
+        assert "Medicare fee schedule" in html
 
     def test_no_errors_notice_shown_when_empty(self, generator: ReportGenerator) -> None:
         html = generator._build_report_html([], [], "bill.pdf", "Clean bill.")

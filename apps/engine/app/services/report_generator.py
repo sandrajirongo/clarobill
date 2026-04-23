@@ -130,49 +130,42 @@ class ReportGenerator:
         total_charges = sum(Decimal(str(item.total_charge)) for item in line_items)
         total_savings = sum(e.estimated_overcharge for e in errors)
 
-        def _badge(severity: str) -> str:
-            label, color, bg = _SEVERITY_BADGE.get(severity, ("INFO", "#1e40af", "#dbeafe"))
-            return (
-                f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;'
-                f'background:{bg};color:{color};font-size:9px;font-weight:700;'
-                f'letter-spacing:0.5px;text-transform:uppercase">{label}</span>'
-            )
+        td = "padding:9px 14px;border-bottom:1px solid #e8e8e8;font-size:11px;color:#1a2e18;vertical-align:top"
+        th = "padding:8px 14px;border-bottom:2px solid #2D4A2A;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:#2D4A2A;text-align:left;font-weight:600"
 
         error_rows = "".join(
             f"""<tr>
-              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{_badge(e.severity)}</td>
-              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};font-weight:600">{e.code.replace('_', ' ').title()}</td>
-              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{e.description}</td>
-              <td style="padding:10px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};text-align:right;font-weight:700;color:#2D4A2A">${e.estimated_overcharge:.2f}</td>
+              <td style="{td};font-weight:600">{e.code.replace('_', ' ').title()}</td>
+              <td style="{td}">{e.severity.capitalize()}</td>
+              <td style="{td}">{e.description}</td>
+              <td style="{td};text-align:right;font-weight:700">${e.estimated_overcharge:.2f}</td>
             </tr>"""
-            for i, e in enumerate(errors)
+            for e in errors
         )
 
         line_item_rows = "".join(
             f"""<tr>
-              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};font-weight:600">{item.cpt_code}</td>
-              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{item.description[:60]}</td>
-              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'}">{item.service_date}</td>
-              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};text-align:right">${item.total_charge:.2f}</td>
-              <td style="padding:9px 12px;border-bottom:1px solid #e8e4da;background:{'#faf9f5' if i % 2 else 'white'};color:#6b7c6a">{item.modifier or '—'}</td>
+              <td style="{td};font-weight:600">{item.cpt_code}</td>
+              <td style="{td}">{item.description[:60]}</td>
+              <td style="{td}">{item.service_date}</td>
+              <td style="{td};text-align:right">${item.total_charge:.2f}</td>
+              <td style="{td};color:#6b7c6a">{item.modifier or '—'}</td>
             </tr>"""
-            for i, item in enumerate(line_items)
+            for item in line_items
         )
 
-        findings_table = (
-            f"""<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:11px">
-              <thead>
-                <tr>
-                  <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Severity</th>
-                  <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Type</th>
-                  <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Description</th>
-                  <th style="background:#2D4A2A;color:#C8F060;text-align:right;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Est. Overcharge</th>
-                </tr>
-              </thead>
+        findings_section = (
+            f"""<table style="width:100%;border-collapse:collapse;margin-top:14px">
+              <thead><tr>
+                <th style="{th}">Finding</th>
+                <th style="{th}">Severity</th>
+                <th style="{th}">Description</th>
+                <th style="{th};text-align:right">Est. Overcharge</th>
+              </tr></thead>
               <tbody>{error_rows}</tbody>
             </table>"""
             if errors else
-            '<p style="color:#2D4A2A;font-weight:600;padding:12px 0">No billing errors were detected.</p>'
+            '<p style="font-size:12px;color:#2D4A2A;margin-top:14px;font-weight:600">No billing errors were detected.</p>'
         )
 
         return f"""<!DOCTYPE html>
@@ -183,82 +176,79 @@ class ReportGenerator:
     /* System fonts only — no external @import so WeasyPrint renders without network I/O */
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: Arial, 'Liberation Sans', sans-serif; color: #1a2e18;
-            background: #F4F2EC; font-size: 12px; line-height: 1.6; padding: 48px; }}
-    .header {{ background: #2D4A2A; padding: 28px 36px; margin: -48px -48px 40px -48px; }}
-    .logo {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 28px; font-weight: 700;
-             font-style: italic; letter-spacing: -0.5px; }}
-    .logo .claro {{ color: #C8F060; }}
-    .logo .bill {{ color: white; font-style: normal; }}
-    .header-sub {{ font-size: 11px; color: #8aab86; margin-top: 6px; }}
-    h2 {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 16px; color: #2D4A2A;
-          margin: 36px 0 14px; padding-bottom: 8px;
-          border-bottom: 2px solid #C8F060; }}
-    .summary-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 28px 0; }}
-    .card {{ background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center; }}
-    .card-savings {{ background: #2D4A2A; border-color: #2D4A2A; }}
-    .value {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 26px; font-weight: 700; color: #2D4A2A; }}
-    .value-savings {{ color: #C8F060; }}
-    .label {{ font-size: 9px; color: #6b7c6a; margin-top: 6px;
-              text-transform: uppercase; letter-spacing: 0.7px; }}
-    .label-savings {{ color: #8aab86; }}
-    .ai-summary {{ background: white; border-left: 4px solid #C8F060; padding: 18px 22px;
-                   margin: 16px 0 4px; font-size: 13px; color: #1a2e18; line-height: 1.75;
-                   font-style: italic; }}
-    .footer {{ margin-top: 52px; padding-top: 16px; border-top: 1px solid #d4d0c8;
+            background: white; font-size: 12px; line-height: 1.65; padding: 56px 64px; }}
+    .letterhead {{ display: flex; justify-content: space-between; align-items: flex-end;
+                   padding-bottom: 18px; border-bottom: 3px solid #2D4A2A; margin-bottom: 32px; }}
+    .logo {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 26px; font-weight: 700;
+             font-style: italic; letter-spacing: -0.5px; color: #2D4A2A; }}
+    .logo-accent {{ color: #C8F060; }}
+    .doc-meta {{ text-align: right; font-size: 10px; color: #6b7c6a; line-height: 1.5; }}
+    h2 {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 13px; font-weight: 700;
+          color: #2D4A2A; text-transform: uppercase; letter-spacing: 0.08em;
+          margin: 36px 0 12px; }}
+    .metrics {{ display: flex; gap: 48px; margin-bottom: 8px; }}
+    .metric-val {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 22px;
+                   font-weight: 700; color: #2D4A2A; line-height: 1.1; }}
+    .metric-label {{ font-size: 9px; color: #6b7c6a; text-transform: uppercase;
+                     letter-spacing: 0.7px; margin-top: 3px; }}
+    .summary-text {{ font-size: 12px; color: #1a2e18; line-height: 1.75; }}
+    .footer {{ margin-top: 56px; padding-top: 14px; border-top: 1px solid #ddd;
                font-size: 9px; color: #888; line-height: 1.6; }}
-    .watermark {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 10px;
-                  color: #2D4A2A; font-style: italic; margin-bottom: 6px; }}
+    .footer-brand {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 10px;
+                     color: #2D4A2A; font-style: italic; margin-bottom: 5px; }}
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="logo"><span class="claro">Claro</span><span class="bill">Bill</span></div>
-    <div class="header-sub">Medical Bill Analysis Report &nbsp;|&nbsp; {bill_file_name}</div>
+
+  <div class="letterhead">
+    <div class="logo"><span class="logo-accent">Claro</span>Bill</div>
+    <div class="doc-meta">
+      Medical Bill Analysis Report<br>
+      {bill_file_name}
+    </div>
   </div>
 
-  <div class="summary-grid">
-    <div class="card">
-      <div class="value">${total_charges:.2f}</div>
-      <div class="label">Total Charges</div>
+  <div class="metrics">
+    <div>
+      <div class="metric-val">${total_charges:.2f}</div>
+      <div class="metric-label">Total Charges</div>
     </div>
-    <div class="card card-savings">
-      <div class="value value-savings">${total_savings:.2f}</div>
-      <div class="label label-savings">Potential Savings</div>
+    <div>
+      <div class="metric-val">${total_savings:.2f}</div>
+      <div class="metric-label">Potential Savings</div>
     </div>
-    <div class="card">
-      <div class="value">{len(errors)}</div>
-      <div class="label">Issues Found</div>
+    <div>
+      <div class="metric-val">{len(errors)}</div>
+      <div class="metric-label">Issues Found</div>
     </div>
   </div>
 
   <h2>Summary</h2>
-  <div class="ai-summary">{ai_summary}</div>
+  <p class="summary-text">{ai_summary}</p>
 
   <h2>Findings</h2>
-  {findings_table}
+  {findings_section}
 
   <h2>Line Items</h2>
-  <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:11px">
-    <thead>
-      <tr>
-        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">CPT Code</th>
-        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Description</th>
-        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Service Date</th>
-        <th style="background:#2D4A2A;color:#C8F060;text-align:right;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Charge</th>
-        <th style="background:#2D4A2A;color:#C8F060;text-align:left;padding:10px 12px;font-size:9px;text-transform:uppercase;letter-spacing:0.6px">Modifier</th>
-      </tr>
-    </thead>
+  <table style="width:100%;border-collapse:collapse;margin-top:14px">
+    <thead><tr>
+      <th style="{th}">CPT Code</th>
+      <th style="{th}">Description</th>
+      <th style="{th}">Service Date</th>
+      <th style="{th};text-align:right">Charge</th>
+      <th style="{th}">Modifier</th>
+    </tr></thead>
     <tbody>{line_item_rows}</tbody>
   </table>
 
   <div class="footer">
-    <div class="watermark">ClaroBill</div>
-    This report is generated by an automated analysis tool for informational purposes only.
-    It does not constitute legal or medical advice. Billing error determinations are based on
-    publicly available CMS data and AI analysis — consult a qualified medical billing advocate
-    for formal disputes. ClaroBill is not responsible for outcomes of disputes filed based on
-    this report.
+    <div class="footer-brand">ClaroBill</div>
+    Prepared using verified Medicare fee schedule data and AI-assisted billing analysis.
+    ClaroBill cross-references your charges against published hospital prices, Medicare
+    benchmark rates, and NCCI coding rules to identify errors and overcharges.
+    Use this report to support a billing dispute with your provider or insurer.
   </div>
+
 </body>
 </html>"""
 
