@@ -1,7 +1,7 @@
 # Engine Bug Fix Reference — April 2026
 
 **Date:** 2026-04-22
-**Status:** All 7 bugs resolved as of April 23 2026
+**Status:** In progress — fixes applied one at a time, tested after each push
 **Context:** Full diagnostic performed April 22 2026 after all 3 sample test bills
 returned zero errors. Root cause analysis traced 8 distinct bugs across the parser,
 rules engine, and data loading pipeline.
@@ -15,20 +15,20 @@ Each bug has:
 - **Root cause** — the actual code defect, with file and line
 - **Fix** — what was changed
 - **How to test** — the specific bill and expected result to verify the fix worked
-- **Status** — fixed with commit SHA
+- **Status** — pending / fixed / verified
 
 ---
 
 ## Bug 1 — NCCI Unbundling Never Fires
 
-**Status:** Fixed — commit `7a9a8a1` (CPT filter) + `032243b` (WARNING log)
+**Status:** pending
 
 ### What broke
 Bill 3 (designed to trigger NCCI unbundling) returned zero errors. No
 `NCCI_UNBUNDLING` error was ever flagged for any bill.
 
 ### Root cause
-`_load_ncci_pairs()` in `apps/engine/app/api/v1/bills.py` queries
+`_load_ncci_pairs()` in `apps/engine/app/api/v1/bills.py:299` queries
 `ncci_edit_pairs` with only `service_type` and `payer_type` filters and no CPT code
 filter. For `practitioner/medicare` this matches 2,323,399 rows. Supabase PostgREST
 returns at most 1000 rows per request by default. The engine receives 1000 arbitrary
@@ -43,8 +43,7 @@ The 120 unit tests all pass because they inject NCCI pairs directly into the
 Filter the NCCI query by `column_one_code IN (cpt_codes_on_bill)`. The unbundling
 rule only fires when the column-one (comprehensive) code is on the bill, so
 pre-filtering by column_one_code is both correct and sufficient. This reduces the
-query from 2.3M rows to a handful of rows specific to the bill. Added WARNING log
-when result is empty so silent zero-error results can be distinguished from clean bills.
+query from 2.3M rows to a handful of rows specific to the bill.
 
 **File changed:** `apps/engine/app/api/v1/bills.py` — `_load_ncci_pairs()`
 
@@ -61,7 +60,7 @@ Also verify: a clean bill with no NCCI pairs present must still return zero
 
 ## Bug 2 — Price Outlier Not Firing
 
-**Status:** Fixed — commit `124f3b8`
+**Status:** pending
 
 ### What broke
 Bill 2 (designed with a charge 4× the Medicare non-facility rate) returned zero
@@ -78,13 +77,17 @@ has no row at all — `medicare_rates` is an empty dict. The rules engine then h
 zero price outlier errors. There is no log warning when this happens.
 
 **Issue B — Wrong threshold for plan type:**
-The engine used a single `medicare_outlier_threshold = 1.8` for all insurance types.
-This is correct for commercial insurance but wrong for Medicare, Medicaid, self-pay,
-and TRICARE patients.
+The engine uses a single `medicare_outlier_threshold = 1.8` for all insurance types.
+This is correct for commercial insurance but wrong for:
+- Medicare patients: Medicare rate IS the payment; anything above it is an overcharge
+- Medicaid patients: Medicaid pays 70–90% of Medicare; Medicare rate is the ceiling
+- Self-pay: no contracted rate; modest markup only
+- TRICARE: tracks Medicare closely at ~110–120%
 
 ### Fix
-1. Added a `WARNING` log in `_load_medicare_rates` when the returned dict is empty.
-2. Made `_detect_price_outliers` plan-type-aware with this threshold map:
+1. Add a `WARNING` log in `_load_medicare_rates` when the returned dict is empty,
+   listing the CPT codes that had no rate found and why (no `proc_stat='A'` row).
+2. Make `_detect_price_outliers` plan-type-aware using this threshold map:
 
 | `plan_type` | Threshold | Reason |
 |---|---|---|
@@ -95,7 +98,7 @@ and TRICARE patients.
 | `self_pay` | 1.20× | No contract; flag beyond modest markup |
 | `None`/unknown | 1.80× | Conservative default |
 
-3. Threaded `plan_type` through to `RulesEngine` and `_detect_price_outliers`.
+3. Thread `plan_type` through to `RulesEngine` and `_detect_price_outliers`.
 
 **Files changed:**
 - `apps/engine/app/api/v1/bills.py` — `_load_medicare_rates()` (add warning log)
@@ -114,11 +117,14 @@ Use Bill 2 (price outlier test bill, charge 4× Medicare rate).
 **Regression check:** A bill with a charge at exactly 1.5× Medicare for a commercial
 plan must NOT flag (1.5 < 1.8 threshold). A charge at 1.9× must flag.
 
+Also check engine logs: if `medicare_rates` is empty after the fix is applied, the
+warning log must appear in Cloud Run logs.
+
 ---
 
 ## Bug 3 — Total Charges Extracted Are Inaccurate
 
-**Status:** Fixed — commit `032243b`
+**Status:** pending
 
 ### What broke
 The `total_charges` value stored in `analysis_results` did not match the actual total
@@ -126,40 +132,54 @@ on all 3 test bills. The displayed totals were consistently lower than the real 
 total.
 
 ### Root cause
-`_find_charge_in_window()` in `apps/engine/app/services/parser.py` used
+`_find_charge_in_window()` in `apps/engine/app/services/parser.py:213` uses
 `_AMOUNT_PATTERN.search()` which returns the **first** regex match in the string.
 On any bill line with multiple dollar amounts (unit rate + total charge is the most
-common format), the parser captured the unit rate (first column) instead of the total
+common format), the parser captures the unit rate (first column) instead of the total
 charge (last column):
 
 ```
 99214  Office Visit  1  $125.00  $250.00
-                        ^-- parser captured this, not $250.00
+                        ^-- parser captures this, not $250.00
 ```
 
+The stored `total_charge` per line item and the summed `total_charges` in
+`analysis_results` are therefore wrong for every bill that uses a unit-rate + total
+layout.
+
 ### Fix
-Replaced `_AMOUNT_PATTERN.search()` with `findall()` and take the last match. The
+Replace `_AMOUNT_PATTERN.search()` with `findall()` and take the last match. The
 rightmost dollar amount on a CPT code line is always the total charge — unit rates,
-allowances, or other amounts appear in earlier columns. Applied to both Pass 1
-(proximity search) and Pass 2 (column-interleaved fallback).
+allowances, or other amounts appear in earlier columns.
 
 **File changed:** `apps/engine/app/services/parser.py` — `_find_charge_in_window()`
+
+### How to test
+Use any of the 3 test bills. After the fix, the `total_charges` in the analysis
+result must match the total shown on the physical bill. Check the individual
+`line_items` rows in Supabase — each `total_charge` must match the rightmost dollar
+amount on the corresponding line of the bill.
+
+Also verify the parser unit tests still pass: `cd apps/engine && python -m pytest
+tests/services/test_parser.py -v`
 
 ---
 
 ## Bug 4 — Duplicate Detection Misses When Date Is a Section Header
 
-**Status:** Fixed — commit `032243b`
+**Status:** pending
 
 ### What broke
 Bill 1 (containing one duplicate line item with identical code, date, description,
 quantity, and charge) returned zero `DUPLICATE_CHARGE` errors.
 
 ### Root cause
-`_find_date_in_window()` searched from `max(0, start - 1)` — only one line before
-the CPT code line. On bills where the service date appears as a section header above
-a block of line items, only the first CPT code gets the correct date. Subsequent
-items fall outside the one-line lookback and get `date.today()` as fallback.
+`_find_date_in_window()` in `apps/engine/app/services/parser.py:222` searches from
+`max(0, start - 1)` — only one line before the CPT code line. On bills where the
+service date appears as a section header above a block of line items (the most common
+real-world format), only the first CPT code line is close enough to the date to pick
+it up. Subsequent lines fall outside the one-line lookback and get `date.today()` as
+the fallback.
 
 Example — two duplicate lines under a date header:
 ```
@@ -168,105 +188,177 @@ Line 1: 99214  Office Visit  $350.00   ← window covers line 0, gets 2026-03-15
 Line 2: 99214  Office Visit  $350.00   ← window starts at line 1, misses line 0, gets today
 ```
 
-Result: item 1 has date `2026-03-15`, item 2 has date `2026-04-22`. The dedup key
-`(cpt_code, service_date)` differs — no duplicate flagged.
-
-This bug also caused `_derive_rate_date()` to compute the wrong representative date,
-making every reference data loader query the wrong CMS quarterly release.
+Result: item 1 has date `2026-03-15`, item 2 has date `2026-04-22` (today). The
+dedup key `(cpt_code, service_date)` differs — no duplicate flagged.
 
 ### Fix
-Implemented two-phase date search:
-- Phase 1: ±`LOOKAHEAD_LINES` proximity search (same as before, but widened)
-- Phase 2: Global backwards scan through all preceding lines to catch section-header
-  dates regardless of distance
+Widen the lookback window to search up to `_LOOKAHEAD_LINES` (3 lines) before the
+current line, not just 1. This covers all common bill formats where a date header
+sits above a block of items.
+
+Also: if no date is found in the expanded window, scan the entire document for the
+most recent date that appears before the current line — a global lookback for the
+nearest preceding date. This handles formats where dates appear once per page or once
+per section.
 
 **File changed:** `apps/engine/app/services/parser.py` — `_find_date_in_window()`
+
+### Critical dependency — rate_date accuracy
+
+`_derive_rate_date()` in `bills.py:233` computes the representative service date
+from the parsed line items by taking the most common date across all items. Every
+reference data loader (`_load_ncci_pairs`, `_load_medicare_rates`, `_load_mue_limits`,
+`_load_opps_rates`, `_load_ambulance_rates`, `_load_anesthesia_cf`, etc.) uses this
+`rate_date` to select the correct quarterly CMS release — the one in effect at the
+time of service.
+
+If the date lookback bug causes some line items to get `date.today()` instead of the
+real service date, `_derive_rate_date` will compute the wrong `rate_date`, and every
+loader will query against the wrong CMS quarterly release. This means benchmark rates,
+NCCI edit pairs, and MUE limits from a different quarter will be applied to the bill.
+
+**Fixing Bug 4 is therefore a prerequisite for correct benchmark matching across all
+rules — not just for duplicate detection.**
+
+### How to test
+Use Bill 1 (duplicate test bill). After the fix, the analysis result must contain
+exactly one `DUPLICATE_CHARGE` error with `severity: critical`. The
+`affected_line_item_ids` must reference both line item records for the duplicated
+code. The `estimated_overcharge` must equal the full charge of the duplicate item.
+
+Separately verify date matching: the `rate_date` logged in Cloud Run for each bill
+must match the actual service date on the bill, not today's date.
+
+Also run the parser tests: `cd apps/engine && python -m pytest
+tests/services/test_parser.py -v` — all must still pass.
 
 ---
 
 ## Bug 5 — Sync Clients Block the Async Event Loop
 
-**Status:** Fixed — commit `032243b`
+**Status:** pending
 
 ### What broke
-No immediate failure in single-bill testing, but under concurrent load the engine
-server stalls for the duration of every OCR and Claude API call.
+No immediate user-visible failure in single-bill testing, but under any concurrent
+load the engine server freezes for the duration of every OCR call and every Claude
+API call. This will cause timeouts and dropped requests in production.
 
 ### Root cause
 Two violations:
 
-**A — Anthropic client:** `AiAnalysisService` was using `anthropic.Anthropic`
-(synchronous) despite being declared `async`. An `AsyncAnthropic` client existed in
-`dependencies.py` but was never wired to the service.
+**A — Anthropic client:**
+`get_ai_analysis_service()` in `apps/engine/app/core/dependencies.py:39` passes
+`anthropic.Anthropic` (synchronous) to `AiAnalysisService`. Both
+`generate_bill_summary()` and `generate_dispute_letter()` are declared `async` but
+call `self._client.messages.create()` synchronously. The `await asyncio.sleep(0)`
+before each call yields for one tick then immediately blocks. An `AsyncAnthropic`
+client already exists at `get_async_anthropic_client()` in `dependencies.py:31` but
+is never used.
 
-**B — Google Cloud Vision:** `OcrService` called synchronous Vision client methods
-directly inside `async` functions. Google Vision has no async variant.
+**B — Google Cloud Vision client:**
+`OcrService._extract_from_image()` and `_extract_from_pdf()` in
+`apps/engine/app/services/ocr.py:64,78` are declared `async` but call the
+synchronous `vision.ImageAnnotatorClient` methods directly. Google's Vision client
+has no async variant; the correct pattern is `asyncio.get_event_loop().run_in_executor(None, sync_call)`.
 
 ### Fix
-A: `get_ai_analysis_service()` now passes `get_async_anthropic_client()` (AsyncAnthropic).
-   Both `messages.create()` calls are `await`ed.
+A: Change `get_ai_analysis_service()` to pass `get_async_anthropic_client()`.
+   Update `AiAnalysisService.__init__` to accept `anthropic.AsyncAnthropic`.
+   Change both `messages.create()` calls to `await self._client.messages.create()`.
 
-B: Both Vision API calls wrapped with `asyncio.get_running_loop().run_in_executor()`
-   to run the blocking call in a thread pool without blocking the event loop.
+B: Wrap both Vision API calls with `asyncio.get_event_loop().run_in_executor(None, ...)`.
+   This runs the blocking call in a thread pool without blocking the event loop.
 
 **Files changed:**
-- `apps/engine/app/core/dependencies.py`
-- `apps/engine/app/services/ai_analysis.py`
-- `apps/engine/app/services/ocr.py`
+- `apps/engine/app/core/dependencies.py` — `get_ai_analysis_service()`
+- `apps/engine/app/services/ai_analysis.py` — `__init__`, both `messages.create()` calls
+- `apps/engine/app/services/ocr.py` — `_extract_from_image()`, `_extract_from_pdf()`
+
+### How to test
+Submit two bills for analysis simultaneously. With the sync bug present, the second
+request stalls until the first completes. After the fix, both should process
+concurrently and complete in roughly the same elapsed wall time.
+
+For a lighter check: run `cd apps/engine && python -m pytest tests/ -v` — all tests
+must pass. The AI analysis tests use `test_mode=True` and do not exercise the real
+client path but confirm nothing regressed.
 
 ---
 
-## Bug 6 — `user_id` Dropped Before Pipeline
+## Bug 6 — `user_id` Dropped Before Pipeline; User Mismatch Cannot Be Built
 
-**Status:** Fixed — commit `032243b`
+**Status:** pending
 
 ### What broke
-`user_id` from `AnalyzeRequest` was silently discarded at the FastAPI handler
-boundary and never passed to `_run_analysis_pipeline`.
+User mismatch detection (comparing the insurance and user data the patient entered
+against what the bill says) does not exist and cannot be added without this fix.
+
+### Root cause
+`AnalyzeRequest` in `apps/engine/app/models/bill.py:99` declares `user_id: str` but
+`analyze_bill()` in `apps/engine/app/api/v1/bills.py:58` never passes it to
+`_run_analysis_pipeline`. The pipeline function has no `user_id` parameter. The
+value is silently discarded at the FastAPI handler boundary. There is no way for
+any pipeline code or rule to know which user submitted the bill.
 
 ### Fix
-Added `user_id: str` to `_run_analysis_pipeline`'s signature. Passed `body.user_id`
-in the `background_tasks.add_task(...)` call. Used in storage paths:
-`{user_id}/{bill_id}/report.pdf` and `{user_id}/{bill_id}/dispute-letter.docx`.
+Add `user_id: str` to `_run_analysis_pipeline`'s signature and pass `body.user_id`
+in the `background_tasks.add_task(...)` call. Store `user_id` for future mismatch
+detection. No mismatch rule is built in this fix — this is the wiring prerequisite.
 
-**File changed:** `apps/engine/app/api/v1/bills.py`
+**Files changed:** `apps/engine/app/api/v1/bills.py` — `analyze_bill()`,
+`_run_analysis_pipeline()` signature
+
+### How to test
+Verify `user_id` appears in the Cloud Run logs for a submitted bill (add a
+`logger.info("Processing bill %s for user %s", bill_id, user_id)` statement).
+No change in analysis results — this is infrastructure for future work.
 
 ---
 
 ## Bug 7 — Silent Empty Reference Data
 
-**Status:** Fixed — commit `032243b` (medicare_rates, mue_limits) + `7a9a8a1` (ncci_pairs)
+**Status:** pending
 
 ### What broke
-When reference data loaders returned empty results the engine produced zero errors
-with no log indication of whether the bill was clean or data was absent.
+When any reference data loader returns an empty dict (no Medicare rates, no NCCI
+pairs, no MUE limits), the engine silently produces zero errors with no indication
+of whether the bill was clean or the data was absent. Impossible to distinguish in
+production logs.
+
+### Root cause
+No warning logs after `_load_ncci_pairs`, `_load_medicare_rates`, and
+`_load_mue_limits` return. The engine logs only "Rules engine found 0 errors in N
+line items" — no information about what data was or was not available to make that
+determination.
 
 ### Fix
-Added `WARNING` logs after the three loaders whose absence disables a detection rule:
-- `_load_ncci_pairs`: logs service_type, payer_type, service_date, and CPT codes when empty
-- `_load_medicare_rates`: logs CPT codes and rate_date when no rates found
-- `_load_mue_limits`: logs CPT codes when no MUE limits found
+Add `WARNING` log after each loader when the returned dict is empty:
+- After `_load_ncci_pairs`: log service_type, payer_type, service_date, and CPT codes queried
+- After `_load_medicare_rates`: log which CPT codes had no rate found and the rate_date used
+- After `_load_mue_limits`: log which CPT codes had no MUE limit found
 
-Note: `_load_non_payable_codes` intentionally has no empty warning — an empty result
-means none of the bill's codes are non-payable, which is the normal happy-path case
-for most bills. A WARNING there would fire on the majority of clean bills.
+**File changed:** `apps/engine/app/api/v1/bills.py` — `_run_analysis_pipeline()`
 
-**File changed:** `apps/engine/app/api/v1/bills.py` — three loader functions
+### How to test
+Submit a bill with a CPT code that is NOT in `cms_pfs_indicators`. Check Cloud Run
+logs — must see a `WARNING` entry listing the code and confirming no rate was found.
+No change in analysis results — this is observability only.
 
 ---
 
 ## Dependency Order
 
-Bugs were fixed and tested in this order:
+Bugs must be fixed and tested in this order. Each depends on the previous being
+verified before the next push:
 
 ```
-Bug 1 (NCCI query)        → commit 7a9a8a1 → tested with Bill 3
-Bug 2 (price outlier)     → commit 124f3b8 → tested with Bill 2
-Bug 3 (charge extraction) → commit 032243b → tested with all 3 bills
-Bug 4 (duplicate dates)   → commit 032243b → tested with Bill 1
-Bug 5 (async clients)     → commit 032243b → concurrent submission test
-Bug 6 (user_id wiring)    → commit 032243b → confirmed in Cloud Run logs
-Bug 7 (silent empties)    → commits 032243b + 7a9a8a1 → confirmed in logs
+Bug 1 (NCCI query)        → test with Bill 3
+Bug 2 (price outlier)     → test with Bill 2
+Bug 3 (charge extraction) → test with all 3 bills (charges should now match)
+Bug 4 (duplicate dates)   → test with Bill 1
+Bug 5 (async clients)     → test with concurrent submissions
+Bug 6 (user_id wiring)    → confirm in logs
+Bug 7 (silent empties)    → confirm in logs
 ```
 
 ---
