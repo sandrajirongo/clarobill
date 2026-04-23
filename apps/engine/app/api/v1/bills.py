@@ -1244,19 +1244,23 @@ async def generate_report(
     payer_name: str | None = bill_row.data.get("payer_name")
     ai_summary: str = analysis_row.data["ai_summary"]
 
-    # Generate dispute letter text (Claude) then build output files.
-    # WeasyPrint (report PDF) is synchronous and CPU-bound — run in thread pool.
-    # python-docx (dispute letter) is fast in-memory; no executor needed.
-    dispute_letter_text = await ai_service.generate_dispute_letter(
-        billing_errors, line_items, file_name,
-        hospital_name=hospital_name, payer_name=payer_name,
-    )
+    # Claude (dispute letter) and WeasyPrint (report PDF) are independent — run in parallel.
+    # WeasyPrint is synchronous/CPU-bound so it runs in a thread pool executor.
+    # asyncio.gather() starts both concurrently; total wall time ≈ max(claude, weasyprint)
+    # instead of claude + weasyprint sequentially.
     generator = ReportGenerator()
     loop = asyncio.get_running_loop()
-    report_pdf = await loop.run_in_executor(
-        None,
-        functools.partial(generator.generate_report_pdf, billing_errors, line_items, file_name, ai_summary),
+    dispute_letter_text, report_pdf = await asyncio.gather(
+        ai_service.generate_dispute_letter(
+            billing_errors, line_items, file_name,
+            hospital_name=hospital_name, payer_name=payer_name,
+        ),
+        loop.run_in_executor(
+            None,
+            functools.partial(generator.generate_report_pdf, billing_errors, line_items, file_name, ai_summary),
+        ),
     )
+    # python-docx is fast (pure in-memory) — no executor needed
     dispute_docx = generator.generate_dispute_letter_docx(dispute_letter_text)
 
     # Upload to Supabase Storage (private bucket: 'reports')

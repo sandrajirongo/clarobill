@@ -180,33 +180,33 @@ class ReportGenerator:
 <head>
   <meta charset="UTF-8">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;1,9..144,700&family=Syne:wght@400;600;700&display=swap');
+    /* System fonts only — no external @import so WeasyPrint renders without network I/O */
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: 'Syne', Arial, sans-serif; color: #1a2e18;
+    body {{ font-family: Arial, 'Liberation Sans', sans-serif; color: #1a2e18;
             background: #F4F2EC; font-size: 12px; line-height: 1.6; padding: 48px; }}
     .header {{ background: #2D4A2A; padding: 28px 36px; margin: -48px -48px 40px -48px; }}
-    .logo {{ font-family: 'Fraunces', Georgia, serif; font-size: 28px; font-weight: 700;
+    .logo {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 28px; font-weight: 700;
              font-style: italic; letter-spacing: -0.5px; }}
     .logo .claro {{ color: #C8F060; }}
     .logo .bill {{ color: white; font-style: normal; }}
-    .header-sub {{ font-size: 11px; color: #8aab86; margin-top: 6px; font-family: 'Syne', Arial, sans-serif; }}
-    h2 {{ font-family: 'Fraunces', Georgia, serif; font-size: 16px; color: #2D4A2A;
+    .header-sub {{ font-size: 11px; color: #8aab86; margin-top: 6px; }}
+    h2 {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 16px; color: #2D4A2A;
           margin: 36px 0 14px; padding-bottom: 8px;
           border-bottom: 2px solid #C8F060; }}
     .summary-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 28px 0; }}
     .card {{ background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center; }}
     .card-savings {{ background: #2D4A2A; border-color: #2D4A2A; }}
-    .value {{ font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 700; color: #2D4A2A; }}
+    .value {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 26px; font-weight: 700; color: #2D4A2A; }}
     .value-savings {{ color: #C8F060; }}
     .label {{ font-size: 9px; color: #6b7c6a; margin-top: 6px;
-              text-transform: uppercase; letter-spacing: 0.7px; font-family: 'Syne', Arial, sans-serif; }}
+              text-transform: uppercase; letter-spacing: 0.7px; }}
     .label-savings {{ color: #8aab86; }}
     .ai-summary {{ background: white; border-left: 4px solid #C8F060; padding: 18px 22px;
                    margin: 16px 0 4px; font-size: 13px; color: #1a2e18; line-height: 1.75;
                    font-style: italic; }}
     .footer {{ margin-top: 52px; padding-top: 16px; border-top: 1px solid #d4d0c8;
                font-size: 9px; color: #888; line-height: 1.6; }}
-    .watermark {{ font-family: 'Fraunces', Georgia, serif; font-size: 10px;
+    .watermark {{ font-family: Georgia, 'Liberation Serif', serif; font-size: 10px;
                   color: #2D4A2A; font-style: italic; margin-bottom: 6px; }}
   </style>
 </head>
