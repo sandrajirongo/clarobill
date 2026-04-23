@@ -22,12 +22,6 @@ def get_supabase_client() -> Client:
 
 
 @lru_cache(maxsize=1)
-def get_anthropic_client() -> anthropic.Anthropic:
-    """Returns a shared synchronous Anthropic API client (for sync contexts)."""
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-
-@lru_cache(maxsize=1)
 def get_async_anthropic_client() -> anthropic.AsyncAnthropic:
     """Returns a shared async Anthropic API client (use in async FastAPI endpoints)."""
     return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)

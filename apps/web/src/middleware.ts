@@ -69,7 +69,7 @@ export async function middleware(request: NextRequest) {
 
   const isPublicRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith('/auth/') || pathname.startsWith('/legal/')
-  ) || pathname === '/icon' || pathname === '/apple-icon' || pathname.startsWith('/blog');
+  ) || pathname === '/icon' || pathname === '/apple-icon' || pathname.startsWith('/blog') || pathname.startsWith('/ref/');
 
   if (!user && !isPublicRoute) {
     const signInUrl = request.nextUrl.clone();

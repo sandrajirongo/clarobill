@@ -6,6 +6,7 @@ import uuid
 from collections import Counter
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from google.cloud import bigquery
@@ -20,8 +21,8 @@ from app.models.bill import (
     AnalyzeRequest,
     BillingError,
     BillingErrorCode,
+    BillStatus,
     ErrorSeverity,
-    ReportGenerated,
     ReportRequest,
 )
 from app.services.ai_analysis import AiAnalysisService
@@ -54,7 +55,7 @@ async def analyze_bill(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bill_id mismatch")
 
     # Mark the bill as in OCR processing so the frontend shows progress
-    supabase.table("bills").update({"status": "ocr_processing"}).eq("id", bill_id).execute()
+    supabase.table("bills").update({"status": BillStatus.OCR_PROCESSING}).eq("id", bill_id).execute()
 
     background_tasks.add_task(
         _run_analysis_pipeline,
@@ -97,13 +98,12 @@ async def _run_analysis_pipeline(
         mime_type = _mime_type_from_path(file_path)
 
         # 2. OCR
-        supabase.table("bills").update({"status": "ocr_processing"}).eq("id", bill_id).execute()
+        supabase.table("bills").update({"status": BillStatus.OCR_PROCESSING}).eq("id", bill_id).execute()
         ocr_service = OcrService()
         raw_text = await ocr_service.extract_text(file_bytes, mime_type)
 
         # 3. Parse line items and attempt NPI extraction
-        supabase.table("bills").update({"status": "analyzing"}).eq("id", bill_id).execute()
-        logger.info("OCR raw text for bill %s:\n%s", bill_id, raw_text)
+        supabase.table("bills").update({"status": BillStatus.ANALYZING}).eq("id", bill_id).execute()
         parser = BillParser()
         parsed_items = parser.parse(raw_text, bill_date=date.today())
 
@@ -116,7 +116,7 @@ async def _run_analysis_pipeline(
         if hospital_name:
             logger.info("Extracted hospital name '%s' from bill %s", hospital_name, bill_id)
         # Persist all confirmed identity fields — hospital from OCR, payer/plan from user
-        identity_update: dict = {}
+        identity_update: dict[str, str] = {}
         if hospital_npi:
             identity_update["hospital_npi"] = hospital_npi
         if hospital_name:
@@ -192,7 +192,7 @@ async def _run_analysis_pipeline(
         detected_errors = engine.run(parsed_items)
 
         # Map detected errors to line item IDs
-        line_item_ids = [row["id"] for row in line_item_rows]
+        line_item_ids: list[str] = [str(row["id"]) for row in line_item_rows]
         billing_errors = _map_errors_to_line_items(detected_errors, line_item_ids)
 
         # 5. AI summary via Claude
@@ -216,15 +216,15 @@ async def _run_analysis_pipeline(
             "report_url": None,
         }).execute()
 
-        supabase.table("bills").update({"status": "complete"}).eq("id", bill_id).execute()
+        supabase.table("bills").update({"status": BillStatus.COMPLETE}).eq("id", bill_id).execute()
         logger.info("Analysis complete for bill %s — %d errors found", bill_id, len(billing_errors))
 
     except OcrExtractionError as exc:
         logger.error("OCR failed for bill %s: %s", bill_id, exc)
-        supabase.table("bills").update({"status": "failed"}).eq("id", bill_id).execute()
+        supabase.table("bills").update({"status": BillStatus.FAILED}).eq("id", bill_id).execute()
     except Exception as exc:
         logger.exception("Unexpected error in analysis pipeline for bill %s: %s", bill_id, exc)
-        supabase.table("bills").update({"status": "failed"}).eq("id", bill_id).execute()
+        supabase.table("bills").update({"status": BillStatus.FAILED}).eq("id", bill_id).execute()
 
 
 def _mime_type_from_path(file_path: str) -> str:
@@ -444,7 +444,7 @@ def _load_medicare_rates(
     )
 
     # Take the most recent available entry per HCPC code (≤ service date)
-    indicators: dict[str, dict] = {}
+    indicators: dict[str, dict[str, object]] = {}
     for row in indicators_resp.data:
         if row["hcpc"] not in indicators:
             indicators[row["hcpc"]] = row
@@ -776,7 +776,7 @@ def _load_ambulance_rates(
         return {}
 
     # Take the most recent available entry per HCPC code (≤ service date)
-    latest: dict[str, dict] = {}
+    latest: dict[str, dict[str, object]] = {}
     for row in response.data:
         if row["hcpc"] not in latest:
             latest[row["hcpc"]] = row
@@ -976,7 +976,8 @@ def _load_hospital_charges(
         return _query_charges_by_npi(bq, dataset, unique_codes, hospital_npi)
 
     # 2. Name match — resolve NPI from hospital_directory first
-    assert hospital_name is not None
+    if hospital_name is None:
+        return {}
     npi = _resolve_npi_by_name(bq, dataset, hospital_name)
     if npi is None:
         logger.info("Hospital name '%s' matched 0 or >1 hospitals — skipping charge lookup", hospital_name)
@@ -1029,17 +1030,19 @@ def _resolve_npi_by_name(
     from the wrong facility being returned when names are ambiguous.
     Uses a case-insensitive LIKE match on a cleaned version of the name.
     """
-    # Use the name as-is for the LIKE pattern — BigQuery LOWER() handles case
-    name_pattern = f"%{hospital_name.strip().lower()}%"
+    # CONTAINS_SUBSTR performs a case-insensitive substring match without LIKE
+    # metacharacter risks — hospital names can contain % or _ which would
+    # break a LIKE pattern even in parameterized BigQuery queries.
+    name_substr = hospital_name.strip()
     query = f"""
         SELECT hospital_npi, COUNT(*) AS match_count
         FROM `{dataset}.hospital_directory`
-        WHERE LOWER(hospital_name) LIKE @name_pattern
+        WHERE CONTAINS_SUBSTR(hospital_name, @name_substr)
           AND hospital_npi IS NOT NULL
         GROUP BY hospital_npi
     """
     job_config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("name_pattern", "STRING", name_pattern),
+        bigquery.ScalarQueryParameter("name_substr", "STRING", name_substr),
     ])
     try:
         rows = list(bq.query(query, job_config=job_config).result())
@@ -1088,7 +1091,8 @@ def _load_negotiated_charges(
     # Resolve NPI if only name is available — same logic as hospital charge lookup
     npi = hospital_npi
     if not npi:
-        assert hospital_name is not None
+        if hospital_name is None:
+            return {}
         npi = _resolve_npi_by_name(bq, dataset, hospital_name)
         if npi is None:
             logger.info(
@@ -1097,20 +1101,21 @@ def _load_negotiated_charges(
             )
             return {}
 
-    # LIKE match on payer/plan — MRF data uses various naming conventions.
-    # Use the user-entered value as a substring search (case-insensitive).
+    # CONTAINS_SUBSTR for payer/plan — same metacharacter safety rationale as
+    # _resolve_npi_by_name. MRF data uses various naming conventions so substring
+    # match is intentional; CONTAINS_SUBSTR is case-insensitive by default.
     # Only return rates when negotiated_type is 'negotiated' or 'derived' —
     # 'percentage' rates are multipliers of another rate and cannot be directly
     # compared to billed charges without additional context.
-    payer_pattern = f"%{payer_name.strip().lower()}%"
-    plan_pattern = f"%{plan_name.strip().lower()}%"
+    payer_substr = payer_name.strip()
+    plan_substr = plan_name.strip()
 
     query = f"""
         SELECT code, MAX(negotiated_charge) AS negotiated_charge
         FROM `{dataset}.hospital_charges`
         WHERE hospital_npi = @npi
-          AND LOWER(payer_name) LIKE @payer_pattern
-          AND LOWER(plan_name) LIKE @plan_pattern
+          AND CONTAINS_SUBSTR(payer_name, @payer_substr)
+          AND CONTAINS_SUBSTR(plan_name, @plan_substr)
           AND code IN UNNEST(@codes)
           AND negotiated_charge IS NOT NULL
           AND negotiated_charge > 0
@@ -1119,8 +1124,8 @@ def _load_negotiated_charges(
     """
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("npi", "STRING", npi),
-        bigquery.ScalarQueryParameter("payer_pattern", "STRING", payer_pattern),
-        bigquery.ScalarQueryParameter("plan_pattern", "STRING", plan_pattern),
+        bigquery.ScalarQueryParameter("payer_substr", "STRING", payer_substr),
+        bigquery.ScalarQueryParameter("plan_substr", "STRING", plan_substr),
         bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
     ])
     try:
@@ -1192,6 +1197,8 @@ async def generate_report(
     bill_row = supabase.table("bills").select("id,file_name,file_path,user_id,hospital_name,payer_name").eq("id", bill_id).single().execute()
     if not bill_row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found.")
+    if bill_row.data["user_id"] != body.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized.")
 
     analysis_row = (
         supabase.table("analysis_results")
@@ -1205,22 +1212,25 @@ async def generate_report(
 
     user_id: str = bill_row.data["user_id"]
     existing_url: str | None = analysis_row.data.get("report_url")
-    report_path = f"{user_id}/{bill_id}/report.pdf"
 
     # Idempotency: skip only if the file actually exists in storage.
-    # A set report_url with a missing file (stale from a crashed run) must regenerate.
+    # create_signed_url always succeeds regardless of whether the file exists;
+    # list() is the only way to confirm the object is actually present.
     if existing_url:
         try:
-            probe = supabase.storage.from_("reports").create_signed_url(existing_url, 10)
-            if probe.get("signedURL") or probe.get("signedUrl"):
+            folder = f"{user_id}/{bill_id}"
+            listing = supabase.storage.from_("reports").list(folder) or []
+            present = {f["name"] for f in listing}
+            if "report.pdf" in present:
                 logger.info("Report already exists in storage for bill %s, skipping", bill_id)
                 return {"status": "already_done"}
-        except Exception:
-            logger.info("report_url set for bill %s but file missing — will regenerate", bill_id)
-            # Clear stale URL so the frontend polling shows correct state
-            supabase.table("analysis_results").update(
-                {"report_url": None, "dispute_letter_url": None}
-            ).eq("bill_id", bill_id).execute()
+        except Exception as exc:
+            logger.warning("Storage list probe failed for bill %s — will regenerate: %s", bill_id, exc)
+        # File is absent despite report_url being set — clear stale URL and regenerate
+        logger.info("report_url set for bill %s but file missing — will regenerate", bill_id)
+        supabase.table("analysis_results").update(
+            {"report_url": None, "dispute_letter_url": None}
+        ).eq("bill_id", bill_id).execute()
 
     background_tasks.add_task(
         _do_generate_report,
@@ -1239,8 +1249,8 @@ async def generate_report(
 async def _do_generate_report(
     bill_id: str,
     body: ReportRequest,
-    bill_data: dict,
-    analysis_data: dict,
+    bill_data: dict[str, Any],
+    analysis_data: dict[str, Any],
     supabase: Client,
     ai_service: AiAnalysisService,
     email_service: EmailService,

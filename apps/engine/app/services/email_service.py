@@ -69,6 +69,10 @@ class EmailService:
         ]
 
         response = self._client.send(message)
+        if response.status_code not in (200, 202):
+            raise RuntimeError(
+                f"SendGrid rejected email: status={response.status_code} body={response.body}"
+            )
         logger.info("Report email sent, status=%s", response.status_code)
 
     @staticmethod

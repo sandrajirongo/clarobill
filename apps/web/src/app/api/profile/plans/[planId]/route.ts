@@ -34,6 +34,31 @@ export async function PATCH(
   if (body.planType !== undefined) updates.plan_type = body.planType;
   if (body.isPrimaryPlan !== undefined) updates.is_primary_plan = body.isPrimaryPlan;
 
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'No fields to update.', step: 'update' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 400 }
+    );
+  }
+
+  // When promoting a plan to primary, demote any other primary plan for the same member first.
+  // Fetch member_id from the plan being updated so we don't rely on the client sending it.
+  if (body.isPrimaryPlan) {
+    const { data: existing } = await supabase
+      .from('insurance_plans')
+      .select('member_id')
+      .eq('id', planId)
+      .single();
+    if (existing?.member_id) {
+      await supabase
+        .from('insurance_plans')
+        .update({ is_primary_plan: false })
+        .eq('member_id', existing.member_id)
+        .eq('is_primary_plan', true)
+        .neq('id', planId);
+    }
+  }
+
   const { data: plan, error } = await supabase
     .from('insurance_plans')
     .update(updates)

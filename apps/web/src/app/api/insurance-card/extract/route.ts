@@ -70,13 +70,16 @@ export async function POST(
     );
   }
 
-  const imageBytes = await imageFile.arrayBuffer();
-  if (imageBytes.byteLength > MAX_BYTES) {
+  // Check size via the File metadata before allocating the full buffer — arrayBuffer()
+  // reads the entire file into memory, so we reject oversized files first.
+  if (imageFile.size > MAX_BYTES) {
     return NextResponse.json(
       { error: { code: 'ANALYSIS_FAILED', detail: 'Image too large.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 413 }
     );
   }
+
+  const imageBytes = await imageFile.arrayBuffer();
 
   const base64 = Buffer.from(imageBytes).toString('base64');
   const mediaType = imageFile.type as 'image/jpeg' | 'image/png' | 'image/webp';

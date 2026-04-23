@@ -28,6 +28,21 @@ export async function PATCH(
 
   const supabase = await createSupabaseServerClient();
 
+  const updates: Record<string, unknown> = {};
+  if (body.fullName !== undefined) updates.full_name = body.fullName.trim();
+  if (body.dateOfBirth !== undefined) updates.date_of_birth = body.dateOfBirth;
+  if (body.state !== undefined) updates.state = body.state;
+  if (body.county !== undefined) updates.county = body.county;
+  if (body.zipCode !== undefined) updates.zip_code = body.zipCode;
+  if (body.isPrimary !== undefined) updates.is_primary = body.isPrimary;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'No fields to update.', step: 'update' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 400 }
+    );
+  }
+
   if (body.isPrimary) {
     await supabase
       .from('profile_members')
@@ -36,14 +51,6 @@ export async function PATCH(
       .eq('is_primary', true)
       .neq('id', memberId);
   }
-
-  const updates: Record<string, unknown> = {};
-  if (body.fullName !== undefined) updates.full_name = body.fullName.trim();
-  if (body.dateOfBirth !== undefined) updates.date_of_birth = body.dateOfBirth;
-  if (body.state !== undefined) updates.state = body.state;
-  if (body.county !== undefined) updates.county = body.county;
-  if (body.zipCode !== undefined) updates.zip_code = body.zipCode;
-  if (body.isPrimary !== undefined) updates.is_primary = body.isPrimary;
 
   const { data: member, error } = await supabase
     .from('profile_members')

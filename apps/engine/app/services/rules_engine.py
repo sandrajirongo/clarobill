@@ -20,7 +20,7 @@ class DetectedError:
 
     code: str
     severity: str  # 'critical' | 'warning' | 'info'
-    affected_indices: list[int]  # Indices into the line_items list
+    affected_indices: tuple[int, ...]  # Indices into the line_items list
     description: str
     estimated_overcharge: Decimal
     medicare_benchmark_rate: Decimal | None
@@ -198,7 +198,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="DUPLICATE_CHARGE",
                     severity="critical",
-                    affected_indices=[seen[key], index],
+                    affected_indices=(seen[key], index),
                     description=(
                         f"CPT {item.cpt_code} appears to be billed twice on "
                         f"{item.service_date}. One charge of ${item.total_charge:.2f} "
@@ -248,7 +248,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="PRICE_OUTLIER",
                     severity="warning",
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
                         f"{label}. {benchmark_context} "
@@ -299,7 +299,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="NCCI_UNBUNDLING",
                     severity="critical",
-                    affected_indices=all_affected,
+                    affected_indices=tuple(all_affected),
                     description=(
                         f"CPT {col2_code} should be bundled into CPT {col1_code} per CMS NCCI "
                         f"edits. Billing both separately may be improper. "
@@ -354,7 +354,7 @@ class RulesEngine:
             errors.append(DetectedError(
                 code="NON_PAYABLE_CODE",
                 severity=severity,
-                affected_indices=[index],
+                affected_indices=(index,),
                 description=f"{code_label} {item.cpt_code} {reason}",
                 estimated_overcharge=Decimal(str(item.total_charge)),
                 medicare_benchmark_rate=None,
@@ -408,7 +408,7 @@ class RulesEngine:
                     errors.append(DetectedError(
                         code="ANESTHESIA_OUTLIER",
                         severity="critical",
-                        affected_indices=[index],
+                        affected_indices=(index,),
                         description=(
                             f"CPT {item.cpt_code}: the billed charge of ${charge:.2f} is less "
                             f"than the cost of the documented anesthesia time alone "
@@ -429,7 +429,7 @@ class RulesEngine:
                         errors.append(DetectedError(
                             code="ANESTHESIA_OUTLIER",
                             severity="critical",
-                            affected_indices=[index],
+                            affected_indices=(index,),
                             description=(
                                 f"CPT {item.cpt_code}: the billed charge of ${charge:.2f} implies "
                                 f"{float(implied_base):.1f} base units, but CMS publishes "
@@ -447,7 +447,7 @@ class RulesEngine:
                     errors.append(DetectedError(
                         code="ANESTHESIA_OUTLIER",
                         severity="critical",
-                        affected_indices=[index],
+                        affected_indices=(index,),
                         description=(
                             f"CPT {item.cpt_code}: the billed charge of ${charge:.2f} implies "
                             f"{float(implied_base):.1f} base units after accounting for "
@@ -465,7 +465,7 @@ class RulesEngine:
                     errors.append(DetectedError(
                         code="ANESTHESIA_OUTLIER",
                         severity="warning",
-                        affected_indices=[index],
+                        affected_indices=(index,),
                         description=(
                             f"CPT {item.cpt_code}: the billed charge of ${charge:.2f} implies "
                             f"{float(implied_total):.1f} total anesthesia units at the "
@@ -539,7 +539,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="AMBULANCE_CHARGE_OUTLIER",
                     severity="warning",
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"Your provider charged {charge_label} for ambulance service "
                         f"{item.cpt_code}{label}. The Medicare Ambulance Fee Schedule "
@@ -580,7 +580,7 @@ class RulesEngine:
             errors.append(DetectedError(
                 code="TERMINATED_CODE_BILLED",
                 severity="critical",
-                affected_indices=[index],
+                affected_indices=(index,),
                 description=(
                     f"HCPCS {item.cpt_code} was terminated by CMS effective {term_date} "
                     f"and is no longer a valid billing code. The service date on this claim "
@@ -623,7 +623,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="HOSPITAL_CHARGE_OUTLIER",
                     severity="critical",
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
                         f"{label}, but this hospital's own published price list "
@@ -670,7 +670,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="NEGOTIATED_RATE_EXCEEDED",
                     severity="critical",
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
                         f"{label}. Your insurance plan's contracted rate at this hospital "
@@ -710,7 +710,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="FACILITY_CHARGE_OUTLIER",
                     severity="warning",
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"Your facility charged ${charge:.2f} for CPT {item.cpt_code}"
                         f"{label}. The Medicare OPPS payment cap for this procedure "
@@ -762,7 +762,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="MUE_EXCEEDED",
                     severity="critical",
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"CPT {item.cpt_code} has a CMS MUE value of 0, meaning it is "
                         f"not separately payable under any circumstances. "
@@ -792,7 +792,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="MUE_EXCEEDED",
                     severity="critical",
-                    affected_indices=all_indices,
+                    affected_indices=tuple(all_indices),
                     description=(
                         f"CPT {item.cpt_code} was billed for a combined total of {total_qty} units "
                         f"on {item.service_date}. The CMS Medically Unlikely Edit limit is "
@@ -820,7 +820,7 @@ class RulesEngine:
                 errors.append(DetectedError(
                     code="MUE_EXCEEDED",
                     severity=severity,
-                    affected_indices=[index],
+                    affected_indices=(index,),
                     description=(
                         f"CPT {item.cpt_code} was billed for {qty} units on {item.service_date}. "
                         f"The CMS Medically Unlikely Edit limit is {mue_value} units per date of "

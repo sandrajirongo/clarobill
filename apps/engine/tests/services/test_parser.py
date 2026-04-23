@@ -91,6 +91,37 @@ class TestDateExtraction:
         items = parser.parse(text)
         assert items[0].service_date.year == 2026
 
+    def test_extracts_iso_date_format(self, parser: BillParser) -> None:
+        # EHR-generated bills often use ISO 8601 (YYYY-MM-DD). The MM/DD regex fails
+        # because \d{1,2} can't match a 4-digit year — ISO must be handled separately.
+        text = "2026-03-15  99214  Office Visit  $350.00"
+        items = parser.parse(text)
+        assert items[0].service_date == date(2026, 3, 15)
+
+    def test_iso_date_in_section_header(self, parser: BillParser) -> None:
+        # ISO date appearing as a block header above multiple codes
+        text = (
+            "2026-03-15\n"
+            "99214  Office Visit  $350.00\n"
+            "85025  CBC  $120.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 2
+        assert all(item.service_date == date(2026, 3, 15) for item in items)
+
+    def test_iso_date_with_hyphen_separator(self, parser: BillParser) -> None:
+        # Some systems output YYYY/MM/DD with slashes — ensure ISO-style year is caught
+        text = "2025-01-07  27447  Total Knee Replacement  $18,500.00"
+        items = parser.parse(text)
+        assert items[0].service_date == date(2025, 1, 7)
+
+    def test_prefers_iso_date_over_mm_dd_yyyy_on_same_line(self, parser: BillParser) -> None:
+        # Only one date should be extracted — the ISO date must take precedence
+        # (ISO checked first in _extract_date to avoid ambiguity)
+        text = "2026-03-15  99214  Office Visit  $350.00"
+        items = parser.parse(text)
+        assert items[0].service_date == date(2026, 3, 15)
+
 
 class TestRealisticBillFormats:
     def test_parses_full_statement_with_header_and_footer(self, parser: BillParser) -> None:

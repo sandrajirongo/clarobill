@@ -136,21 +136,3 @@ class ReportRequest(BaseModel):
     user_id: str
 
 
-class ReportGenerated(BaseModel):
-    """Response confirming report was generated and emailed."""
-
-    generated: Literal[True] = True
-
-
-class EngineErrorCode(StrEnum):
-    OCR_FAILED = "OCR_FAILED"
-    INVALID_CPT_CODE = "INVALID_CPT_CODE"
-    ANALYSIS_FAILED = "ANALYSIS_FAILED"
-    RATE_LIMIT = "RATE_LIMIT"
-
-
-class EngineError(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    code: EngineErrorCode
-    detail: str

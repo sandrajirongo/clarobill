@@ -162,7 +162,7 @@ class ReportGenerator:
                 pdf.set_line_width(0.2)
                 pdf.set_font("DejaVu", "B", 9)
                 pdf.set_text_color(*_BODY)
-                pdf.cell(cw[0], 7, e.code.replace("_", " ".title()[:28]), border="B")
+                pdf.cell(cw[0], 7, e.code.replace("_", " ").title()[:28], border="B")
                 pdf.set_font("DejaVu", "", 9)
                 pdf.cell(cw[1], 7, e.severity.capitalize(), border="B")
                 pdf.cell(cw[2], 7, e.description[:65], border="B")

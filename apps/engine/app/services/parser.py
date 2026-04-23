@@ -24,6 +24,8 @@ _MILEAGE_PATTERN = re.compile(r"\b(\d{1,4}(?:\.\d)?)\s*(?:miles?|mi)\b", re.IGNO
 # (e.g. 11/14/25 would only match 11 without the decimal requirement)
 _AMOUNT_PATTERN = re.compile(r"\$?([\d,]+\.\d{2})\b")
 _DATE_PATTERN = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
+# ISO 8601 format: YYYY-MM-DD — checked before the MM/DD pattern to avoid partial matches
+_ISO_DATE_PATTERN = re.compile(r"\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b")
 
 # Anesthesia time patterns — searched near anesthesia CPT codes (00100–01999)
 # "45 min" / "45 minutes" / "120 MIN"
@@ -368,7 +370,11 @@ class BillParser:
             parsed = self._extract_date(lines[j])
             if parsed is not None:
                 return parsed
-        for j in range(start - _LOOKAHEAD_LINES - 1, -1, -1):
+        # Phase 2: scan backwards from just before the phase-1 window to find a section-header date.
+        # Start at max(0, start - LOOKAHEAD_LINES) - 1 so we don't re-scan lines phase 1 covered,
+        # and never go negative (negative indices would wrap to the end of the list).
+        phase2_start = max(0, start - _LOOKAHEAD_LINES) - 1
+        for j in range(phase2_start, -1, -1):
             parsed = self._extract_date(lines[j])
             if parsed is not None:
                 return parsed
@@ -510,7 +516,20 @@ class BillParser:
 
     @staticmethod
     def _extract_date(line: str) -> date | None:
-        """Extract the first date found in a line, or None."""
+        """Extract the first date found in a line, or None.
+
+        Tries ISO 8601 (YYYY-MM-DD) first — OCR fixture text and some EMR exports
+        use this format, and the MM/DD pattern cannot match it (year is 4 digits).
+        Falls back to MM/DD/YYYY (most US medical bills).
+        """
+        iso = _ISO_DATE_PATTERN.search(line)
+        if iso:
+            try:
+                year, month, day = int(iso.group(1)), int(iso.group(2)), int(iso.group(3))
+                return date(year, month, day)
+            except ValueError:
+                pass
+
         match = _DATE_PATTERN.search(line)
         if not match:
             return None

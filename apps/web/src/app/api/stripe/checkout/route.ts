@@ -134,6 +134,19 @@ export async function POST(
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
 
+  // Guard against double-charging: if a payment already exists for this bill,
+  // return the success URL without creating a second Stripe session.
+  const { data: existingPayment } = await service
+    .from('payments')
+    .select('id')
+    .eq('bill_id', billId)
+    .eq('user_id', user.id)
+    .in('status', ['pending', 'complete'])
+    .maybeSingle();
+  if (existingPayment) {
+    return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
+  }
+
   const discountLabel = discountCents > 0
     ? ` (includes $${(discountCents / 100).toFixed(2)} referral discount)`
     : '';

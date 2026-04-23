@@ -659,7 +659,7 @@ class TestHospitalChargeOutlier:
         errors = hosp_engine.run(items)
         hosp_errors = [e for e in errors if e.code == "HOSPITAL_CHARGE_OUTLIER"]
         assert len(hosp_errors) == 1
-        assert hosp_errors[0].affected_indices == [0]
+        assert hosp_errors[0].affected_indices == (0,)
 
 
 
@@ -738,7 +738,7 @@ class TestNegotiatedRateExceeded:
         errors = neg_engine.run(items)
         neg_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
         assert len(neg_errors) == 1
-        assert neg_errors[0].affected_indices == [0]
+        assert neg_errors[0].affected_indices == (0,)
 
     def test_negotiated_and_hospital_charge_rules_both_fire(self) -> None:
         # When both negotiated_charges and hospital_charges are loaded, both rules run.

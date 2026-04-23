@@ -22,7 +22,7 @@ class TestSendReportEmail:
             to_email="patient@example.com",
             bill_file_name="hospital-bill.pdf",
             report_pdf=b"%PDF-test-report",
-            dispute_letter_pdf=b"%PDF-test-letter",
+            dispute_letter_docx=b"PK\x03\x04test-docx",
         )
 
     def test_handles_empty_pdf_bytes(self, service: EmailService) -> None:
@@ -31,5 +31,5 @@ class TestSendReportEmail:
             to_email="patient@example.com",
             bill_file_name="bill.pdf",
             report_pdf=b"",
-            dispute_letter_pdf=b"",
+            dispute_letter_docx=b"",
         )

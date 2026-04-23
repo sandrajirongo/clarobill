@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useBillUpload } from '@/lib/hooks/use-bill-upload';
 import { useRouter } from 'next/navigation';
@@ -14,9 +14,17 @@ export function BillUploader(): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  if (uploadState.status === 'ready') {
-    router.push(`/dashboard/bills/${uploadState.billId}/verify`);
-  }
+  // Extract billId as a stable primitive so the effect dep is a string|null,
+  // not the whole uploadState object (which changes reference on every state update).
+  const readyBillId = uploadState.status === 'ready' ? uploadState.billId : null;
+
+  // Navigate in an effect — calling router.push during render causes a React warning
+  // and can trigger additional renders before navigation completes.
+  useEffect(() => {
+    if (readyBillId) {
+      router.push(`/dashboard/bills/${readyBillId}/verify`);
+    }
+  }, [readyBillId, router]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const file = e.target.files?.[0];
