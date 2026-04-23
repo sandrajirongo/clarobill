@@ -45,9 +45,14 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
 
   // After payment, report + dispute letter are generated async.
   // Poll every 5s for up to 90s, then show a timeout state with a retry option.
+  //
+  // Dependency is a stable boolean, NOT the analysis object. router.refresh() returns
+  // a new analysis object reference on every call — if we depend on analysis directly
+  // the effect re-runs on every refresh, resetting refreshCount to 0 and looping forever.
+  const reportReady = !!(analysis?.reportUrl || analysis?.disputeLetterUrl);
   useEffect(() => {
     if (!hasPaid || analysis === null) return;
-    if (analysis.reportUrl || analysis.disputeLetterUrl) return; // already ready
+    if (reportReady) return;
 
     let refreshCount = 0;
     const MAX_REFRESHES = 18; // 18 × 5s = 90s
@@ -60,7 +65,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [hasPaid, analysis, router]);
+  }, [hasPaid, reportReady, router]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Loading state — engine still processing
   if (analysis === null) {

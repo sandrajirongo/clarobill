@@ -90,21 +90,25 @@ export async function POST(
     // Fire report generation without awaiting — PDF + email can take 30–60s,
     // which would exceed the Vercel function timeout. Payment is already recorded;
     // the report will be generated and emailed in the background.
-    void fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
-        ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
-      },
-      body: JSON.stringify({ user_email: user.email, user_id: user.id }),
-    }).then(async (res) => {
-      if (!res.ok) {
-        console.error('[beta-checkout] Report generation failed for bill %s, status %d', billId, res.status);
+    // Engine returns 202 immediately (BackgroundTask) so this await completes in < 500ms
+    // and does not risk a Vercel function timeout. void fetch() was unreliable because
+    // Vercel terminated the function when the response was sent, killing the pending request.
+    try {
+      const reportRes = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+          ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
+        },
+        body: JSON.stringify({ user_email: user.email, user_id: user.id }),
+      });
+      if (!reportRes.ok) {
+        console.error('[beta-checkout] Report generation failed for bill %s, status %d', billId, reportRes.status);
       }
-    }).catch((err: unknown) => {
+    } catch (err: unknown) {
       console.error('[beta-checkout] Report generation request error for bill %s:', billId, err);
-    });
+    }
 
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
