@@ -1,5 +1,10 @@
 FROM python:3.11-slim
 
+# DejaVu Sans — Unicode TTF fonts used by fpdf2 for PDF generation.
+# Installs to /usr/share/fonts/truetype/dejavu/.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
