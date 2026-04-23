@@ -22,6 +22,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   const { bill, analysis, hiddenErrorCount, hasPaid, paymentStatus } = props;
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [reportTimedOut, setReportTimedOut] = useState(false);
   const router = useRouter();
 
   // When analysis is still running, poll and refresh the server component when done.
@@ -42,18 +43,21 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     return () => { cancelled = true; clearInterval(interval); };
   }, [analysis, bill.id, router]);
 
-  // After payment, report + dispute letter are generated async (15–60s).
-  // Refresh the Server Component every 5s until URLs appear, up to 2 minutes.
+  // After payment, report + dispute letter are generated async.
+  // Poll every 5s for up to 90s, then show a timeout state with a retry option.
   useEffect(() => {
     if (!hasPaid || analysis === null) return;
     if (analysis.reportUrl || analysis.disputeLetterUrl) return; // already ready
 
     let refreshCount = 0;
-    const MAX_REFRESHES = 24;
+    const MAX_REFRESHES = 18; // 18 × 5s = 90s
     const interval = setInterval(() => {
       refreshCount++;
       router.refresh();
-      if (refreshCount >= MAX_REFRESHES) clearInterval(interval);
+      if (refreshCount >= MAX_REFRESHES) {
+        clearInterval(interval);
+        setReportTimedOut(true);
+      }
     }, 5000);
     return () => clearInterval(interval);
   }, [hasPaid, analysis, router]);
@@ -189,16 +193,31 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         {reportPending && (
           <div className={s.card}>
             <p className={s.cardLabel}>Your Documents</p>
-            <div className={s.reportPendingWrap}>
-              <div className={s.reportPendingSpinner} />
-              <div>
-                <p className={s.reportPendingTitle}>Generating your report…</p>
-                <p className={s.reportPendingSub}>
-                  Your full PDF report and ready-to-send dispute letter are being created.
-                  This usually takes under a minute — the page will update automatically.
-                </p>
+            {reportTimedOut ? (
+              <div className={s.reportPendingWrap}>
+                <div>
+                  <p className={s.reportPendingTitle}>Taking longer than expected</p>
+                  <p className={s.reportPendingSub}>
+                    Check your email — your report may already be there. If not, you can
+                    visit the <Link href="/dashboard/reports" className={s.inlineLink}>Reports tab</Link> or try generating again.
+                  </p>
+                  <button onClick={handleGetFullReport} disabled={isStartingCheckout} className={s.retryBtn}>
+                    {isStartingCheckout ? 'Please wait…' : 'Try again'}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className={s.reportPendingWrap}>
+                <div className={s.reportPendingSpinner} />
+                <div>
+                  <p className={s.reportPendingTitle}>Generating your report…</p>
+                  <p className={s.reportPendingSub}>
+                    Your full PDF report and ready-to-send dispute letter are being created.
+                    This usually takes under a minute — the page will update automatically.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {hasPaid && (analysis.reportUrl || analysis.disputeLetterUrl) && (
