@@ -104,7 +104,7 @@ class TestDuplicateDetection:
 
 class TestPriceOutlierDetection:
     def test_flags_charge_above_threshold(self, engine_with_data: RulesEngine) -> None:
-        # Medicare rate for 99214 is $100. 1.1x threshold = $110. $350 should be flagged.
+        # Medicare rate for 99214 is $100. Default threshold 1.8x = $180. $350 should be flagged.
         items = [make_line_item("99214", 350.00)]
         errors = engine_with_data.run(items)
         outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
@@ -112,7 +112,7 @@ class TestPriceOutlierDetection:
         assert outlier_errors[0].medicare_benchmark_rate == Decimal("100.00")
 
     def test_does_not_flag_charge_below_threshold(self, engine_with_data: RulesEngine) -> None:
-        # $105 is 1.05x the $100 Medicare rate — below the 1.1x threshold
+        # $105 is below the 1.8x default threshold of $180
         items = [make_line_item("99214", 105.00)]
         errors = engine_with_data.run(items)
         outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
@@ -124,6 +124,59 @@ class TestPriceOutlierDetection:
         errors = engine_with_data.run(items)
         outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
         assert len(outlier_errors) == 0
+
+
+class TestPriceOutlierCommercial:
+    """Commercial plan uses service-type-specific multipliers, not the Medicare multiple."""
+
+    def _engine(self, service_type: str) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={"99214": Decimal("100.00"), "43235": Decimal("292.41")},
+            plan_type="commercial",
+            service_type=service_type,
+        )
+
+    def test_practitioner_threshold_is_1_4x_medicare(self) -> None:
+        # Medicare rate $100, practitioner multiplier 1.4x → threshold $140.
+        # $150 exceeds $140 → flagged. $130 does not.
+        engine = self._engine("practitioner")
+        assert len([e for e in engine.run([make_line_item("99214", 150.00)]) if e.code == "PRICE_OUTLIER"]) == 1
+        assert len([e for e in engine.run([make_line_item("99214", 130.00)]) if e.code == "PRICE_OUTLIER"]) == 0
+
+    def test_outpatient_threshold_is_2_64x_medicare(self) -> None:
+        # Medicare rate $292.41, outpatient multiplier 2.64x → threshold $772.
+        # $900 exceeds $772 → flagged. $700 does not.
+        engine = self._engine("outpatient")
+        assert len([e for e in engine.run([make_line_item("43235", 900.00)]) if e.code == "PRICE_OUTLIER"]) == 1
+        assert len([e for e in engine.run([make_line_item("43235", 700.00)]) if e.code == "PRICE_OUTLIER"]) == 0
+
+    def test_overcharge_relative_to_commercial_rate_not_medicare(self) -> None:
+        # Medicare $100, practitioner commercial rate = $140. Charge $200.
+        # Overcharge should be $200 - $140 = $60, not $200 - $100 = $100.
+        engine = self._engine("practitioner")
+        errors = [e for e in engine.run([make_line_item("99214", 200.00)]) if e.code == "PRICE_OUTLIER"]
+        assert len(errors) == 1
+        assert errors[0].estimated_overcharge == Decimal("60.00")
+
+    def test_description_mentions_commercial_not_medicare(self) -> None:
+        engine = self._engine("practitioner")
+        errors = [e for e in engine.run([make_line_item("99214", 200.00)]) if e.code == "PRICE_OUTLIER"]
+        assert len(errors) == 1
+        assert "commercial" in errors[0].description.lower()
+        assert "medicare" not in errors[0].description.lower()
+
+    def test_description_mentions_outpatient_for_outpatient_service(self) -> None:
+        engine = self._engine("outpatient")
+        errors = [e for e in engine.run([make_line_item("43235", 900.00)]) if e.code == "PRICE_OUTLIER"]
+        assert len(errors) == 1
+        assert "outpatient" in errors[0].description.lower()
+
+    def test_medicare_benchmark_rate_field_still_stores_raw_medicare_rate(self) -> None:
+        # The field is used internally — should always store the raw Medicare rate.
+        engine = self._engine("practitioner")
+        errors = [e for e in engine.run([make_line_item("99214", 200.00)]) if e.code == "PRICE_OUTLIER"]
+        assert errors[0].medicare_benchmark_rate == Decimal("100.00")
 
 
 class TestNcciUnbundling:

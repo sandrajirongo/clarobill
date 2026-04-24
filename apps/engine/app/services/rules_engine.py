@@ -118,16 +118,26 @@ _NCCI_OVERRIDE_MODIFIERS: frozenset[str] = frozenset({"59", "XE", "XS", "XP", "X
 
 # Price outlier thresholds by plan type.
 # Medicare/Medicaid: the Medicare rate IS the payment ceiling — flag anything above 1.05× (rounding tolerance).
-# Commercial: negotiated rates run 1.2–1.6× Medicare; flag above 1.8× to avoid false positives on normal bills.
+# Commercial: handled via service-type-specific multipliers below — entry removed from this table.
 # TRICARE/self_pay: tracks Medicare closely; flag above 1.2× to catch egregious overcharges.
 _PRICE_OUTLIER_THRESHOLDS: dict[str, float] = {
     "medicare":   1.05,
     "medicaid":   1.05,
-    "commercial": 1.80,
     "tricare":    1.20,
     "self_pay":   1.20,
 }
 _PRICE_OUTLIER_DEFAULT_THRESHOLD = 1.80
+
+# Commercial insurance rate multipliers relative to Medicare, by service type.
+# Source: published research on commercial-to-Medicare rate ratios.
+#   Outpatient hospital:    264% of Medicare (highest markup category)
+#   Physician/practitioner: 140% of Medicare (tracks Medicare more closely)
+#   Default (inpatient/unknown): 200% of Medicare (conservative midpoint)
+# Detection threshold == the estimated commercial rate, so overcharge is only
+# reported for charges that exceed what commercial insurers typically pay.
+_COMMERCIAL_MULTIPLIER_OUTPATIENT = Decimal("2.64")
+_COMMERCIAL_MULTIPLIER_PRACTITIONER = Decimal("1.40")
+_COMMERCIAL_MULTIPLIER_DEFAULT = Decimal("2.00")
 
 # Anesthesia outlier thresholds.
 # Base units for legitimate anesthesia codes range from 3 (minor procedures) to
@@ -146,6 +156,7 @@ class RulesEngine:
         ncci_edit_pairs: dict[str, set[str]],
         medicare_rates: dict[str, Decimal],
         plan_type: str | None = None,
+        service_type: str | None = None,
         medicare_outlier_threshold: float = 1.8,
         exact_price_threshold: float = 1.1,
         non_payable_codes: dict[str, str] | None = None,
@@ -221,6 +232,7 @@ class RulesEngine:
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
         self._plan_type = plan_type
+        self._service_type = service_type
         self._medicare_outlier_threshold = medicare_outlier_threshold
         self._exact_price_threshold = exact_price_threshold
         self._non_payable_codes = non_payable_codes or {}
@@ -329,53 +341,89 @@ class RulesEngine:
         return errors
 
     def _detect_price_outliers(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
-        """Flag charges that exceed the Medicare benchmark rate by a plan-type-aware threshold.
+        """Flag charges that exceed a plan-type-aware benchmark rate.
 
-        Threshold varies by insurance type because the Medicare rate means different things:
-          - Medicare/Medicaid patients: the Medicare rate is the payment ceiling (1.05× tolerance)
-          - Commercial: negotiated rates are 1.2–1.6× Medicare; flag above 1.8×
-          - TRICARE/self_pay: tracks Medicare closely; flag above 1.2×
+        For commercial plans, the benchmark is an estimated commercial rate derived from
+        published commercial-to-Medicare multipliers by service type. This produces
+        credible, insurance-relevant savings estimates rather than Medicare-relative ones.
+
+        For Medicare/Medicaid plans, the Medicare rate is the actual payment ceiling.
+        For other plan types, flag above a fixed Medicare multiple.
         """
-        threshold = Decimal(str(
-            _PRICE_OUTLIER_THRESHOLDS.get(self._plan_type or "", _PRICE_OUTLIER_DEFAULT_THRESHOLD)
-        ))
         errors: list[DetectedError] = []
 
         for index, item in enumerate(line_items):
             medicare_rate = self._medicare_rates.get(item.cpt_code)
             if medicare_rate is None:
-                # Unknown CPT code — flagged separately by a different rule
                 continue
 
             billed = Decimal(str(item.unit_charge))
-            total = Decimal(str(item.total_charge))
-            if medicare_rate > 0 and billed > medicare_rate * threshold:
-                overcharge = (billed - medicare_rate) * item.quantity
-                label = f" ({item.description})" if item.description else ""
-                qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
-                if self._plan_type in ("medicare", "medicaid"):
-                    benchmark_context = (
-                        f"The Medicare rate of ${medicare_rate:.2f} is the maximum reimbursable "
-                        f"amount for this service — your charge of ${billed:.2f}/unit exceeds it."
-                    )
+            label = f" ({item.description})" if item.description else ""
+            qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
+
+            if self._plan_type == "commercial":
+                # Use service-type-specific commercial multiplier as the benchmark.
+                if self._service_type == "outpatient":
+                    multiplier = _COMMERCIAL_MULTIPLIER_OUTPATIENT
+                    service_label = "outpatient hospital"
+                elif self._service_type == "practitioner":
+                    multiplier = _COMMERCIAL_MULTIPLIER_PRACTITIONER
+                    service_label = "physician"
                 else:
+                    multiplier = _COMMERCIAL_MULTIPLIER_DEFAULT
+                    service_label = "hospital"
+
+                commercial_rate = (medicare_rate * multiplier).quantize(Decimal("0.01"))
+                if medicare_rate > 0 and billed > commercial_rate:
+                    overcharge = (billed - commercial_rate) * item.quantity
                     benchmark_context = (
-                        f"The Medicare benchmark rate is ${medicare_rate:.2f} "
-                        f"— your charge is {billed / medicare_rate:.1f}× that amount."
+                        f"Commercial insurance typically reimburses approximately "
+                        f"${commercial_rate:.2f} for this {service_label} service — "
+                        f"your charge is {billed / commercial_rate:.1f}× the typical commercial rate."
                     )
-                errors.append(DetectedError(
-                    code="PRICE_OUTLIER",
-                    severity="warning",
-                    affected_indices=(index,),
-                    description=(
-                        f"Your provider charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
-                        f"{label}. {benchmark_context} "
-                        f"Consider requesting an itemized bill or asking your provider "
-                        f"to justify the difference."
-                    ),
-                    estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=medicare_rate,
+                    errors.append(DetectedError(
+                        code="PRICE_OUTLIER",
+                        severity="warning",
+                        affected_indices=(index,),
+                        description=(
+                            f"Your provider charged ${Decimal(str(item.total_charge)):.2f}{qty_note} "
+                            f"for CPT {item.cpt_code}{label}. {benchmark_context} "
+                            f"Consider requesting an itemized bill or asking your provider "
+                            f"to justify the difference."
+                        ),
+                        estimated_overcharge=overcharge,
+                        medicare_benchmark_rate=medicare_rate,
+                    ))
+
+            else:
+                threshold = Decimal(str(
+                    _PRICE_OUTLIER_THRESHOLDS.get(self._plan_type or "", _PRICE_OUTLIER_DEFAULT_THRESHOLD)
                 ))
+                if medicare_rate > 0 and billed > medicare_rate * threshold:
+                    overcharge = (billed - medicare_rate) * item.quantity
+                    if self._plan_type in ("medicare", "medicaid"):
+                        benchmark_context = (
+                            f"The Medicare rate of ${medicare_rate:.2f} is the maximum reimbursable "
+                            f"amount for this service — your charge of ${billed:.2f}/unit exceeds it."
+                        )
+                    else:
+                        benchmark_context = (
+                            f"The Medicare benchmark rate is ${medicare_rate:.2f} "
+                            f"— your charge is {billed / medicare_rate:.1f}× that amount."
+                        )
+                    errors.append(DetectedError(
+                        code="PRICE_OUTLIER",
+                        severity="warning",
+                        affected_indices=(index,),
+                        description=(
+                            f"Your provider charged ${Decimal(str(item.total_charge)):.2f}{qty_note} "
+                            f"for CPT {item.cpt_code}{label}. {benchmark_context} "
+                            f"Consider requesting an itemized bill or asking your provider "
+                            f"to justify the difference."
+                        ),
+                        estimated_overcharge=overcharge,
+                        medicare_benchmark_rate=medicare_rate,
+                    ))
 
         return errors
 

@@ -249,6 +249,7 @@ async def _run_analysis_pipeline(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
             plan_type=plan_type,
+            service_type=service_type,
             non_payable_codes=non_payable_codes,
             anesthesia_cf=anesthesia_cf,
             anesthesia_base_units=anesthesia_base_units,
