@@ -154,6 +154,13 @@ _SUMMARY_LINE_PATTERN = re.compile(
 # How many lines after the CPT code line to search for a charge amount
 _LOOKAHEAD_LINES = 3
 
+# Hospital address block — matches "City, OH 44195" or "City OH 44195" (with or without comma).
+# Captured groups: (1) city name, (2) 2-letter state abbreviation, (3) 5-digit ZIP.
+# Appears on hospital bills typically 1–3 lines below the facility name.
+_HOSPITAL_ADDRESS_PATTERN = re.compile(
+    r"^([A-Za-z][A-Za-z\s.'-]{1,30}),?\s+([A-Z]{2})\s+(\d{5})(?:-\d{4})?\s*$"
+)
+
 # Hospital name detection — keywords that identify a line as a hospital/facility name.
 # Ordered roughly by specificity: "hospital" is almost always the name, "clinic" less so.
 _HOSPITAL_KEYWORDS = re.compile(
@@ -575,6 +582,28 @@ class BillParser:
             if len(name) >= 5:
                 return name
         return None
+
+    def extract_hospital_address(
+        self, raw_text: str
+    ) -> tuple[str | None, str | None, str | None]:
+        """Extract city, state abbreviation, and ZIP from the hospital address block.
+
+        Scans the first 30 lines for a line matching the standard US city/state/ZIP
+        format (e.g. "Cleveland, OH 44195"). Hospital bills always print the facility
+        address near the top; this captures city, 2-letter state code, and 5-digit ZIP.
+
+        Returns:
+            (city, state_abbrev, zip5) — any element may be None if not found.
+        """
+        lines = raw_text.splitlines()
+        for line in lines[:30]:
+            m = _HOSPITAL_ADDRESS_PATTERN.match(line.strip())
+            if m:
+                city = m.group(1).strip().rstrip(",")
+                state_abbrev = m.group(2)
+                zip5 = m.group(3)
+                return city, state_abbrev, zip5
+        return None, None, None
 
     def extract_npi(self, raw_text: str) -> str | None:
         """Extract and validate the billing provider NPI from OCR text.

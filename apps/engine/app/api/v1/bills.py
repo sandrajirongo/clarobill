@@ -107,14 +107,23 @@ async def _run_analysis_pipeline(
         parser = BillParser()
         parsed_items = parser.parse(raw_text, bill_date=date.today())
 
-        # Best-effort NPI and name extraction — stored for hospital charge lookup.
-        # Both are optional; the pipeline continues without them.
+        # Best-effort NPI, name, and address extraction for hospital charge lookup.
+        # All are optional; the pipeline continues without them.
+        # NPI is exact and unambiguous — used directly when present.
+        # Name + address are used for progressive directory matching when NPI is absent.
+        # hospital_state/hospital_zip come from the OCR bill header (2-letter state code
+        # and 5-digit ZIP), NOT from the user-submitted state/zip which are the patient's
+        # location and stored in a different format (full CMS state name).
         hospital_npi = parser.extract_npi(raw_text)
         hospital_name = parser.extract_hospital_name(raw_text)
+        _, hospital_state, hospital_zip = parser.extract_hospital_address(raw_text)
         if hospital_npi:
             logger.info("Extracted NPI %s from bill %s", hospital_npi, bill_id)
         if hospital_name:
-            logger.info("Extracted hospital name '%s' from bill %s", hospital_name, bill_id)
+            logger.info(
+                "Extracted hospital '%s' (state=%s zip=%s) from bill %s",
+                hospital_name, hospital_state, hospital_zip, bill_id,
+            )
         # Persist all confirmed identity fields — hospital from OCR, payer/plan from user
         identity_update: dict[str, str] = {}
         if hospital_npi:
@@ -224,11 +233,18 @@ async def _run_analysis_pipeline(
                 bill_id, len(quarter_to_codes), sorted(quarter_to_codes),
             )
         bq = _build_bq_client()
-        hospital_charges = _load_hospital_charges(bq, cpt_codes, hospital_npi, hospital_name)
-        negotiated_charges = _load_negotiated_charges(bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name)
+        hospital_charges = _load_hospital_charges(
+            bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+        )
+        negotiated_charges = _load_negotiated_charges(
+            bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name,
+            hospital_state, hospital_zip,
+        )
         # Load the hospital-wide ceiling rate as a fallback for codes where the
         # exact payer/plan rate could not be matched (e.g. MRF naming mismatch).
-        negotiated_ceiling = _load_negotiated_ceiling(bq, cpt_codes, hospital_npi, hospital_name)
+        negotiated_ceiling = _load_negotiated_ceiling(
+            bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+        )
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -1033,18 +1049,20 @@ def _load_hospital_charges(
     cpt_codes: list[str],
     hospital_npi: str | None,
     hospital_name: str | None,
+    hospital_state: str | None = None,
+    hospital_zip: str | None = None,
 ) -> dict[str, Decimal]:
     """Load the hospital's published gross charges for the CPT codes on the bill.
 
     Queries BigQuery hospital_charges using:
       1. NPI match (exact) — preferred; always unambiguous.
-      2. Name match (LIKE on hospital_directory) — fallback when NPI unavailable.
-         Only used when exactly one hospital matches, to avoid returning charges
-         for the wrong facility.
+      2. Name match (progressive) — fallback when NPI unavailable. Uses state and
+         zip (extracted from OCR bill header) to disambiguate same-name hospitals
+         before falling back to name-only. Returns empty if still ambiguous.
 
     Returns an empty dict when: BigQuery not configured, no hospital identified,
-    no match found, or name is ambiguous. The rules engine skips the hospital
-    charge outlier rule when the dict is empty.
+    no match found, or name is unresolvably ambiguous. The rules engine skips the
+    hospital charge outlier rule when the dict is empty.
     """
     if bq is None or not cpt_codes:
         return {}
@@ -1054,16 +1072,13 @@ def _load_hospital_charges(
     dataset = f"{settings.gcp_project_id}.{settings.bigquery_dataset}"
     unique_codes = list(set(cpt_codes))
 
-    # 1. NPI match — exact and unambiguous
     if hospital_npi:
         return _query_charges_by_npi(bq, dataset, unique_codes, hospital_npi)
 
-    # 2. Name match — resolve NPI from hospital_directory first
     if hospital_name is None:
         return {}
-    npi = _resolve_npi_by_name(bq, dataset, hospital_name)
+    npi = _resolve_npi_by_name(bq, dataset, hospital_name, hospital_state, hospital_zip)
     if npi is None:
-        logger.info("Hospital name '%s' matched 0 or >1 hospitals — skipping charge lookup", hospital_name)
         return {}
     return _query_charges_by_npi(bq, dataset, unique_codes, npi)
 
@@ -1106,34 +1121,74 @@ def _resolve_npi_by_name(
     bq: bigquery.Client,
     dataset: str,
     hospital_name: str,
+    hospital_state: str | None = None,
+    hospital_zip: str | None = None,
 ) -> str | None:
-    """Resolve a hospital_npi from hospital_directory by fuzzy name match.
+    """Resolve a hospital NPI from hospital_directory using progressive address matching.
 
-    Returns the NPI only when exactly one hospital matches, preventing charges
-    from the wrong facility being returned when names are ambiguous.
-    Uses a case-insensitive LIKE match on a cleaned version of the name.
+    Tries up to three passes in decreasing specificity, returning the NPI on the
+    first pass that yields exactly one match. A no-match is always preferable to a
+    wrong-hospital match — charge data from the wrong facility produces false findings.
+
+      Pass 1: name + state + zip   — resolves same-name same-state variants (e.g. two
+                                     St. Mary's hospitals in Ohio, different cities/ZIPs)
+      Pass 2: name + state         — resolves same-name hospitals in different states
+      Pass 3: name only            — safe only when the name is nationally unique
+
+    Only passes for which the required address fields are available are attempted.
+    state and zip are extracted from the OCR bill header (hospital_directory stores
+    2-letter state codes; zip is a 5-digit string).
     """
-    # CONTAINS_SUBSTR performs a case-insensitive substring match without LIKE
-    # metacharacter risks — hospital names can contain % or _ which would
-    # break a LIKE pattern even in parameterized BigQuery queries.
     name_substr = hospital_name.strip()
-    query = f"""
-        SELECT hospital_npi, COUNT(*) AS match_count
-        FROM `{dataset}.hospital_directory`
-        WHERE CONTAINS_SUBSTR(hospital_name, @name_substr)
-          AND hospital_npi IS NOT NULL
-        GROUP BY hospital_npi
-    """
-    job_config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("name_substr", "STRING", name_substr),
-    ])
-    try:
-        rows = list(bq.query(query, job_config=job_config).result())
-    except Exception as exc:
-        logger.warning("BigQuery name lookup failed for '%s': %s", hospital_name, exc)
-        return None
-    if len(rows) == 1:
-        return str(rows[0]["hospital_npi"])
+
+    # Build pass list from most to least specific based on available address fields.
+    # Each entry is (label, state_value, zip_value) — None means "skip this field".
+    passes: list[tuple[str, str | None, str | None]] = []
+    if hospital_state and hospital_zip:
+        passes.append(("name+state+zip", hospital_state, hospital_zip))
+    if hospital_state:
+        passes.append(("name+state", hospital_state, None))
+    passes.append(("name", None, None))
+
+    base_where = (
+        "CONTAINS_SUBSTR(hospital_name, @name_substr)\n"
+        "          AND hospital_npi IS NOT NULL"
+    )
+
+    for label, state, zip_code in passes:
+        conditions = base_where
+        params: list[bigquery.ScalarQueryParameter] = [
+            bigquery.ScalarQueryParameter("name_substr", "STRING", name_substr),
+        ]
+        if state:
+            conditions += "\n          AND state = @state"
+            params.append(bigquery.ScalarQueryParameter("state", "STRING", state))
+        if zip_code:
+            conditions += "\n          AND zip_code = @zip_code"
+            params.append(bigquery.ScalarQueryParameter("zip_code", "STRING", zip_code))
+
+        query = f"SELECT hospital_npi FROM `{dataset}.hospital_directory` WHERE {conditions}"
+        try:
+            rows = list(bq.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result())
+        except Exception as exc:
+            logger.warning("Hospital NPI lookup (%s) failed for '%s': %s", label, hospital_name, exc)
+            return None
+
+        if len(rows) == 1:
+            npi = str(rows[0]["hospital_npi"])
+            logger.info("Hospital '%s' resolved via %s → NPI %s", hospital_name, label, npi)
+            return npi
+
+        if len(rows) > 1:
+            logger.debug(
+                "Hospital '%s' %s: %d candidates, narrowing to next pass",
+                hospital_name, label, len(rows),
+            )
+
+    logger.info(
+        "Hospital '%s' (state=%s zip=%s) unresolved — 0 or >1 matches on all passes, skipping charge lookup",
+        hospital_name, hospital_state, hospital_zip,
+    )
     return None
 
 
@@ -1204,6 +1259,8 @@ def _load_negotiated_charges(
     hospital_name: str | None,
     payer_name: str | None,
     plan_name: str | None,
+    hospital_state: str | None = None,
+    hospital_zip: str | None = None,
 ) -> dict[str, Decimal]:
     """Load the insurer-specific contracted rate for each CPT code on this bill.
 
@@ -1231,17 +1288,12 @@ def _load_negotiated_charges(
     dataset = f"{settings.gcp_project_id}.{settings.bigquery_dataset}"
     unique_codes = list(set(cpt_codes))
 
-    # Resolve NPI if only name is available — same logic as hospital charge lookup
     npi = hospital_npi
     if not npi:
         if hospital_name is None:
             return {}
-        npi = _resolve_npi_by_name(bq, dataset, hospital_name)
+        npi = _resolve_npi_by_name(bq, dataset, hospital_name, hospital_state, hospital_zip)
         if npi is None:
-            logger.info(
-                "Hospital name '%s' matched 0 or >1 hospitals — skipping negotiated rate lookup",
-                hospital_name,
-            )
             return {}
 
     payer_substr = payer_name.strip()
@@ -1323,6 +1375,8 @@ def _load_negotiated_ceiling(
     cpt_codes: list[str],
     hospital_npi: str | None,
     hospital_name: str | None,
+    hospital_state: str | None = None,
+    hospital_zip: str | None = None,
 ) -> dict[str, Decimal]:
     """Load the hospital-wide maximum negotiated rate per CPT code.
 
@@ -1354,7 +1408,7 @@ def _load_negotiated_ceiling(
     if not npi:
         if hospital_name is None:
             return {}
-        npi = _resolve_npi_by_name(bq, dataset, hospital_name)
+        npi = _resolve_npi_by_name(bq, dataset, hospital_name, hospital_state, hospital_zip)
         if npi is None:
             return {}
 
