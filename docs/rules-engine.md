@@ -71,7 +71,7 @@ fire independently. The hierarchy determines how assertive the report language s
 | NEGOTIATED_CEILING_EXCEEDED | Hospital-wide max negotiated (all payers) | Medium — not patient-specific | warning |
 | FACILITY_CHARGE_OUTLIER | OPPS Medicare payment cap | Lower — proxy for commercial | warning |
 | AMBULANCE_CHARGE_OUTLIER | CMS Ambulance Fee Schedule | Lower — proxy | warning |
-| PRICE_OUTLIER | Medicare non-facility rate × plan multiplier | Weakest — population proxy | warning |
+| PRICE_OUTLIER | Commercial: Medicare × service-type multiplier (1.40–2.64×). Others: Medicare × plan multiplier | Weakest — population proxy | warning |
 
 **Report language guidance:** NEGOTIATED_RATE_EXCEEDED and HOSPITAL_CHARGE_OUTLIER
 warrant assertive language ("you were overcharged"). NEGOTIATED_CEILING_EXCEEDED and
@@ -197,26 +197,45 @@ revenue codes, so querying both avoids missed pairs.
 **Data source:** `cms_pfs_indicators` + `cms_localities` (Supabase)
 
 **What it detects:**  
-Charges that exceed the Medicare Physician Fee Schedule non-facility rate by a
-plan-type-aware multiplier. Medicare rates are the weakest benchmark — use hedged
-language in reports for this rule.
+Charges that exceed a plan-type-aware benchmark rate. For commercial patients the
+benchmark is an estimated commercial rate (Medicare × service-type multiplier), not
+the raw Medicare rate. This produces credible, insurance-relevant savings estimates
+and avoids confusing commercially-insured patients with Medicare comparisons.
 
-**Thresholds by plan type:**
+**Thresholds and benchmarks by plan type:**
 
-| Plan type | Threshold | Rationale |
-|---|---|---|
-| medicare / medicaid | 1.05× | Medicare rate IS the payment ceiling |
-| tricare / self_pay | 1.20× | Tracks Medicare closely |
-| commercial / unknown | 1.80× | Normal commercial = 1.2–1.6× Medicare; flag only extreme outliers |
+| Plan type | Benchmark | Threshold | Rationale |
+|---|---|---|---|
+| medicare / medicaid | Medicare rate | 1.05× | Medicare rate IS the payment ceiling |
+| tricare / self_pay | Medicare rate | 1.20× | Tracks Medicare closely |
+| commercial — outpatient hospital | Medicare × 2.64 | exceeds commercial rate | Outpatient hospital commercial avg = 264% of Medicare |
+| commercial — physician/practitioner | Medicare × 1.40 | exceeds commercial rate | Physician commercial avg = 140% of Medicare |
+| commercial — inpatient/unknown | Medicare × 2.00 | exceeds commercial rate | Conservative midpoint |
+| unknown plan type | Medicare rate | 1.80× | Fallback — no insurance context |
 
-**Rate formula:**  
+**Service type determination (commercial only):**  
+The service type drives the commercial multiplier selection:
+- `outpatient` — bill has a confirmed `hospital_name` (facility claim proxy; revenue codes not yet parsed)
+- `practitioner` — default for non-hospital, non-DME bills
+- `dme` — bill contains HCPCS Level II DME supply codes (A/E/K/L prefixes)
+
+For commercial patients, descriptions reference "typical commercial insurance rate ~$X"
+with no mention of Medicare — irrelevant to a commercially-insured patient.
+
+**Rate formula (Medicare base):**  
 ```
-rate = (rvu_work × gpci_work + nfac_pe_rvu × gpci_pe + rvu_mp × gpci_mp) × conv_fact
+medicare_rate = (rvu_work × gpci_work + nfac_pe_rvu × gpci_pe + rvu_mp × gpci_mp) × conv_fact
+commercial_benchmark = medicare_rate × multiplier
 ```
 Uses `effective_from <= service_date` so the quarterly release in effect at the
 time of service is used automatically.
 
-**Estimated overcharge:** `(unit_charge - medicare_rate) × quantity`
+**Estimated overcharge:**
+- Commercial: `(unit_charge - commercial_benchmark) × quantity`
+- All other plan types: `(unit_charge - medicare_rate) × quantity`
+
+The raw `medicare_benchmark_rate` field is always stored on the error record for
+internal use regardless of which benchmark is shown to the patient.
 
 ---
 
@@ -394,7 +413,7 @@ Report language should say "warrants a closer look" rather than "you were overch
 These rules form a tiered fallback:
 1. Exact payer/plan rate fires → NEGOTIATED_RATE_EXCEEDED (critical)
 2. Exact rate unavailable but ceiling fires → NEGOTIATED_CEILING_EXCEEDED (warning)
-3. Neither fires → PRICE_OUTLIER at 1.80× Medicare (weakest fallback)
+3. Neither fires → PRICE_OUTLIER using commercial rate benchmark (weakest fallback)
 
 **Threshold:** 1.10× max_negotiated ceiling  
 **Estimated overcharge:** `(unit_charge - ceiling_rate) × quantity`

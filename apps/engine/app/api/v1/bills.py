@@ -177,6 +177,13 @@ async def _run_analysis_pipeline(
             dominant_rate_date, locality_code, bill_id, state, county,
         )
         service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
+        # If the bill was identified as coming from a hospital, treat it as an outpatient
+        # facility claim for pricing benchmarks. Revenue codes (the definitive signal) are
+        # not extracted by the parser, so a confirmed hospital_name is the best available
+        # proxy. This drives the commercial rate multiplier selection in PRICE_OUTLIER
+        # (outpatient hospital: 2.64× Medicare vs physician: 1.40× Medicare).
+        if hospital_name and service_type == "practitioner":
+            service_type = "outpatient"
         ncci_service_types = list({service_type, "practitioner", "outpatient"})
 
         # Group parsed_items by CMS quarter. Most bills have a single quarter; cross-quarter
@@ -351,10 +358,10 @@ def _derive_ncci_context(cpt_codes: list[str], plan_type: str | None) -> tuple[s
       'medicaid'  — plan_type is 'medicaid' (CMS national MCD files apply; when state-specific
                     Medicaid edits are loaded they will use payer_type='medicaid')
 
-    Note: outpatient hospital service type is not yet auto-detected. OPPS-billed facility
-    claims can be distinguished by the presence of revenue codes, which are not extracted
-    by the current parser. Default 'practitioner' is conservative — PTP edits for
-    practitioner services are a valid floor for outpatient facility bills.
+    Note: 'outpatient' service type is not returned here — the caller overrides to
+    'outpatient' when a confirmed hospital_name is present. Revenue codes (the definitive
+    facility/professional split signal) are not extracted by the current parser, so
+    hospital_name is the best available proxy.
     """
     # DME detection: HCPCS Level II alpha codes that are supply/equipment categories
     dme_prefixes = ("A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9",
