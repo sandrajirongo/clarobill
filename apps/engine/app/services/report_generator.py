@@ -97,7 +97,7 @@ class ReportGenerator:
         pdf.set_text_color(*_SAGE)
         name_display = bill_file_name[:60]
         name_px = pdf.get_string_width(name_display) + 2
-        pdf.cell(w - name_px, 10, "ClaroBill AI", align="L")
+        pdf.cell(w - name_px, 10, "ClaroBill", align="L")
         pdf.set_font("DejaVu", "", 9)
         pdf.set_text_color(*_MUTED)
         pdf.cell(name_px, 10, name_display, align="R", new_x="LMARGIN", new_y="NEXT")
@@ -279,11 +279,11 @@ class ReportGenerator:
         pdf.ln(4)
         pdf.set_font("DejaVu", "B", 9)
         pdf.set_text_color(*_SAGE)
-        pdf.cell(0, 5, "ClaroBill AI", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 5, "ClaroBill", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("DejaVu", "", 8)
         pdf.set_text_color(*_GRAY)
         pdf.multi_cell(0, 4.5, (
-            "Prepared by ClaroBill AI AI using proprietary billing analysis technology. "
+            "Prepared by ClaroBill using proprietary billing analysis technology. "
             "This report reflects a systematic review of your charges against applicable "
             "regulatory benchmarks and published rate data to identify potential errors and overcharges. "
             "Use this report to support a billing dispute with your provider or insurer."
