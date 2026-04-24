@@ -1,19 +1,26 @@
-"""Insurance card extraction via Claude Sonnet vision.
+"""Insurance card field extraction via AI vision.
 
-Accepts a cropped card image (1200×756 JPEG from the frontend), sends it to
-Claude Sonnet with a structured extraction prompt, and returns typed insurance
-plan fields. The image is never stored — this endpoint is stateless.
+Accepts a cropped card image (JPEG/PNG/WebP from the frontend), extracts structured
+insurance plan fields, and returns typed data. The image is never stored — this
+endpoint is stateless.
+
+Primary model: Gemini 2.0 Flash via Vertex AI (multimodal).
+Fallback model: Claude Sonnet via Anthropic API.
+
+The fallback activates on any Gemini failure. If both providers fail a 502 is returned.
 """
 
+import asyncio
 import base64
 import json
 import logging
 from typing import Literal, cast
 
-from anthropic import Anthropic
+import anthropic
 from anthropic.types import TextBlock
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
+from vertexai.generative_models import GenerativeModel, Part
 
 from app.core.config import settings
 
@@ -58,6 +65,26 @@ class InsuranceCardExtraction(BaseModel):
     note: str | None
 
 
+def _parse_ai_response(raw_text: str) -> dict[str, object]:
+    """Strip optional markdown code fences and parse JSON from an AI response."""
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    return json.loads(text)  # type: ignore[no-any-return]
+
+
+def _gemini_extract_sync(image_bytes: bytes, mime_type: str) -> str:
+    """Synchronous Gemini vision call — run via asyncio.to_thread."""
+    model = GenerativeModel("gemini-2.0-flash-001")
+    image_part = Part.from_data(data=image_bytes, mime_type=mime_type)
+    response = model.generate_content([image_part, _EXTRACT_PROMPT])
+    return str(response.text)
+
+
+async def _extract_via_gemini(image_bytes: bytes, mime_type: str) -> str:
+    return await asyncio.to_thread(_gemini_extract_sync, image_bytes, mime_type)
+
+
 @router.post(
     "/extract",
     response_model=InsuranceCardExtraction,
@@ -66,7 +93,11 @@ class InsuranceCardExtraction(BaseModel):
 async def extract_insurance_card(
     image: UploadFile = File(..., description="Insurance card photo (JPEG, PNG, or WebP)"),  # noqa: B008
 ) -> InsuranceCardExtraction:
-    """Extract structured insurance plan data from a card photo using Claude vision."""
+    """Extract structured insurance plan data from a card photo.
+
+    Tries Gemini 2.0 Flash vision first; falls back to Claude Sonnet on any
+    Gemini failure. Returns 502 only when both providers fail.
+    """
     content_type = image.content_type or ""
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
@@ -83,52 +114,33 @@ async def extract_insurance_card(
 
     logger.info("Card extraction: %s (%d bytes)", image.filename or "upload", len(image_bytes))
 
+    # Primary: Gemini vision
+    raw_text: str | None = None
     try:
-        client = Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=400,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": cast(
-                                Literal["image/jpeg", "image/png", "image/gif", "image/webp"],
-                                content_type,
-                            ),
-                            "data": base64.standard_b64encode(image_bytes).decode(),
-                        },
-                    },
-                    {"type": "text", "text": _EXTRACT_PROMPT},
-                ],
-            }],
-        )
+        raw_text = await _extract_via_gemini(image_bytes, content_type)
+        logger.info("Card extracted via Gemini")
     except Exception as exc:
-        logger.error("Claude vision error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not read the card. Ensure it is well-lit and try again.",
-        ) from exc
-
-    first_block = response.content[0]
-    if not isinstance(first_block, TextBlock):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unexpected response format. Please try again.",
+        logger.warning(
+            "Gemini vision failed (%s: %s) — falling back to Claude",
+            type(exc).__name__, exc,
         )
-    raw_text = first_block.text.strip()
 
-    # Strip markdown code fences if the model wraps the JSON
-    if raw_text.startswith("```"):
-        raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    # Fallback: Claude vision
+    if raw_text is None:
+        try:
+            raw_text = await asyncio.to_thread(_extract_via_claude_sync, image_bytes, content_type)
+            logger.info("Card extracted via Claude fallback")
+        except Exception as exc:
+            logger.error("Both vision providers failed for card extraction: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not read the card. Ensure it is well-lit and try again.",
+            ) from exc
 
     try:
-        data: dict[str, object] = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        logger.error("Failed to parse Claude response: %s", raw_text)
+        data = _parse_ai_response(raw_text)
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.error("Failed to parse AI card extraction response: %s", raw_text[:200])
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not parse card data. Please try again.",
@@ -150,3 +162,33 @@ async def extract_insurance_card(
         confident=bool(data.get("confident", False)),
         note=_str("note"),
     )
+
+
+def _extract_via_claude_sync(image_bytes: bytes, mime_type: str) -> str:
+    """Synchronous Claude vision call — run via asyncio.to_thread."""
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=400,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": cast(
+                            Literal["image/jpeg", "image/png", "image/gif", "image/webp"],
+                            mime_type,
+                        ),
+                        "data": base64.standard_b64encode(image_bytes).decode(),
+                    },
+                },
+                {"type": "text", "text": _EXTRACT_PROMPT},
+            ],
+        }],
+    )
+    first_block = response.content[0]
+    if not isinstance(first_block, TextBlock):
+        raise ValueError(f"Unexpected Claude response block type: {type(first_block)}")
+    return first_block.text

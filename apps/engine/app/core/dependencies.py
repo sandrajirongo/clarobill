@@ -23,13 +23,13 @@ def get_supabase_client() -> Client:
 
 @lru_cache(maxsize=1)
 def get_async_anthropic_client() -> anthropic.AsyncAnthropic:
-    """Returns a shared async Anthropic API client (use in async FastAPI endpoints)."""
+    """Returns a shared async Anthropic client used as the AI fallback provider."""
     return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
 @lru_cache(maxsize=1)
 def get_ai_analysis_service() -> AiAnalysisService:
-    """Returns a shared AI analysis service instance."""
+    """Returns the AI analysis service (Gemini primary, Claude fallback)."""
     return AiAnalysisService(client=get_async_anthropic_client())
 
 

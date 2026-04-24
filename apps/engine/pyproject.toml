@@ -16,6 +16,7 @@ dependencies = [
     "google-cloud-vision==3.9.0",
     "google-cloud-bigquery==3.25.0",
     "google-cloud-storage==2.18.2",
+    "google-cloud-aiplatform==1.91.0",
     "httpx>=0.27,<0.29",
     "python-multipart==0.0.20",
     "python-jose[cryptography]==3.3.0",

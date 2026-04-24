@@ -11,7 +11,7 @@
 - Backend: Python FastAPI microservice
 - Database: PostgreSQL via Supabase
 - OCR: Google Cloud Vision API
-- AI: Anthropic Claude API (Sonnet)
+- AI: Google Gemini 2.0 Flash via Vertex AI (primary) · Anthropic Claude Sonnet (fallback)
 - Payments: Stripe
 - File Storage: Supabase Storage (encrypted)
 - Hosting: Vercel (frontend) + Google Cloud Run (Python service, deployed via Cloud Build)

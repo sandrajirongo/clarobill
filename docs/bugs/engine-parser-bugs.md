@@ -206,7 +206,7 @@ if mue_value == 0:
 
 ## BUG-006 — Single rate_date used for all line items on cross-quarter bills
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** low
 **File:** `apps/engine/app/api/v1/bills.py:154`
 
@@ -235,7 +235,7 @@ all releases and let the mapping code select the right one per code.
 
 ## BUG-007 — Modifier pattern captures non-modifier 2-char tokens
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** low
 **File:** `apps/engine/app/services/parser.py:20`
 

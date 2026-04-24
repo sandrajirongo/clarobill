@@ -1,29 +1,72 @@
-"""AI analysis service — uses Claude to generate patient-facing report content.
+"""AI analysis service — generates patient-facing report content.
 
 Produces two outputs:
   1. Bill summary  — plain-English explanation of errors (runs during analysis)
   2. Dispute letter — formal letter the patient can send to the provider (runs after payment)
 
-All Claude calls are funneled through this module. Test mode returns fixture text.
+Primary model: Gemini 2.0 Flash via Vertex AI (Google Cloud).
+Fallback model: Claude Sonnet via Anthropic API.
+
+The fallback activates on any Gemini failure (API error, rate limit, service unavailable).
+If both providers fail the exception propagates — the caller marks the bill as FAILED
+rather than delivering degraded output to a paying user.
+
+Both providers use credentials already configured for the deployment:
+  - Gemini:  Application Default Credentials (same as Cloud Vision + BigQuery)
+  - Claude:  ANTHROPIC_API_KEY environment variable
+
+All AI calls are funneled through this module. Test mode returns fixture text.
 """
 
+import asyncio
 import logging
-from decimal import Decimal
 
 import anthropic
+import vertexai
+from vertexai.generative_models import GenerationConfig, GenerativeModel
 
+from app.core.config import settings
 from app.models.bill import BillingError
 from app.services.parser import ParsedLineItem
 
 logger = logging.getLogger(__name__)
 
+_GEMINI_MODEL = "gemini-2.0-flash-001"
+
 
 class AiAnalysisService:
-    """Generates patient-facing content from billing error analysis using Claude."""
+    """Generates patient-facing content from billing error analysis.
+
+    Gemini 2.0 Flash is the primary provider. Claude Sonnet is the fallback.
+    Test mode bypasses all API calls and returns fixture text.
+    """
 
     def __init__(self, client: anthropic.AsyncAnthropic, test_mode: bool = False) -> None:
         self._client = client
         self._test_mode = test_mode
+        # Only initialise Vertex AI when a project is configured — avoids failures
+        # in test environments where GCP credentials are not present.
+        if settings.gcp_project_id:
+            vertexai.init(project=settings.gcp_project_id, location=settings.vertex_ai_location)
+
+    async def _call_gemini(self, prompt: str, max_tokens: int) -> str:
+        """Call Gemini via Vertex AI.
+
+        The Vertex AI generative model SDK is synchronous; the call is wrapped in
+        asyncio.to_thread so it does not block the event loop.
+        """
+        def _sync() -> str:
+            model = GenerativeModel(_GEMINI_MODEL)
+            response = model.generate_content(
+                prompt,
+                generation_config=GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=0.3,
+                ),
+            )
+            return str(response.text)
+
+        return await asyncio.to_thread(_sync)
 
     async def generate_bill_summary(
         self,
@@ -59,14 +102,25 @@ class AiAnalysisService:
             f"Issues found:\n{error_descriptions}"
         )
 
+        # Primary: Gemini
+        try:
+            text = await self._call_gemini(prompt, max_tokens=300)
+            logger.info("Generated bill summary via Gemini (%d chars)", len(text))
+            return text
+        except Exception as exc:
+            logger.warning(
+                "Gemini call failed generating bill summary (%s: %s) — falling back to Claude",
+                type(exc).__name__, exc,
+            )
+
+        # Fallback: Claude — propagates on failure so the caller can mark the bill FAILED
         message = await self._client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
-
         text = message.content[0].text if message.content else ""
-        logger.info("Generated bill summary (%d chars)", len(text))
+        logger.info("Generated bill summary via Claude fallback (%d chars)", len(text))
         return text
 
     async def generate_dispute_letter(
@@ -140,14 +194,25 @@ class AiAnalysisService:
             f"Line items on the bill:\n{line_item_summary}"
         )
 
+        # Primary: Gemini
+        try:
+            text = await self._call_gemini(prompt, max_tokens=800)
+            logger.info("Generated dispute letter via Gemini (%d chars)", len(text))
+            return text
+        except Exception as exc:
+            logger.warning(
+                "Gemini call failed generating dispute letter (%s: %s) — falling back to Claude",
+                type(exc).__name__, exc,
+            )
+
+        # Fallback: Claude — propagates on failure so the caller can mark the bill FAILED
         message = await self._client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
-
         text = message.content[0].text if message.content else ""
-        logger.info("Generated dispute letter (%d chars)", len(text))
+        logger.info("Generated dispute letter via Claude fallback (%d chars)", len(text))
         return text
 
     @staticmethod

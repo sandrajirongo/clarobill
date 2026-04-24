@@ -5,7 +5,7 @@ import type { ApiErrorResponse } from '@clarobill/shared';
 
 // POST /api/bills/[billId]/analyze
 // Forwards the analysis request to the FastAPI engine.
-// The engine handles OCR, parsing, rules engine, and Claude AI analysis.
+// The engine handles OCR, parsing, rules engine, and AI analysis (Gemini primary, Claude fallback).
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ billId: string }> }

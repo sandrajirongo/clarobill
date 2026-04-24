@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_role_key: str
 
+    # Anthropic is the AI fallback — used when Gemini (primary) fails.
+    # Required so the fallback path is always available in production.
     anthropic_api_key: str
 
     # Prefer GOOGLE_CREDENTIALS_JSON (full JSON content) for containerised deployments.
@@ -23,6 +25,10 @@ class Settings(BaseSettings):
     # Leave empty in local dev if using GOOGLE_APPLICATION_CREDENTIALS as fallback.
     gcp_project_id: str = ""
     bigquery_dataset: str = "hospital_prices"
+
+    # Vertex AI — used as fallback when Anthropic API is unavailable (e.g. 529 overloaded).
+    # Uses Application Default Credentials; no separate key required.
+    vertex_ai_location: str = "us-central1"
 
     gcs_mrf_staging_bucket: str = "mrf-staging"
     bq_reader_credentials_json: str = ""

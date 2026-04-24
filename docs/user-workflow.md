@@ -181,7 +181,7 @@ The engine runs all applicable rules:
 7. **Ambulance fee schedule** checked (if ambulance codes present)
 8. **Hospital gross charges** loaded from BigQuery MRF data (if hospital identified)
 9. **Negotiated rates** loaded from BigQuery MRF data (if insurer + plan confirmed)
-10. **Claude AI analysis** generates plain-English summary
+10. **AI analysis** (Gemini primary, Claude fallback) generates plain-English summary
 
 Typical processing time: 15–45 seconds.
 
@@ -241,7 +241,7 @@ For each detected error:
 - **How to dispute it** — specific language to use with the provider or insurer
 
 ### Section 3 — AI Analysis
-Claude's narrative synthesis of the findings — explains patterns across multiple
+AI narrative synthesis of the findings (Gemini primary, Claude fallback) — explains patterns across multiple
 errors, contextualizes the significance, and gives the patient a confident,
 informed framing for approaching the dispute.
 

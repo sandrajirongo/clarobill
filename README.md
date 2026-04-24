@@ -16,7 +16,7 @@ insurance rate. Generates plain-English reports and ready-to-send dispute letter
 | Price transparency database | BigQuery (`clarobill-prd.hospital_prices`) |
 | Auth | Supabase Auth |
 | OCR | Google Cloud Vision API |
-| AI Analysis | Anthropic Claude API (Sonnet) |
+| AI Analysis | Google Gemini 2.0 Flash via Vertex AI (primary) · Anthropic Claude Sonnet (fallback) |
 | Payments | Stripe Checkout |
 | File Storage | Supabase Storage (encrypted) |
 | Email | SendGrid |
@@ -198,7 +198,7 @@ Key engine variables:
 |----------|----------|-------------|
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | Yes | Service role key (bypasses RLS) |
-| `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `ANTHROPIC_API_KEY` | Yes | Claude API key (AI fallback — required so fallback is always available) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | No | Path to GCP SA key (enables BigQuery rules) |
 | `GCP_PROJECT_ID` | No | GCP project (`clarobill-prd`) |
 | `BIGQUERY_DATASET` | No | BigQuery dataset (`hospital_prices`) |

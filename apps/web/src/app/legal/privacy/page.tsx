@@ -52,7 +52,7 @@ export default function PrivacyPolicyPage(): JSX.Element {
         <ul className="list-disc pl-6 space-y-2 text-gray-700">
           <li>To perform OCR on your uploaded bill and extract line items</li>
           <li>To run automated billing rules checks (duplicate detection, price outliers, NCCI edits)</li>
-          <li>To generate an AI-assisted analysis report using Anthropic&rsquo;s Claude API</li>
+          <li>To generate an AI-assisted analysis report using Google&rsquo;s Gemini API (Vertex AI)</li>
           <li>To generate a dispute letter template personalized to your bill&rsquo;s findings</li>
           <li>To deliver your report and dispute letter via email (SendGrid)</li>
           <li>To process your payment and support refund requests (Stripe)</li>
@@ -60,8 +60,9 @@ export default function PrivacyPolicyPage(): JSX.Element {
           <li>To understand aggregate usage patterns and improve the product (PostHog)</li>
         </ul>
         <p className="mt-3">
-          We do not use your medical bill data to train AI models — neither our own nor Anthropic&rsquo;s. Per
-          Anthropic&rsquo;s API terms, content submitted via the API is not used for model training.
+          We do not use your medical bill data to train AI models — neither our own nor those of our AI
+          providers. Per Google&rsquo;s Vertex AI terms, content submitted via the API is not used for model
+          training by default. Our Anthropic API usage is governed by the same constraint.
         </p>
       </Section>
 
@@ -70,7 +71,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
         <div className="mt-4 space-y-3">
           <Processor name="Supabase" purpose="Database and encrypted file storage" location="United States" />
           <Processor name="Google Cloud Vision" purpose="OCR text extraction from bill images" location="United States" />
-          <Processor name="Anthropic" purpose="AI-assisted bill analysis (Claude API)" location="United States" />
+          <Processor name="Google Cloud AI (Vertex AI)" purpose="AI-assisted bill analysis and dispute letter generation (Gemini — primary)" location="United States" />
+          <Processor name="Anthropic" purpose="AI-assisted bill analysis and dispute letter generation (Claude — fallback only)" location="United States" />
           <Processor name="Stripe" purpose="Payment processing" location="United States" />
           <Processor name="SendGrid (Twilio)" purpose="Transactional email delivery" location="United States" />
           <Processor name="Sentry" purpose="Error monitoring (redacted payloads)" location="United States" />

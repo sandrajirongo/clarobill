@@ -85,7 +85,7 @@ async def _run_analysis_pipeline(
       2. OCR extraction
       3. Line item parsing
       4. Rules engine (all rules, including negotiated rate if payer/plan provided)
-      5. AI analysis (Claude)
+      5. AI analysis (Gemini primary, Claude fallback)
       6. Persist results and update bill status
     """
     logger.info("Processing bill %s for user %s", bill_id, user_id)
@@ -266,7 +266,7 @@ async def _run_analysis_pipeline(
         line_item_ids: list[str] = [str(row["id"]) for row in line_item_rows]
         billing_errors = _map_errors_to_line_items(detected_errors, line_item_ids)
 
-        # 5. AI summary via Claude
+        # 5. AI summary (Gemini primary, Claude fallback)
         ai_service = get_ai_analysis_service()
         ai_summary = await ai_service.generate_bill_summary(billing_errors, parsed_items)
 

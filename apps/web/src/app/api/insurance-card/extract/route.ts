@@ -1,6 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/supabase/server';
+import { getCloudRunIdToken } from '@/lib/gcp-auth';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 export interface InsuranceCardExtraction {
@@ -19,26 +19,9 @@ export interface InsuranceCardExtraction {
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 const MAX_BYTES = 10 * 1024 * 1024;
 
-const EXTRACT_PROMPT = `
-Extract all insurance card fields from this image.
-Return ONLY a JSON object with these exact keys:
-
-- payer_name: The INSURANCE COMPANY brand name (e.g. "Aetna", "Blue Cross Blue Shield", "UnitedHealthcare", "Cigna", "Humana"). This is the health insurer that pays claims — NOT the employer, group sponsor, or company name printed as the group. Look for the insurance brand logo or brand mark. (string or null)
-- plan_name: plan or product name such as "Choice POS I", "HMO Gold", "PPO Plus" (string or null)
-- member_id: The COMPLETE member or subscriber ID exactly as printed on the card, including any letter prefix or internal spaces (e.g. "W2607 46886", "XYZ123456789"). Do NOT truncate, strip letter prefixes, or remove spaces. Copy character-for-character. (string or null)
-- group_id: group number printed on the card (string or null)
-- plan_type: one of "commercial", "medicare", "medicaid", "tricare", "self_pay"
-- rx_bin: pharmacy BIN number, labeled BIN or RxBIN (string or null)
-- rx_pcn: pharmacy PCN number (string or null)
-- rx_group: pharmacy group number, distinct from medical group number (string or null)
-- confident: true if you could clearly read payer_name or member_id, false otherwise
-- note: brief note if confidence is low, null otherwise
-
-Return only the JSON object. No markdown, no explanation.`.trim();
-
 // POST /api/insurance-card/extract
-// Accepts a multipart/form-data image, calls Claude Sonnet vision directly,
-// and returns structured insurance plan fields. Stateless — image is never stored.
+// Authenticates the user, validates the image, then forwards to the engine.
+// The engine handles AI provider selection (Gemini primary, Claude fallback).
 export async function POST(
   request: Request
 ): Promise<NextResponse<InsuranceCardExtraction | ApiErrorResponse>> {
@@ -70,8 +53,6 @@ export async function POST(
     );
   }
 
-  // Check size via the File metadata before allocating the full buffer — arrayBuffer()
-  // reads the entire file into memory, so we reject oversized files first.
   if (imageFile.size > MAX_BYTES) {
     return NextResponse.json(
       { error: { code: 'ANALYSIS_FAILED', detail: 'Image too large.', step: 'validate' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
@@ -79,53 +60,43 @@ export async function POST(
     );
   }
 
-  const imageBytes = await imageFile.arrayBuffer();
+  // Forward to engine — engine handles Gemini primary / Claude fallback
+  const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
+  const idToken = await getCloudRunIdToken(engineUrl);
 
-  const base64 = Buffer.from(imageBytes).toString('base64');
-  const mediaType = imageFile.type as 'image/jpeg' | 'image/png' | 'image/webp';
+  const forwardForm = new FormData();
+  forwardForm.append('image', imageFile);
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  let rawText: string;
+  let engineResponse: Response;
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 400,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-          { type: 'text', text: EXTRACT_PROMPT },
-        ],
-      }],
+    engineResponse = await fetch(`${engineUrl}/insurance-card/extract`, {
+      method: 'POST',
+      headers: {
+        ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+        ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
+      },
+      body: forwardForm,
     });
-    const block = response.content[0] ?? null;
-    if (!block || block.type !== 'text') throw new Error('unexpected block type');
-    rawText = block.text.trim();
-  } catch {
+  } catch (err) {
+    console.error('[insurance-card] Engine unreachable:', err);
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail: 'Vision call failed.', step: 'extract' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Card extraction service unavailable. Please try again.', step: 'extract' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 502 }
     );
   }
 
-  // Strip markdown code fences if the model wraps the JSON
-  if (rawText.startsWith('```')) {
-    rawText = rawText.split('\n').slice(1).join('\n').split('```')[0]?.trim() ?? rawText;
-  }
-
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(rawText) as Record<string, unknown>;
-  } catch {
+  if (!engineResponse.ok) {
+    console.error('[insurance-card] Engine returned', engineResponse.status);
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail: 'Parse failed.', step: 'parse' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Could not read the card. Ensure it is well-lit and try again.', step: 'extract' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 502 }
     );
   }
 
+  // Engine returns snake_case — map to camelCase for the frontend
+  const raw = await engineResponse.json() as Record<string, unknown>;
   const str = (key: string): string | null => {
-    const v = data[key];
+    const v = raw[key];
     return typeof v === 'string' && v ? v : null;
   };
 
@@ -138,7 +109,7 @@ export async function POST(
     rxBin:     str('rx_bin'),
     rxPcn:     str('rx_pcn'),
     rxGroup:   str('rx_group'),
-    confident: Boolean(data['confident']),
+    confident: Boolean(raw['confident']),
     note:      str('note'),
   } satisfies InsuranceCardExtraction);
 }
