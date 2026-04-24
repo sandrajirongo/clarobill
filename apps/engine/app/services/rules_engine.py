@@ -66,6 +66,7 @@ class RulesEngine:
         hcpcs_termination_dates: dict[str, date] | None = None,
         hospital_charges: dict[str, Decimal] | None = None,
         negotiated_charges: dict[str, Decimal] | None = None,
+        negotiated_ceiling: dict[str, Decimal] | None = None,
         mue_limits: dict[str, tuple[int, int]] | None = None,
     ) -> None:
         """
@@ -85,10 +86,11 @@ class RulesEngine:
             exact_price_threshold:      Flag charge when it exceeds an exact agreed/published price
                                         by this multiplier. Default 1.1 = flag anything more than
                                         10% over the benchmark. Used for HOSPITAL_CHARGE_OUTLIER
-                                        (hospital's own chargemaster) and NEGOTIATED_RATE_EXCEEDED
-                                        (insurer-specific contracted rate). These benchmarks are
-                                        the actual agreed or published price, so there is no
-                                        insurance-type ambiguity — 10% tolerance handles minor
+                                        (hospital's own chargemaster), NEGOTIATED_RATE_EXCEEDED
+                                        (insurer-specific contracted rate), and
+                                        NEGOTIATED_CEILING_EXCEEDED (hospital-wide max negotiated
+                                        rate). These benchmarks are actual published prices, so there
+                                        is no insurance-type ambiguity — 10% tolerance handles minor
                                         rounding and unit-charge-vs-total-charge discrepancies.
             non_payable_codes:          Map of cpt_code → proc_stat for non-payable codes found on
                                         the bill. Codes with proc_stat 'I' (inactive) or 'B' (bundled)
@@ -115,6 +117,11 @@ class RulesEngine:
                                         the MRF price transparency file. When provided, enables
                                         the negotiated rate exceeded detection — the strongest
                                         price benchmark available.
+            negotiated_ceiling:         Map of cpt_code → the highest negotiated rate any payer
+                                        has with this hospital for this code, from the hospital's
+                                        MRF. Used as a fallback when the exact payer/plan rate
+                                        cannot be matched. Fires NEGOTIATED_CEILING_EXCEEDED only
+                                        for codes not already covered by negotiated_charges.
             mue_limits:                 Map of hcpcs_code → (mue_value, adjudication_indicator).
                                         mue_value: max allowed units per line (or per claim/date for
                                         indicator 1). adjudication_indicator: 0=unknown, 1=claim edit,
@@ -134,6 +141,7 @@ class RulesEngine:
         self._hcpcs_termination_dates = hcpcs_termination_dates or {}
         self._hospital_charges = hospital_charges or {}
         self._negotiated_charges = negotiated_charges or {}
+        self._negotiated_ceiling = negotiated_ceiling or {}
         self._mue_limits = mue_limits or {}
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
@@ -189,6 +197,7 @@ class RulesEngine:
         errors.extend(_without_removed(self._detect_terminated_codes(line_items)))
         errors.extend(_without_removed(self._detect_hospital_charge_outliers(line_items)))
         errors.extend(_without_removed(self._detect_negotiated_rate_exceeded(line_items)))
+        errors.extend(_without_removed(self._detect_negotiated_ceiling_exceeded(line_items)))
         errors.extend(_without_removed(self._detect_mue_violations(line_items)))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
@@ -724,6 +733,55 @@ class RulesEngine:
                     ),
                     estimated_overcharge=overcharge,
                     medicare_benchmark_rate=negotiated_rate,
+                ))
+
+        return errors
+
+    def _detect_negotiated_ceiling_exceeded(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
+        """Flag charges above the highest negotiated rate any insurer pays at this hospital.
+
+        Fires only when:
+          - negotiated_ceiling is populated (hospital's max_negotiated from MRF data)
+          - The code does NOT already have an exact payer-match in negotiated_charges
+            (to prevent double-reporting when the exact rate was found and fired)
+          - The billed charge exceeds the ceiling rate × exact_price_threshold
+
+        Severity is 'warning' (not 'critical') because this is a cross-payer ceiling,
+        not the patient's specific contracted rate. The ceiling proves the billed amount
+        exceeds what any insurer pays, which is strong evidence of an overcharge, but
+        we cannot confirm with certainty what this patient's plan should have paid.
+        """
+        if not self._negotiated_ceiling:
+            return []
+
+        errors: list[DetectedError] = []
+
+        for index, item in enumerate(line_items):
+            if item.cpt_code in self._negotiated_charges:
+                continue
+
+            ceiling_rate = self._negotiated_ceiling.get(item.cpt_code)
+            if ceiling_rate is None or ceiling_rate <= 0:
+                continue
+
+            charge = Decimal(str(item.total_charge))
+            if charge > ceiling_rate * Decimal(str(self._exact_price_threshold)):
+                overcharge = charge - ceiling_rate
+                label = f" ({item.description})" if item.description else ""
+                errors.append(DetectedError(
+                    code="NEGOTIATED_CEILING_EXCEEDED",
+                    severity="warning",
+                    affected_indices=(index,),
+                    description=(
+                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"{label}. According to this hospital's published price transparency "
+                        f"data, the highest rate any insurer pays for this procedure here is "
+                        f"${ceiling_rate:.2f}. Your charge of ${charge:.2f} exceeds that "
+                        f"ceiling by ${overcharge:.2f}. This warrants a closer look — request "
+                        f"an itemized review of this charge."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=ceiling_rate,
                 ))
 
         return errors

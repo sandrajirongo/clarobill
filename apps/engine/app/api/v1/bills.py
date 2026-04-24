@@ -179,6 +179,9 @@ async def _run_analysis_pipeline(
         bq = _build_bq_client()
         hospital_charges = _load_hospital_charges(bq, cpt_codes, hospital_npi, hospital_name)
         negotiated_charges = _load_negotiated_charges(bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name)
+        # Load the hospital-wide ceiling rate as a fallback for codes where the
+        # exact payer/plan rate could not be matched (e.g. MRF naming mismatch).
+        negotiated_ceiling = _load_negotiated_ceiling(bq, cpt_codes, hospital_npi, hospital_name)
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
             medicare_rates=medicare_rates,
@@ -191,6 +194,7 @@ async def _run_analysis_pipeline(
             hcpcs_termination_dates=hcpcs_termination_dates,
             hospital_charges=hospital_charges,
             negotiated_charges=negotiated_charges,
+            negotiated_ceiling=negotiated_ceiling,
             mue_limits=mue_limits,
         )
         detected_errors = engine.run(parsed_items)
@@ -1066,6 +1070,66 @@ def _resolve_npi_by_name(
     return None
 
 
+def _resolve_payer_aliases(
+    bq: bigquery.Client,
+    dataset: str,
+    payer_name: str,
+) -> list[str]:
+    """Return all known MRF alias strings for the payer group that matches payer_name.
+
+    Looks up the canonical payer_group by matching payer_name against the alias
+    column (case-insensitive substring), then returns all aliases for that group.
+    This lets the negotiated rate query use exact IN() matching rather than CONTAINS_SUBSTR,
+    covering all known MRF naming variations for the same insurer.
+
+    Returns an empty list when:
+      - The payer_name_aliases table doesn't exist yet (table not seeded)
+      - No canonical group matches the provided name
+
+    Falls back gracefully — the caller should fall back to CONTAINS_SUBSTR when
+    this returns empty.
+    """
+    lookup_query = f"""
+        SELECT DISTINCT payer_group
+        FROM `{dataset}.payer_name_aliases`
+        WHERE CONTAINS_SUBSTR(alias, @payer_name)
+           OR CONTAINS_SUBSTR(@payer_name, alias)
+        LIMIT 1
+    """
+    try:
+        rows = list(bq.query(
+            lookup_query,
+            job_config=bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("payer_name", "STRING", payer_name),
+            ]),
+        ).result())
+    except Exception:
+        # Table doesn't exist yet or query failed — return empty to trigger fallback
+        return []
+
+    if not rows:
+        return []
+
+    payer_group = rows[0]["payer_group"]
+
+    alias_query = f"""
+        SELECT alias
+        FROM `{dataset}.payer_name_aliases`
+        WHERE payer_group = @payer_group
+    """
+    try:
+        alias_rows = list(bq.query(
+            alias_query,
+            job_config=bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("payer_group", "STRING", payer_group),
+            ]),
+        ).result())
+    except Exception:
+        return []
+
+    return [str(row["alias"]) for row in alias_rows]
+
+
 def _load_negotiated_charges(
     bq: bigquery.Client | None,
     cpt_codes: list[str],
@@ -1113,33 +1177,56 @@ def _load_negotiated_charges(
             )
             return {}
 
-    # CONTAINS_SUBSTR for payer/plan — same metacharacter safety rationale as
-    # _resolve_npi_by_name. MRF data uses various naming conventions so substring
-    # match is intentional; CONTAINS_SUBSTR is case-insensitive by default.
-    # Only return rates when negotiated_type is 'negotiated' or 'derived' —
-    # 'percentage' rates are multipliers of another rate and cannot be directly
-    # compared to billed charges without additional context.
     payer_substr = payer_name.strip()
     plan_substr = plan_name.strip()
 
-    query = f"""
-        SELECT code, MAX(negotiated_charge) AS negotiated_charge
-        FROM `{dataset}.hospital_charges`
-        WHERE hospital_npi = @npi
-          AND CONTAINS_SUBSTR(payer_name, @payer_substr)
-          AND CONTAINS_SUBSTR(plan_name, @plan_substr)
-          AND code IN UNNEST(@codes)
-          AND negotiated_charge IS NOT NULL
-          AND negotiated_charge > 0
-          AND negotiated_type IN ('negotiated', 'derived')
-        GROUP BY code
-    """
-    job_config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("npi", "STRING", npi),
-        bigquery.ScalarQueryParameter("payer_substr", "STRING", payer_substr),
-        bigquery.ScalarQueryParameter("plan_substr", "STRING", plan_substr),
-        bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
-    ])
+    # Attempt 1: join against payer_name_aliases for exact normalized matching.
+    # The alias table maps raw MRF payer strings → canonical payer_group, letting
+    # us query with IN (all aliases for this group) rather than a substring search.
+    # This eliminates false misses where the user types "Blue Cross" but the MRF
+    # uses "Anthem Blue Cross Blue Shield of California".
+    aliases = _resolve_payer_aliases(bq, dataset, payer_substr)
+    if aliases:
+        query = f"""
+            SELECT code, MAX(negotiated_charge) AS negotiated_charge
+            FROM `{dataset}.hospital_charges`
+            WHERE hospital_npi = @npi
+              AND payer_name IN UNNEST(@payer_aliases)
+              AND CONTAINS_SUBSTR(plan_name, @plan_substr)
+              AND code IN UNNEST(@codes)
+              AND negotiated_charge IS NOT NULL
+              AND negotiated_charge > 0
+              AND negotiated_type IN ('negotiated', 'derived')
+            GROUP BY code
+        """
+        job_config = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("npi", "STRING", npi),
+            bigquery.ArrayQueryParameter("payer_aliases", "STRING", aliases),
+            bigquery.ScalarQueryParameter("plan_substr", "STRING", plan_substr),
+            bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+        ])
+    else:
+        # Attempt 2: substring fallback when the payer_name_aliases table is empty
+        # or the user-provided name has no canonical alias. CONTAINS_SUBSTR is
+        # case-insensitive and safe against LIKE metacharacters.
+        query = f"""
+            SELECT code, MAX(negotiated_charge) AS negotiated_charge
+            FROM `{dataset}.hospital_charges`
+            WHERE hospital_npi = @npi
+              AND CONTAINS_SUBSTR(payer_name, @payer_substr)
+              AND CONTAINS_SUBSTR(plan_name, @plan_substr)
+              AND code IN UNNEST(@codes)
+              AND negotiated_charge IS NOT NULL
+              AND negotiated_charge > 0
+              AND negotiated_type IN ('negotiated', 'derived')
+            GROUP BY code
+        """
+        job_config = bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("npi", "STRING", npi),
+            bigquery.ScalarQueryParameter("payer_substr", "STRING", payer_substr),
+            bigquery.ScalarQueryParameter("plan_substr", "STRING", plan_substr),
+            bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+        ])
     try:
         rows = list(bq.query(query, job_config=job_config).result())
     except Exception as exc:
@@ -1162,6 +1249,73 @@ def _load_negotiated_charges(
         len(rows), npi, payer_name, plan_name,
     )
     return {row["code"]: Decimal(str(row["negotiated_charge"])).quantize(Decimal("0.01")) for row in rows}
+
+
+def _load_negotiated_ceiling(
+    bq: bigquery.Client | None,
+    cpt_codes: list[str],
+    hospital_npi: str | None,
+    hospital_name: str | None,
+) -> dict[str, Decimal]:
+    """Load the hospital-wide maximum negotiated rate per CPT code.
+
+    Queries MAX(max_negotiated) across all payers at this hospital for each code.
+    max_negotiated is extracted from the hospital's MRF standard_charges level —
+    it represents the highest dollar amount any insurer has contracted to pay for
+    that procedure at that facility.
+
+    Used as a fallback when the exact payer/plan negotiated rate cannot be matched.
+    A billed charge above this ceiling exceeds what any insurer pays — a meaningful
+    benchmark even without knowing the patient's specific plan rate.
+
+    Returns empty dict when:
+      - BigQuery not configured
+      - No CPT codes on the bill
+      - Hospital not identified
+      - No max_negotiated values loaded for this hospital's codes (hospital may
+        only publish gross charges, or the MRF parser did not extract this field)
+    """
+    if bq is None or not cpt_codes:
+        return {}
+    if not hospital_npi and not hospital_name:
+        return {}
+
+    dataset = f"{settings.gcp_project_id}.{settings.bigquery_dataset}"
+    unique_codes = list(set(cpt_codes))
+
+    npi = hospital_npi
+    if not npi:
+        if hospital_name is None:
+            return {}
+        npi = _resolve_npi_by_name(bq, dataset, hospital_name)
+        if npi is None:
+            return {}
+
+    query = f"""
+        SELECT code, MAX(max_negotiated) AS ceiling_rate
+        FROM `{dataset}.hospital_charges`
+        WHERE hospital_npi = @npi
+          AND code IN UNNEST(@codes)
+          AND max_negotiated IS NOT NULL
+          AND max_negotiated > 0
+        GROUP BY code
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("npi", "STRING", npi),
+        bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+    ])
+    try:
+        rows = list(bq.query(query, job_config=job_config).result())
+    except Exception as exc:
+        logger.warning("BigQuery negotiated ceiling lookup failed for NPI %s: %s", npi, exc)
+        return {}
+
+    if not rows:
+        return {}
+
+    result = {row["code"]: Decimal(str(row["ceiling_rate"])).quantize(Decimal("0.01")) for row in rows}
+    logger.info("Loaded %d negotiated ceiling rates for NPI %s", len(result), npi)
+    return result
 
 
 def _map_errors_to_line_items(

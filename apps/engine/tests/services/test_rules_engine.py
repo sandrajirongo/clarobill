@@ -816,6 +816,99 @@ class TestNegotiatedRateExceeded:
         assert neg_errors[0].estimated_overcharge > hosp_errors[0].estimated_overcharge
 
 
+class TestNegotiatedCeilingExceeded:
+    """NEGOTIATED_CEILING_EXCEEDED rule — fires when no exact payer match is available
+    but the charge exceeds the hospital-wide maximum negotiated rate."""
+
+    # max_negotiated values from a hospital's MRF: the highest rate any payer pays.
+    CEILING_RATES = {
+        "99214": Decimal("185.00"),   # highest any insurer pays at this hospital for an office visit
+        "71046": Decimal("120.00"),   # chest X-ray ceiling across all payers
+    }
+
+    @pytest.fixture()
+    def ceiling_engine(self) -> RulesEngine:
+        return RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            negotiated_ceiling=self.CEILING_RATES,
+        )
+
+    def test_flags_charge_above_ceiling(self, ceiling_engine: RulesEngine) -> None:
+        # $350 for 99214, ceiling is $185. 350/185 = 1.89x — above 1.1x threshold.
+        items = [make_line_item("99214", 350.00)]
+        errors = ceiling_engine.run(items)
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(ceiling_errors) == 1
+        assert ceiling_errors[0].severity == "warning"  # not critical — cross-payer ceiling
+        assert ceiling_errors[0].estimated_overcharge == Decimal("165.00")
+        assert ceiling_errors[0].medicare_benchmark_rate == Decimal("185.00")
+
+    def test_does_not_flag_charge_at_ceiling(self, ceiling_engine: RulesEngine) -> None:
+        items = [make_line_item("99214", 185.00)]
+        errors = ceiling_engine.run(items)
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(ceiling_errors) == 0
+
+    def test_does_not_flag_charge_within_threshold(self, ceiling_engine: RulesEngine) -> None:
+        # $200 is 1.08x the $185 ceiling — below the 1.1x exact_price_threshold
+        items = [make_line_item("99214", 200.00)]
+        errors = ceiling_engine.run(items)
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(ceiling_errors) == 0
+
+    def test_suppressed_when_exact_negotiated_rate_exists(self) -> None:
+        # When exact negotiated_charges covers a code, ceiling rule must not also fire
+        # for that code — prevents double-reporting the same overcharge.
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            negotiated_charges={"99214": Decimal("142.00")},
+            negotiated_ceiling={"99214": Decimal("185.00")},
+        )
+        items = [make_line_item("99214", 850.00)]
+        errors = engine.run(items)
+        exact_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(exact_errors) == 1    # exact rate fires
+        assert len(ceiling_errors) == 0  # ceiling suppressed for same code
+
+    def test_ceiling_fires_for_unmatched_code_when_exact_covers_another(self) -> None:
+        # 99214 has exact negotiated rate. 71046 only has a ceiling.
+        # Ceiling rule should fire for 71046 but not for 99214.
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            negotiated_charges={"99214": Decimal("142.00")},
+            negotiated_ceiling={"99214": Decimal("185.00"), "71046": Decimal("120.00")},
+        )
+        items = [
+            make_line_item("99214", 850.00),  # exact rate fires
+            make_line_item("71046", 400.00),  # ceiling fires (400 >> 120)
+        ]
+        errors = engine.run(items)
+        exact_errors = [e for e in errors if e.code == "NEGOTIATED_RATE_EXCEEDED"]
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(exact_errors) == 1
+        assert exact_errors[0].affected_indices == (0,)
+        assert len(ceiling_errors) == 1
+        assert ceiling_errors[0].affected_indices == (1,)
+
+    def test_no_flag_when_ceiling_not_loaded(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("99214", 99999.00)]
+        errors = engine.run(items)
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(ceiling_errors) == 0
+
+    def test_does_not_flag_unknown_cpt_code(self, ceiling_engine: RulesEngine) -> None:
+        # 85025 not in ceiling — skip, do not flag
+        items = [make_line_item("85025", 9999.00)]
+        errors = ceiling_engine.run(items)
+        ceiling_errors = [e for e in errors if e.code == "NEGOTIATED_CEILING_EXCEEDED"]
+        assert len(ceiling_errors) == 0
+
+
 class TestMueViolation:
     """MUE (Medically Unlikely Edit) quantity violation detection tests."""
 

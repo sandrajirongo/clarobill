@@ -92,6 +92,7 @@ export type BillingErrorCode =
   | 'AMBULANCE_CHARGE_OUTLIER'
   | 'HOSPITAL_CHARGE_OUTLIER'
   | 'NEGOTIATED_RATE_EXCEEDED'
+  | 'NEGOTIATED_CEILING_EXCEEDED'
   | 'MUE_EXCEEDED';
 
 export interface BillingError {
