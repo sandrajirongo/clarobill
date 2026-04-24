@@ -1143,6 +1143,9 @@ def _resolve_npi_by_name(
 
     # Build pass list from most to least specific based on available address fields.
     # Each entry is (label, state_value, zip_value) — None means "skip this field".
+    # zip_code pass is included in the logic but hospital_directory.zip_code is
+    # currently unpopulated — it requires a one-time NPPES backfill (npiregistry.cms.hhs.gov).
+    # Once loaded, Pass 1 will activate automatically.
     passes: list[tuple[str, str | None, str | None]] = []
     if hospital_state and hospital_zip:
         passes.append(("name+state+zip", hospital_state, hospital_zip))
