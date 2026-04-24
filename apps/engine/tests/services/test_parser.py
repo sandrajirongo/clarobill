@@ -67,6 +67,49 @@ class TestModifierExtraction:
         items = parser.parse(text)
         assert items[0].modifier is None
 
+    def test_description_word_er_is_not_captured_as_modifier(self, parser: BillParser) -> None:
+        # "ER" is not a valid CMS modifier — it is an English word appearing in descriptions.
+        # Before the allowlist fix, this would set modifier="ER" and break duplicate detection.
+        text = "99213 ER VISIT  $150.00"
+        items = parser.parse(text)
+        assert items[0].modifier is None
+
+    def test_description_word_or_is_not_captured_as_modifier(self, parser: BillParser) -> None:
+        text = "99213 OR ROOM CHARGE  $500.00"
+        items = parser.parse(text)
+        assert items[0].modifier is None
+
+    def test_valid_modifier_25_is_captured(self, parser: BillParser) -> None:
+        # Modifier 25 = significant, separately identifiable E/M service.
+        # Must be preserved — it is the most common legitimate modifier on outpatient bills.
+        text = "99213 25 E/M WITH PROCEDURE  $150.00"
+        items = parser.parse(text)
+        assert items[0].modifier == "25"
+
+    def test_valid_modifier_lt_is_captured(self, parser: BillParser) -> None:
+        text = "27447 LT Total Knee Replacement Left  $12000.00"
+        items = parser.parse(text)
+        assert items[0].modifier == "LT"
+
+    def test_valid_modifier_xe_is_captured(self, parser: BillParser) -> None:
+        # XE = distinct encounter; introduced in 2015 as preferred alternative to modifier 59.
+        text = "93010 XE ECG interpretation  $45.00"
+        items = parser.parse(text)
+        assert items[0].modifier == "XE"
+
+    def test_false_modifier_does_not_mask_duplicate(self, parser: BillParser) -> None:
+        # Two identical charges where one has "ER" in the description.
+        # Before the fix, first item would get modifier="ER" and second modifier=None,
+        # making them look like different line items and escaping duplicate detection.
+        text = (
+            "99213 ER VISIT  $150.00\n"
+            "99213 Office Visit  $150.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 2
+        assert items[0].modifier is None
+        assert items[1].modifier is None
+
 
 class TestDateExtraction:
     def test_extracts_date_from_line(self, parser: BillParser) -> None:

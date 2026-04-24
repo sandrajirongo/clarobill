@@ -149,33 +149,80 @@ async def _run_analysis_pipeline(
         if line_item_rows:
             supabase.table("line_items").insert(line_item_rows).execute()
 
-        # 4. Load reference data and run rules engine
+        # 4. Load reference data and run rules engine.
+        #
+        # Reference data is loaded per CMS quarter so that line items on opposite
+        # sides of a quarterly release boundary (e.g. Dec 31 / Jan 1) are each
+        # benchmarked against the rates in effect on their own service date rather
+        # than a single "majority date" chosen for the whole bill.
+        #
+        # When the same CPT code appears in two different quarters (rare but possible),
+        # the later quarter's rates take precedence in the merged dict. This is the
+        # correct behaviour: the later quarter's release supersedes the earlier one
+        # and the rate delta between adjacent quarters is always small.
         cpt_codes = [item.cpt_code for item in parsed_items]
-        rate_date = _derive_rate_date(parsed_items)
-        locality_code = _resolve_locality(supabase, state, county, rate_date.year)
+        dominant_rate_date = _derive_rate_date(parsed_items)
+        locality_code = _resolve_locality(supabase, state, county, dominant_rate_date.year)
         logger.info(
-            "Using rate_date=%s locality_code=%s for bill %s (state=%s county=%s)",
-            rate_date, locality_code, bill_id, state, county,
+            "Using dominant_rate_date=%s locality_code=%s for bill %s (state=%s county=%s)",
+            dominant_rate_date, locality_code, bill_id, state, county,
         )
         service_type, payer_type = _derive_ncci_context(cpt_codes, plan_type)
-        # Always include both practitioner and outpatient service_types — outpatient hospital
-        # bills are not reliably detected without revenue codes, so querying both is the safe
-        # default. The column_one_code IN filter keeps query size small regardless.
         ncci_service_types = list({service_type, "practitioner", "outpatient"})
-        ncci_pairs = _load_ncci_pairs(supabase, cpt_codes, ncci_service_types, payer_type, rate_date)
-        mue_limits = _load_mue_limits(supabase, cpt_codes, service_type, payer_type, rate_date)
-        medicare_rates = _load_medicare_rates(supabase, cpt_codes, locality_code, rate_date)
-        non_payable_codes = _load_non_payable_codes(supabase, cpt_codes, rate_date)
-        hcpcs_non_payable, hcpcs_termination_dates = _load_hcpcs_code_data(
-            supabase, cpt_codes, rate_date
-        )
-        non_payable_codes.update(hcpcs_non_payable)
-        anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, rate_date)
-        anesthesia_base_units = _load_anesthesia_base_units(supabase, cpt_codes, rate_date.year)
-        opps_rates = _load_opps_rates(supabase, cpt_codes, locality_code, rate_date)
-        ambulance_rates = _load_ambulance_rates(
-            supabase, cpt_codes, locality_code, zip_code, rate_date
-        )
+
+        # Group parsed_items by CMS quarter. Most bills have a single quarter; cross-quarter
+        # bills get per-quarter reference data so minority-date codes aren't mis-benchmarked.
+        quarter_to_codes: dict[date, list[str]] = {}
+        for item in parsed_items:
+            q = _quarter_date(item.service_date)
+            quarter_to_codes.setdefault(q, []).append(item.cpt_code)
+
+        ncci_pairs: dict[str, set[str]] = {}
+        mue_limits: dict[str, tuple[int, int]] = {}
+        medicare_rates: dict[str, Decimal] = {}
+        non_payable_codes: dict[str, str] = {}
+        hcpcs_termination_dates: dict[str, date] = {}
+        opps_rates: dict[str, Decimal] = {}
+        ambulance_rates: dict[str, Decimal] = {}
+        # Anesthesia base units are year-keyed (not quarter-keyed) — track loaded years.
+        anesthesia_base_units: dict[str, int] = {}
+        loaded_years: set[int] = set()
+        # Anesthesia CF is a scalar — load once from the dominant quarter.
+        anesthesia_cf = _load_anesthesia_cf(supabase, locality_code, dominant_rate_date)
+
+        for q_date in sorted(quarter_to_codes):
+            q_codes = quarter_to_codes[q_date]
+            ncci_pairs.update(
+                _load_ncci_pairs(supabase, q_codes, ncci_service_types, payer_type, q_date)
+            )
+            mue_limits.update(
+                _load_mue_limits(supabase, q_codes, service_type, payer_type, q_date)
+            )
+            medicare_rates.update(
+                _load_medicare_rates(supabase, q_codes, locality_code, q_date)
+            )
+            q_non_payable = _load_non_payable_codes(supabase, q_codes, q_date)
+            non_payable_codes.update(q_non_payable)
+            q_hcpcs_np, q_hcpcs_term = _load_hcpcs_code_data(supabase, q_codes, q_date)
+            non_payable_codes.update(q_hcpcs_np)
+            hcpcs_termination_dates.update(q_hcpcs_term)
+            opps_rates.update(
+                _load_opps_rates(supabase, q_codes, locality_code, q_date)
+            )
+            ambulance_rates.update(
+                _load_ambulance_rates(supabase, q_codes, locality_code, zip_code, q_date)
+            )
+            if q_date.year not in loaded_years:
+                anesthesia_base_units.update(
+                    _load_anesthesia_base_units(supabase, q_codes, q_date.year)
+                )
+                loaded_years.add(q_date.year)
+
+        if len(quarter_to_codes) > 1:
+            logger.info(
+                "Cross-quarter bill %s: loaded reference data for %d distinct quarters %s",
+                bill_id, len(quarter_to_codes), sorted(quarter_to_codes),
+            )
         bq = _build_bq_client()
         hospital_charges = _load_hospital_charges(bq, cpt_codes, hospital_npi, hospital_name)
         negotiated_charges = _load_negotiated_charges(bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name)
@@ -240,6 +287,17 @@ def _mime_type_from_path(file_path: str) -> str:
     return {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(
         extension, "application/octet-stream"
     )
+
+
+def _quarter_date(d: date) -> date:
+    """Return the first day of the CMS quarter containing d.
+
+    CMS releases reference data quarterly: Jan 1, Apr 1, Jul 1, Oct 1.
+    Any service date within a quarter maps to that quarter's release date,
+    which is used as the upper-bound for effective_from queries.
+    """
+    quarter_month = ((d.month - 1) // 3) * 3 + 1
+    return date(d.year, quarter_month, 1)
 
 
 def _derive_rate_date(parsed_items: list[ParsedLineItem]) -> date:

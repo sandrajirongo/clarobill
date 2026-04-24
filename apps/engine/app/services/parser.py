@@ -16,8 +16,111 @@ logger = logging.getLogger(__name__)
 
 # Procedure code: 5-digit CPT codes or HCPCS Level II codes (letter + 4 digits, e.g. A0425)
 _PROCEDURE_CODE_PATTERN = re.compile(r"\b(\d{5}|[A-Z]\d{4})\b")
-# Optional modifier: 2-char alphanumeric code immediately after the procedure code
+# 2-char token immediately after a procedure code — candidate must be validated against
+# _VALID_MODIFIERS before being stored. Without filtering, description words like "ER"
+# or "OR" would be captured as modifiers, producing false modifier values that can mask
+# genuine duplicate charges after BUG-001's fix (modifier is now part of the dedup key).
 _MODIFIER_PATTERN = re.compile(r"\b(?:\d{5}|[A-Z]\d{4})\s+([A-Z0-9]{2})\b")
+
+# Complete set of valid CMS HCPCS modifiers (Level I numeric + Level II alpha).
+# Source: CMS HCPCS Level II modifier reference and CMS PFS modifier file.
+# "ER", "OR", and other English words that look like 2-char tokens are not in this set.
+_VALID_MODIFIERS: frozenset[str] = frozenset({
+    # Numeric modifiers
+    "21", "22", "23", "24", "25", "26", "27",
+    "32", "33",
+    "47", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
+    "62", "63", "66",
+    "73", "74", "76", "77", "78", "79",
+    "80", "81", "82",
+    "90", "91", "92", "93", "95", "96", "97", "99",
+    # Anesthesia
+    "AA", "AD", "G8", "G9", "QK", "QS", "QX", "QY", "QZ",
+    # Professional/technical component
+    "TC",
+    # Surgical team / assistant
+    "AS", "80", "81", "82",
+    # Evaluation & management context
+    "AI", "AW", "GC", "GE", "GF", "GR",
+    # NCCI override modifiers (59 already above; X-modifiers added in 2015)
+    "XE", "XP", "XS", "XU",
+    # Site-of-service: eyelids
+    "E1", "E2", "E3", "E4",
+    # Site-of-service: fingers (FA = left thumb, F1–F9)
+    "FA", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9",
+    # Site-of-service: toes (TA = left great toe, T1–T9)
+    "TA", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9",
+    # Coronary artery / laterality
+    "LC", "LD", "LM", "RC", "RI",
+    "LT", "RT",
+    # Anesthesia physical status
+    "P1", "P2", "P3", "P4", "P5", "P6",
+    # Telemedicine
+    "GT", "GQ", "93", "95",
+    # DMEPOS
+    "KA", "KB", "KC", "KD", "KE", "KF", "KG", "KH", "KI", "KJ",
+    "KK", "KL", "KM", "KN", "KO", "KP", "KQ", "KR", "KS", "KU", "KX", "KZ",
+    "NR", "NU", "RR", "UE", "RP",
+    # Therapy disciplines
+    "GN", "GO", "GP",
+    # Quality / coverage
+    "GA", "GX", "GY", "GZ", "GW", "GV", "GU",
+    "CS", "CR", "CQ",
+    "PT", "PN", "PO", "PS",
+    "QQ",
+    # OPPS / outpatient
+    "PB", "PC", "PD",
+    # Wrong surgery administrative
+    "PA",
+    # Ambulance
+    "GM", "QM", "QN",
+    # Mental health / substance use
+    "HA", "HB", "HC", "HD", "HE", "HF", "HG", "HH", "HI", "HJ",
+    "HK", "HL", "HM", "HN", "HO", "HP", "HQ", "HR", "HS", "HT",
+    "HU", "HV", "HW", "HX", "HY", "HZ",
+    # Mandated / statutory
+    "SA", "SB", "SC", "SD", "SE", "SF", "SG", "SH", "SI", "SJ",
+    "SK", "SL", "SM", "SN", "SO", "SQ", "SR", "SS", "SU", "SV",
+    "SW", "SX", "SY",
+    # Immunosuppressive drug / infusion
+    "J1", "J2", "J3", "JA", "JB", "JC", "JD", "JE", "JW", "JZ",
+    # Rehabilitation / habilitation
+    "96", "97",
+    # Competitive bidding / home health
+    "AQ", "AR",
+    # Physician team
+    "AM",
+    # Place-of-service context
+    "AT", "AU", "AV",
+    # Miscellaneous
+    "AE", "AF", "AG", "AH", "AJ", "AK", "AO", "AP", "AX", "AY", "AZ",
+    "BA", "BL", "BO", "BP", "BR", "BU",
+    "CB", "CC", "CD", "CE", "CF", "CG", "CH", "CI", "CJ", "CK",
+    "CL", "CM", "CN", "CO", "CP", "CT",
+    "DA",
+    "FB", "FC",
+    "G1", "G2", "G3", "G4", "G5", "G6", "G7",
+    "GB", "GD", "GG", "GH", "GI", "GJ", "GK", "GL", "GM", "GS",
+    "JF", "JG",
+    "L1", "LE", "LF", "LG", "LH", "LI", "LJ", "LK", "LL",
+    "LN", "LO", "LP", "LQ", "LR", "LS",
+    "MA", "MB",
+    "PI", "PL",
+    "Q0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9",
+    "QA", "QB", "QC", "QD", "QE", "QF", "QG", "QH", "QJ", "QL",
+    "QP", "QR", "QT", "QU", "QV", "QW",
+    "RA", "RB", "RC", "RD", "RE", "RF", "RG", "RH", "RJ", "RK",
+    "RL", "RM", "RN", "RO", "RQ", "RS", "RU", "RV", "RW", "RX", "RY", "RZ",
+    "T3", "TB", "TC", "TD", "TE", "TF", "TG", "TH", "TJ", "TK",
+    "TL", "TM", "TN", "TP", "TQ", "TR", "TS", "TU", "TV", "TW",
+    "U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U9",
+    "UA", "UB", "UC", "UD", "UF", "UG", "UH", "UI", "UJ", "UK",
+    "UL", "UM", "UN", "UO", "UP", "UQ", "UR", "US", "UT", "UV",
+    "UW", "UX", "UY", "UZ",
+    "V1", "V2", "V3", "V4", "V5", "VA", "VB",
+    "X1", "X2", "X3", "X4", "X5", "XA", "XB", "XC", "XD",
+    "ZA",
+})
 # Mileage quantity — "12 miles", "12.0 mi", "8 MI" — searched near ambulance mileage codes
 _MILEAGE_PATTERN = re.compile(r"\b(\d{1,4}(?:\.\d)?)\s*(?:miles?|mi)\b", re.IGNORECASE)
 # Dollar amount: requires exactly 2 decimal places to avoid matching date fragments
@@ -178,11 +281,15 @@ class BillParser:
             if re.search(r",\s*[A-Z]{2}\s+$", line[: code_match.start()]):
                 continue
 
-            # Extract optional modifier from the procedure code line
+            # Extract optional modifier from the procedure code line.
+            # Only store the token if it appears in the CMS modifier allowlist —
+            # description words like "ER" or "OR" share the 2-char alphanumeric
+            # shape but are not valid modifiers and must not be stored.
             modifier: str | None = None
             mod_match = _MODIFIER_PATTERN.search(line)
             if mod_match:
-                modifier = mod_match.group(1)
+                candidate = mod_match.group(1)
+                modifier = candidate if candidate in _VALID_MODIFIERS else None
 
             # Try to find a charge on the same line first, then look ahead
             charge, charge_line = self._find_charge_in_window(lines, i)
