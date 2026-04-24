@@ -341,12 +341,21 @@ def _load_ncci_pairs(
     else:
         query = query.is_("deletion_date", "null")
 
-    response = query.execute()
+    # 10,000 is well above any realistic bill size. Without an explicit limit PostgREST
+    # silently caps at 1,000 — and because the result is non-empty (some pairs are always
+    # returned), the empty-result warning never fires. We'd silently miss pairs.
+    response = query.limit(10000).execute()
     pairs: dict[str, set[str]] = {}
     for row in response.data:
         pairs.setdefault(row["column_one_code"], set()).add(row["column_two_code"])
 
-    if not pairs:
+    if len(response.data) >= 10000:
+        logger.warning(
+            "NCCI pairs result hit the 10000-row limit for service_types=%s payer_type=%s "
+            "cpt_codes=%s — some pairs may be silently missing. Consider paginating.",
+            effective_service_types, payer_type, unique_codes,
+        )
+    elif not pairs:
         logger.warning(
             "No NCCI pairs found for service_types=%s payer_type=%s service_date=%s "
             "cpt_codes=%s — NCCI_UNBUNDLING detection disabled for this bill.",

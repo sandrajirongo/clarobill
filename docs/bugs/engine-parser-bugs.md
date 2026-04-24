@@ -9,7 +9,7 @@ Status values: `open` | `in progress` | `fixed`
 
 ## BUG-001 — Duplicate detection ignores modifiers
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** high
 **File:** `apps/engine/app/services/rules_engine.py:207`
 
@@ -43,7 +43,7 @@ on the same date are left alone.
 
 ## BUG-002 — Price outlier overcharge wrong for multi-quantity items
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** high
 **Files:**
 - `apps/engine/app/services/rules_engine.py:245` (`_detect_price_outliers`)
@@ -90,7 +90,7 @@ Update description strings to reference the per-unit charge and mention quantity
 
 ## BUG-003 — NCCI modifier check misses XE/XS/XP/XU
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** medium
 **File:** `apps/engine/app/services/rules_engine.py:315`
 
@@ -134,7 +134,7 @@ if any(item.modifier in _NCCI_OVERRIDE_MODIFIERS for item in col2_items):
 
 ## BUG-004 — PostgREST silently truncates NCCI pairs on large bills
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** medium
 **File:** `apps/engine/app/api/v1/bills.py:340`
 
@@ -178,7 +178,7 @@ chunks of `unique_codes`.
 
 ## BUG-005 — MUE=0 double-reports with NON_PAYABLE_CODE
 
-**Status:** open
+**Status:** fixed (April 23 2026)
 **Severity:** low
 **File:** `apps/engine/app/services/rules_engine.py:802`
 

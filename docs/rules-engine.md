@@ -7,324 +7,466 @@ Error codes are defined in `apps/engine/app/models/bill.py` and mirrored in
 
 ---
 
+## Pipeline Overview
+
+The rules engine is the fourth stage of the analysis pipeline:
+
+```
+Upload → OCR (Google Vision) → Parser → Rules Engine → AI Summary → PDF Report
+```
+
+`bills.py` orchestrates the pipeline. Before instantiating `RulesEngine`, it loads
+all reference data from Supabase (CMS tables) and BigQuery (hospital MRF data).
+The engine receives all data it needs at construction time — it does no I/O.
+
+**Data loading flow in `bills.py`:**
+
+| Loader function | Data source | Enables |
+|---|---|---|
+| `_load_medicare_rates()` | `cms_pfs_indicators` + `cms_localities` | PRICE_OUTLIER |
+| `_load_opps_rates()` | `cms_opps_cap` | FACILITY_CHARGE_OUTLIER |
+| `_load_ambulance_rates()` | `cms_ambulance_rates` + `cms_ambulance_zip_locality` | AMBULANCE_CHARGE_OUTLIER |
+| `_load_ncci_pairs()` | `ncci_edit_pairs` | NCCI_UNBUNDLING |
+| `_load_mue_limits()` | `ncci_mue_limits` | MUE_EXCEEDED |
+| `_load_non_payable_codes()` | `cms_pfs_indicators` | NON_PAYABLE_CODE |
+| `_load_hcpcs_code_data()` | `cms_hcpcs_codes` | NON_PAYABLE_CODE, TERMINATED_CODE_BILLED |
+| `_load_anesthesia_cf()` | `cms_anesthesia_cf` | ANESTHESIA_OUTLIER |
+| `_load_anesthesia_base_units()` | `cms_anesthesia_base_units` | ANESTHESIA_OUTLIER (exact mode) |
+| `_load_hospital_charges()` | BigQuery `hospital_charges` (gross) | HOSPITAL_CHARGE_OUTLIER |
+| `_load_negotiated_charges()` | BigQuery `hospital_charges` (per-payer) | NEGOTIATED_RATE_EXCEEDED |
+| `_load_negotiated_ceiling()` | BigQuery `hospital_charges` (max_negotiated) | NEGOTIATED_CEILING_EXCEEDED |
+
+**Locality resolution:** `_resolve_locality()` resolves a 7-character CMS MAC locality
+code from the patient's state + county. This code drives GPCI-adjusted Medicare rate
+calculation and OPPS/ambulance rate lookup. Falls back to national average (`0000000`)
+when state is not provided.
+
+---
+
 ## Design Principles
 
 - **Independent rules.** Every rule runs regardless of what other rules find.
-  No rule depends on another's output.
-- **Graceful degradation.** Each rule that requires external reference data
-  (CMS tables, BigQuery) is disabled when that data is unavailable, rather
-  than emitting false positives or hard-failing.
-- **Conservative flagging.** The outlier threshold is 1.1× the benchmark —
-  anything more than 10% above the benchmark is flagged. This is intentionally
-  aggressive: medical overbilling is pervasive and the cost of a missed error
-  outweighs the cost of an extra flag that turns out to be correct.
-- **Strongest evidence wins the description.** When multiple rules fire on the
-  same line item, each generates an independent error with its own description.
-  The patient sees the strongest claim (e.g. NEGOTIATED_RATE_EXCEEDED is more
-  actionable than PRICE_OUTLIER on the same item).
+  No rule depends on another's output — except for the waterfall suppression below.
+- **Graceful degradation.** Each rule that requires external data is disabled when
+  that data is unavailable (empty dict), rather than emitting false positives or failing.
+- **Conservative thresholds.** The `exact_price_threshold` (1.1×) is intentionally
+  tight for exact-benchmark rules. The `medicare_outlier_threshold` (1.8×) is
+  intentionally loose for Medicare proxy rules — to avoid false positives on normal
+  commercial bills where 1.2–1.6× Medicare is standard.
+- **Strongest evidence wins the description.** Multiple rules can fire on the same
+  line item. Each generates an independent error. The patient sees all of them —
+  the AI summary surfaces the most actionable finding.
 
 ---
 
-## Outlier Threshold
+## Benchmark Hierarchy
 
-All price/charge comparison rules use a shared `outlier_threshold` parameter
-(default `1.1`). A charge is flagged when:
+When multiple benchmarks are available for the same charge, all applicable rules
+fire independently. The hierarchy determines how assertive the report language should be:
 
-```
-billed_charge > benchmark_rate × outlier_threshold
-```
+| Rule | Benchmark | Confidence | Severity |
+|---|---|---|---|
+| NEGOTIATED_RATE_EXCEEDED | Exact payer/plan contracted rate | Highest — patient's specific contract | critical |
+| HOSPITAL_CHARGE_OUTLIER | Hospital's own published gross charge | High — hospital's own list price | critical |
+| NEGOTIATED_CEILING_EXCEEDED | Hospital-wide max negotiated (all payers) | Medium — not patient-specific | warning |
+| FACILITY_CHARGE_OUTLIER | OPPS Medicare payment cap | Lower — proxy for commercial | warning |
+| AMBULANCE_CHARGE_OUTLIER | CMS Ambulance Fee Schedule | Lower — proxy | warning |
+| PRICE_OUTLIER | Medicare non-facility rate × plan multiplier | Weakest — population proxy | warning |
 
-This means anything more than 10% above the benchmark is flagged. The threshold
-is configurable at `RulesEngine` instantiation but never set differently from
-the default in production code.
+**Report language guidance:** NEGOTIATED_RATE_EXCEEDED and HOSPITAL_CHARGE_OUTLIER
+warrant assertive language ("you were overcharged"). NEGOTIATED_CEILING_EXCEEDED and
+Medicare-proxy rules warrant hedged language ("warrants a closer look").
 
 ---
 
-## Implemented Rules
+## Waterfall Deduplication
 
-### 1. DUPLICATE_CHARGE
+`run()` prevents double-counting savings across rules:
+
+**1. Fully removed line items:** DUPLICATE_CHARGE and NCCI_UNBUNDLING mean a line
+item should not exist on the final bill. Pricing rules (PRICE_OUTLIER, etc.) on a
+removed line item would report an "overcharge" on charges that don't exist once
+corrected — inflating savings. The `_without_removed()` helper filters these out.
+- Duplicate instance (affected_indices[1]) → removed
+- NCCI col2 (component) code indices → removed
+
+**2. Multi-pair NCCI components:** A single component code can be bundled into
+multiple comprehensive codes on the same bill (e.g., 93010 is a component of both
+93000 and 99284). Its charge is counted only in the first NCCI error. Subsequent
+errors set `estimated_overcharge=0` so the savings total is accurate. All errors
+still appear in the report and dispute letter.
+
+**3. MUE=0 + NON_PAYABLE_CODE:** Bundled codes (proc_stat='B') often also have
+MUE=0 in CMS tables. Both rules would otherwise fire on the same line item for the
+same underlying problem. `_detect_mue_violations` skips MUE=0 for codes already
+present in `_non_payable_codes` — one finding per issue.
+
+---
+
+## Quantity Handling
+
+All pricing rules compare the **per-unit charge** against the per-unit benchmark rate,
+then multiply the overcharge by quantity:
+
+```python
+billed = Decimal(str(item.unit_charge))
+if billed > benchmark * threshold:
+    overcharge = (billed - benchmark) * item.quantity
+```
+
+Comparing `total_charge` directly against a per-unit benchmark produces an inflated
+overcharge figure for multi-unit line items. Most CPT codes bill at quantity=1, but
+ambulance mileage (A0425), lab panels, and some physical therapy codes can have
+quantity > 1.
+
+---
+
+## Rule Run Order
+
+```python
+# 1. Structural/identity errors (run first — drive waterfall suppression)
+duplicate_errors = self._detect_duplicates(line_items)
+ncci_errors, ncci_component_indices = self._detect_ncci_unbundling(line_items)
+
+# 2. All remaining rules — suppressed for fully-removed indices
+self._detect_price_outliers(line_items)
+self._detect_non_payable_codes(line_items)
+self._detect_anesthesia_outliers(line_items)
+self._detect_facility_outliers(line_items)
+self._detect_ambulance_outliers(line_items)
+self._detect_terminated_codes(line_items)
+self._detect_hospital_charge_outliers(line_items)
+self._detect_negotiated_rate_exceeded(line_items)
+self._detect_negotiated_ceiling_exceeded(line_items)
+self._detect_mue_violations(line_items)
+```
+
+---
+
+## Rules Reference
+
+### DUPLICATE_CHARGE
 **Severity:** critical  
 **Data source:** None (structural check on parsed line items)
 
 **What it detects:**  
-The same CPT/HCPC code billed more than once on the same service date. Duplicate
-billing is explicitly prohibited by CMS and is one of the most common mechanical
-billing errors. Each code should appear once per date; repeated procedures should
-use the quantity field.
+The same CPT/HCPC code + modifier + service date billed more than once. Duplicate
+billing is explicitly prohibited by CMS. Each code should appear once per date;
+repeated procedures should use the quantity field instead.
 
-**Logic:**  
-Builds a `(cpt_code, service_date) → first_index` map. Any subsequent occurrence
-of the same pair is flagged. The estimated overcharge equals the full charge of the
-duplicate item.
+**Key detail — modifier is included in the dedup key.** Two line items with the
+same base code but different modifiers on the same date are NOT duplicates:
+- `99213` + `99213-25` = E&M plus a separately identifiable procedure (modifier 25 correct)
+- `99213-LT` + `99213-RT` = bilateral procedures, one per side
 
 **Estimated overcharge:** Full charge of the duplicate line item.
 
 ---
 
-### 2. PRICE_OUTLIER
-**Severity:** warning  
-**Data source:** `cms_pfs_indicators` + `cms_localities` (Supabase)
-
-**What it detects:**  
-Charges that exceed the Medicare Physician Fee Schedule non-facility rate by more
-than 10%. Medicare rates are locality-adjusted using GPCI values for the patient's
-state/county. The Medicare rate is used as a population benchmark — charges
-dramatically above it warrant review even for non-Medicare patients, as most
-private payers base their rates on Medicare multiples.
-
-**Logic:**  
-For each line item with a known CPT code:
-```
-rate = (rvu_work × gpci_work + nfac_pe_rvu × gpci_pe + rvu_mp × gpci_mp) × conv_fact
-flag if: billed > rate × 1.1
-```
-Uses `effective_from <= service_date` so the quarterly release in effect at the
-time of service is used automatically.
-
-**Estimated overcharge:** `billed_charge - medicare_rate`  
-**Benchmark shown to user:** Medicare non-facility rate for patient's locality
-
----
-
-### 3. NCCI_UNBUNDLING
+### NCCI_UNBUNDLING
 **Severity:** critical  
 **Data source:** `ncci_edit_pairs` (Supabase)
 
 **What it detects:**  
-CMS NCCI (National Correct Coding Initiative) edit pair violations. The NCCI
-tables define pairs of codes where one is "bundled into" the other — billing both
-separately constitutes improper unbundling and represents a double-charge.
+CMS NCCI (National Correct Coding Initiative) PTP edit pair violations. The NCCI
+tables define code pairs where one code is bundled into the other. Billing both
+separately is improper unbundling.
 
-**Logic:**  
-Builds a `cpt_code → set[indices]` map. For each NCCI pair `(col1, col2)` where
-both codes appear on the bill, checks if modifier 59 is present on the col2 items.
-Modifier 59 overrides the edit when procedures were performed on distinct anatomical
-sites. Without modifier 59, the col2 charge is flagged in full.
+**Override modifiers:** CMS modifiers 59, XE, XS, XP, and XU all override NCCI
+edits when applicable. The engine checks all five — not just 59 (CMS introduced
+the X modifiers in 2015 as preferred alternatives to 59).
 
-**Estimated overcharge:** Sum of all col2 (component code) charges.  
-**Note:** Modifier 59 exemption is conservative — we never flag when 59 is present,
-even though some 59 uses are themselves improper. That is a separate rule category.
+| Modifier | Meaning |
+|---|---|
+| 59 | Distinct procedural service |
+| XE | Distinct encounter |
+| XS | Separate structure (different anatomical site) |
+| XP | Separate practitioner |
+| XU | Unusual non-overlapping service |
+
+**Service type querying:** Both `practitioner` and `outpatient` NCCI tables are
+always queried — outpatient hospital bills are not reliably auto-detected without
+revenue codes, so querying both avoids missed pairs.
+
+**Estimated overcharge:** Sum of all col2 (component code) charges.
 
 ---
 
-### 4. NON_PAYABLE_CODE
-**Severity:** critical (proc_stat I, B) or warning (proc_stat N)  
-**Data source:** `cms_pfs_indicators` + `cms_hcpcs_codes` (Supabase)
+### PRICE_OUTLIER
+**Severity:** warning  
+**Data source:** `cms_pfs_indicators` + `cms_localities` (Supabase)
 
 **What it detects:**  
-CPT/HCPC codes that CMS has marked as non-payable:
+Charges that exceed the Medicare Physician Fee Schedule non-facility rate by a
+plan-type-aware multiplier. Medicare rates are the weakest benchmark — use hedged
+language in reports for this rule.
+
+**Thresholds by plan type:**
+
+| Plan type | Threshold | Rationale |
+|---|---|---|
+| medicare / medicaid | 1.05× | Medicare rate IS the payment ceiling |
+| tricare / self_pay | 1.20× | Tracks Medicare closely |
+| commercial / unknown | 1.80× | Normal commercial = 1.2–1.6× Medicare; flag only extreme outliers |
+
+**Rate formula:**  
+```
+rate = (rvu_work × gpci_work + nfac_pe_rvu × gpci_pe + rvu_mp × gpci_mp) × conv_fact
+```
+Uses `effective_from <= service_date` so the quarterly release in effect at the
+time of service is used automatically.
+
+**Estimated overcharge:** `(unit_charge - medicare_rate) × quantity`
+
+---
+
+### NON_PAYABLE_CODE
+**Severity:** critical (`I`, `B`) or warning (`N`)  
+**Data source:** `cms_pfs_indicators` (CPT codes), `cms_hcpcs_codes` (HCPCS Level II)
+
+**What it detects:**  
+Codes that CMS has marked non-payable:
 
 | proc_stat | Meaning | Severity |
-|-----------|---------|----------|
-| `I` | Inactive — code retired, not payable under any circumstances | critical |
+|---|---|---|
+| `I` | Inactive — code retired, not payable | critical |
 | `B` | Bundled — always included in another procedure, never separately payable | critical |
 | `N` | Non-covered — excluded from Medicare coverage | warning |
 
-For HCPCS Level II codes (alpha-prefix), the equivalent signals come from
-`coverage_code` and `pricing_indicator` in `cms_hcpcs_codes`.
+For HCPCS Level II codes, the engine reads `coverage_code` and `pricing_indicator`
+from `cms_hcpcs_codes` and maps them to equivalent proc_stat values.
 
 **Estimated overcharge:** Full charge of the non-payable line item.
 
 ---
 
-### 5. TERMINATED_CODE_BILLED
-**Severity:** critical  
-**Data source:** `cms_hcpcs_codes` (Supabase)
-
-**What it detects:**  
-HCPCS Level II codes billed after their CMS termination date. Terminated codes
-are no longer valid — claims using them will typically be denied by Medicare and
-most commercial payers. The provider should have used the current replacement code.
-
-**Logic:**  
-Checks `service_date > termination_date` for any alpha-prefix HCPCS code on the
-bill that has a non-null termination date in `cms_hcpcs_codes`.
-
-**Estimated overcharge:** Full charge of the terminated-code line item.
-
----
-
-### 6. ANESTHESIA_OUTLIER
-**Severity:** critical (with documented time) or warning (without time)  
+### ANESTHESIA_OUTLIER
+**Severity:** critical (with documented time) or warning (without)  
 **Data source:** `cms_anesthesia_cf` + `cms_anesthesia_base_units` (Supabase)
 
 **What it detects:**  
 Anesthesia charges that imply implausible base unit counts. Medicare anesthesia
-payment uses the formula: `payment = (base_units + time_units) × locality_CF`
+payment formula: `payment = (base_units + time_units) × locality_CF`
 where `time_units = minutes / 15`.
 
-Working backwards from the billed charge:
+**Working backwards from the billed charge:**
 - `implied_total = charge / locality_CF`
 - `implied_base = implied_total - time_units` (when OCR extracted time)
 
-**Flags:**
-- `implied_base < 0` → charge less than the documented time alone (impossible)
-- `implied_base > published_base + 0.5` → exceeds CMS-published base units (exact check)
-- `implied_base > 25` → exceeds heuristic ceiling (when no published base units)
-- `implied_total > 80` → equivalent to ~20 hours (when no OCR time available)
+**Detection modes:**
+
+| Condition | Check | Severity |
+|---|---|---|
+| `implied_base < 0` | Charge < cost of documented time alone | critical |
+| `implied_base > published_base + 0.5` | Exceeds CMS-published base units | critical |
+| `implied_base > 25` | Exceeds heuristic ceiling (no published base units) | critical |
+| `implied_total > 80` | ~20 hours — physically impossible (no OCR time) | warning |
 
 **Estimated overcharge:** `(implied_base - correct_base) × locality_CF`
 
 ---
 
-### 7. FACILITY_CHARGE_OUTLIER
+### FACILITY_CHARGE_OUTLIER
 **Severity:** warning  
 **Data source:** `cms_opps_cap` (Supabase)
 
 **What it detects:**  
-Hospital outpatient facility charges that exceed the CMS OPPS (Outpatient
-Prospective Payment System) payment cap for the patient's locality. The OPPS cap
-is the amount Medicare pays for an outpatient procedure. Patient cost-sharing is
-calculated on the billed charge, so a facility billing 10× the OPPS cap is
-inflating the patient's out-of-pocket exposure.
+Hospital outpatient facility charges exceeding the CMS OPPS (Outpatient Prospective
+Payment System) payment cap for the patient's locality. The OPPS cap is what Medicare
+pays — patient cost-sharing is calculated on the billed charge, so inflated billed
+amounts directly harm the patient.
 
-**Logic:** `flag if: billed > opps_cap × 1.1`
+**Threshold:** 1.80× OPPS cap (same medicare_outlier_threshold as PRICE_OUTLIER)
 
-**Estimated overcharge:** `billed_charge - opps_cap`  
-**Benchmark shown to user:** OPPS payment cap for patient's locality
+**Estimated overcharge:** `(unit_charge - opps_cap) × quantity`
 
 ---
 
-### 8. AMBULANCE_CHARGE_OUTLIER
+### AMBULANCE_CHARGE_OUTLIER
 **Severity:** warning  
 **Data source:** `cms_ambulance_rates` + `cms_ambulance_zip_locality` (Supabase)
 
 **What it detects:**  
-Ambulance charges that exceed the CMS Ambulance Fee Schedule (AFS) rate for the
-patient's geographic area. The AFS has three tiers based on the pickup location:
-urban (base rate), rural (+50%), and super-rural (+22.6% of rural).
+Ambulance charges exceeding the CMS Ambulance Fee Schedule (AFS) rate for the
+patient's area. Three rate tiers: urban (base), rural (+50%), super-rural (+22.6%).
 
-For per-mile codes (A0425, A0435, A0436), the per-mile unit charge is compared
-against the AFS per-mile benchmark when mileage was extracted from OCR. For
-transport codes, the total charge is compared.
+**Locality resolution:** Patient ZIP → `cms_ambulance_zip_locality` → rural indicator.
+Falls back to urban (lowest) rate when ZIP is unknown.
 
-**Locality resolution:** Uses patient ZIP code → `cms_ambulance_zip_locality` →
-rural indicator. Falls back to urban (lowest) rate when ZIP is unknown.
+**Per-mile code handling (A0425, A0435, A0436):**  
+When quantity > 1, compares `unit_charge` against the per-mile AFS benchmark.
+When quantity = 1 (mileage unknown), compares `total_charge` conservatively.
 
-**Estimated overcharge:** `(billed - benchmark) × quantity`
+**Estimated overcharge:** `(billed_per_unit - benchmark) × quantity`
 
 ---
 
-### 9. HOSPITAL_CHARGE_OUTLIER
+### TERMINATED_CODE_BILLED
 **Severity:** critical  
-**Data source:** `hospital_charges` (BigQuery — CMS MRF price transparency files)
+**Data source:** `cms_hcpcs_codes` (Supabase)
 
 **What it detects:**  
-Charges that exceed the hospital's own published gross charge from their CMS-mandated
-Machine Readable File (MRF). Every hospital must publish their chargemaster (gross
-charge) for every procedure. Billing above the hospital's own list price is an
-unambiguous billing error — the patient cannot be charged more than the hospital's
-own published maximum.
+HCPCS Level II codes billed after their CMS termination date. Terminated codes
+are no longer valid — claims will be denied. The correct replacement code should
+have been used.
 
-**Hospital identification:**
-1. NPI extracted by OCR from bill header (exact match, preferred)
-2. Hospital name extracted by OCR → LIKE match on `hospital_directory` → only used
-   when exactly one match is found (prevents wrong-hospital charges)
+**Note:** Only HCPCS Level II (alpha-prefix) codes are checked here. Retired CPT
+codes are caught by NON_PAYABLE_CODE via `proc_stat='I'` (within the current data
+window — pre-2024 retirements are a known gap; see `docs/future_improvements/terminated-cpt-codes-coverage.md`).
 
-**Logic:** `flag if: billed > gross_charge × 1.1`
-
-**Estimated overcharge:** `billed_charge - gross_charge`  
-**Benchmark shown to user:** Hospital's own published gross charge
+**Estimated overcharge:** Full charge of the terminated-code line item.
 
 ---
 
-### 11. MUE_EXCEEDED
-**Severity:** critical (MAI 0, 1, 2) or warning (MAI 3)  
-**Data source:** `ncci_mue_limits` (Supabase), loaded from CMS MCR MUE CSV files
+### HOSPITAL_CHARGE_OUTLIER
+**Severity:** critical  
+**Data source:** BigQuery `hospital_charges` (gross_charge column)
 
 **What it detects:**  
-Line items where the billed quantity exceeds the CMS Medically Unlikely Edit (MUE)
-limit for that HCPCS/CPT code. MUE values define the maximum units of a given code
-that are clinically reasonable for a single patient on a single claim or date of service.
+Charges exceeding the hospital's own published gross charge from their CMS-mandated
+Machine Readable File (MRF). Billing above the hospital's own list price is an
+unambiguous billing error — no justification exists for charging a patient more than
+the hospital's own published maximum.
 
-**MUE Adjudication Indicator (MAI) drives both check logic and severity:**
+**Hospital identification (in priority order):**
+1. NPI extracted by OCR from bill header — exact match, unambiguous
+2. Hospital name extracted by OCR → `hospital_directory` name match → used only
+   when exactly one hospital matches (prevents wrong-facility charges)
+
+**Threshold:** 1.10× gross charge  
+**Estimated overcharge:** `(unit_charge - gross_charge) × quantity`
+
+---
+
+### NEGOTIATED_RATE_EXCEEDED
+**Severity:** critical  
+**Data source:** BigQuery `hospital_charges` (negotiated_charge column, per-payer rows)
+
+**What it detects:**  
+Charges exceeding the patient's specific insurer-contracted rate. This is the
+strongest price benchmark — the exact dollar amount the insurer agreed to accept
+from this hospital for this procedure. In-network providers cannot collect more
+than their contracted rate.
+
+**Payer matching (in priority order):**
+1. `payer_name_aliases` JOIN: maps the user's payer name to a canonical `payer_group`,
+   then queries all known MRF alias strings for that group via exact IN() match.
+   More accurate than substring matching — eliminates "Anthem Blue Cross" vs "BCBS CA"
+   naming mismatches.
+2. CONTAINS_SUBSTR fallback: used when `payer_name_aliases` table is empty or
+   the user's payer name has no canonical alias.
+
+**Excluded rate types:** `negotiated_type = 'percentage'` rates are excluded — they
+are multipliers of billed charges (circular) and cannot be directly compared.
+Only `'negotiated'` and `'derived'` dollar amounts are used.
+
+**Data required for this rule to fire:**
+- Hospital in our BigQuery database AND hospital published per-payer rates in their MRF
+- User confirmed payer name + plan name
+- Payer name matches the MRF data (via alias table or substring)
+
+**Threshold:** 1.10× negotiated rate  
+**Estimated overcharge:** `(unit_charge - negotiated_rate) × quantity`
+
+---
+
+### NEGOTIATED_CEILING_EXCEEDED
+**Severity:** warning  
+**Data source:** BigQuery `hospital_charges` (max_negotiated column)
+
+**What it detects:**  
+Charges exceeding the highest negotiated rate any insurer pays at this hospital for
+this code. `max_negotiated` is extracted from the hospital's MRF `standard_charges`
+level — it represents the hospital-wide ceiling across all payers.
+
+**When it fires:**  
+- `negotiated_ceiling` is loaded (hospital is in our BigQuery database)
+- The code does NOT already have an exact rate in `negotiated_charges` (to prevent
+  double-reporting — the ceiling is suppressed for any code where the exact rate fired)
+- Billed charge exceeds the ceiling rate × 1.10×
+
+**Why warning, not critical:** The ceiling is cross-payer, not patient-specific. It
+proves the charge exceeds what any insurer pays — strong evidence of an overcharge —
+but we cannot state with certainty what this specific patient's plan would have paid.
+Report language should say "warrants a closer look" rather than "you were overcharged."
+
+**Relationship to NEGOTIATED_RATE_EXCEEDED:**  
+These rules form a tiered fallback:
+1. Exact payer/plan rate fires → NEGOTIATED_RATE_EXCEEDED (critical)
+2. Exact rate unavailable but ceiling fires → NEGOTIATED_CEILING_EXCEEDED (warning)
+3. Neither fires → PRICE_OUTLIER at 1.80× Medicare (weakest fallback)
+
+**Threshold:** 1.10× max_negotiated ceiling  
+**Estimated overcharge:** `(unit_charge - ceiling_rate) × quantity`
+
+---
+
+### MUE_EXCEEDED
+**Severity:** critical (MAI 0, 1, 2) or warning (MAI 3)  
+**Data source:** `ncci_mue_limits` (Supabase)
+
+**What it detects:**  
+Line items where billed quantity exceeds the CMS Medically Unlikely Edit (MUE) limit.
+MUE values define the maximum units of a given code that are clinically plausible for
+a single patient on a single claim or date of service.
+
+**MUE Adjudication Indicator (MAI) drives check logic and severity:**
 
 | MAI | Type | Check | Severity |
-|-----|------|-------|----------|
-| 0 | Unknown (MCD files) | Per-line quantity ≤ MUE | critical |
+|---|---|---|---|
+| 0 | Unknown (MCD files omit this field) | Per-line quantity ≤ MUE | critical |
 | 1 | Claim Edit | Sum of all lines, same code+date ≤ MUE | critical |
-| 2 | Date of Service — Policy | Per-line quantity ≤ MUE (hard denial) | critical |
-| 3 | Date of Service — Clinical | Per-line quantity ≤ MUE (documentable) | warning |
+| 2 | Date of Service — Policy (hard denial) | Per-line quantity ≤ MUE | critical |
+| 3 | Date of Service — Clinical (documentable) | Per-line quantity ≤ MUE | warning |
 
-**Special case:** MUE value = 0 means the code is not separately payable under any
-circumstances. Every occurrence is flagged Critical regardless of quantity.
+**Special case:** MUE value = 0 means the code is not separately payable. Every
+occurrence is flagged critical — unless NON_PAYABLE_CODE already covers the same
+code (bundled codes often have both proc_stat='B' and MUE=0; only one finding fires).
 
 **Estimated overcharge:** `excess_quantity × unit_charge`
-
-**Insurance-type filtering:** Loaded with `payer_type` matching the bill's insurance
-programme (mapped from `plan_type` on the bill). See decision doc for the full mapping.
-
----
-
-### 10. NEGOTIATED_RATE_EXCEEDED
-**Severity:** critical  
-**Data source:** `hospital_charges` (BigQuery — payer-specific negotiated rates in MRF)
-
-**What it detects:**  
-Charges that exceed the specific negotiated rate your insurance company has
-contracted with the hospital. This is the strongest of the three charge benchmarks:
-it is the exact dollar amount your insurer agreed to pay for this specific procedure
-at this specific hospital. Billing above it means the patient is being charged
-outside the terms of the insurance contract.
-
-**Hospital charges table columns used:**
-- `payer_name` — insurer name (e.g. "AETNA", "BLUE CROSS BLUE SHIELD")
-- `plan_name` — specific plan (e.g. "PPO GOLD", "HMO SELECT")
-- `negotiated_charge` — the exact contracted rate
-- `negotiated_type` — rate type: "negotiated" | "derived" | "percentage"
-
-**Patient data required:**
-- `payer_name` — collected at signup, stored in user's insurance profile
-- `plan_name` — stored in user's insurance profile, confirmed per bill
-
-**Logic:**
-```
-rate = MAX(negotiated_charge) WHERE
-  hospital_npi = patient's hospital NPI
-  AND LOWER(payer_name) LIKE '%patient payer%'
-  AND LOWER(plan_name) LIKE '%patient plan%'
-  AND code = cpt_code
-
-flag if: billed > rate × 1.1
-```
-
-**Estimated overcharge:** `billed_charge - negotiated_rate`  
-**Benchmark shown to user:** Insurer's contracted rate for this procedure at this hospital
-
----
-
-## Rule Priority for User Communication
-
-When multiple rules fire on the same line item, the report surfaces all of them
-but orders by descending severity and specificity:
-
-1. **NEGOTIATED_RATE_EXCEEDED** — strongest claim (your insurer's exact contract)
-2. **HOSPITAL_CHARGE_OUTLIER** — strong claim (hospital's own published price)
-3. **NCCI_UNBUNDLING** — structural error (CMS coding rule violation)
-4. **MUE_EXCEEDED** — quantity error (CMS-defined billing limit violated)
-5. **DUPLICATE_CHARGE** — structural error (mechanical billing error)
-6. **NON_PAYABLE_CODE / TERMINATED_CODE_BILLED** — code-validity errors
-7. **ANESTHESIA_OUTLIER** — specialty charge error
-8. **FACILITY_CHARGE_OUTLIER** — facility benchmark comparison
-9. **AMBULANCE_CHARGE_OUTLIER** — ambulance benchmark comparison
-10. **PRICE_OUTLIER** — weakest claim (Medicare population average)
 
 ---
 
 ## Reference Data Sources
 
-| Table | Source | Loader script |
-|-------|--------|---------------|
-| `cms_pfs_indicators` | CMS PFS RVU files (annual + quarterly) | `scripts/load_cms_pfs.py` |
+| Table | Source | Loader |
+|---|---|---|
+| `cms_pfs_indicators` | CMS PFS RVU files (quarterly) | `scripts/load_cms_pfs.py` |
 | `cms_localities` | CMS GPCI locality file | `scripts/load_cms_pfs.py` |
-| `cms_county_locality` | CMS locality county mapping | `scripts/load_cms_pfs.py` |
+| `cms_county_locality` | CMS locality county mapping | `scripts/load_county_locality.py` |
 | `ncci_edit_pairs` | CMS MCD/MCR PTP files (.txt, tab-delimited) | `scripts/load_ncci_edits.py` |
-| `ncci_mue_limits` | CMS MCR MUE CSV files (.csv) / MCD MUE .txt files | `scripts/load_mue_limits.py` |
-| `cms_hcpcs_codes` | CMS HCPCS Level II annual release | `scripts/load_hcpcs.py` |
+| `ncci_mue_limits` | CMS MCR MUE CSV / MCD MUE .txt | `scripts/load_mue_limits.py` |
+| `cms_hcpcs_codes` | CMS HCPCS Level II annual release | `scripts/load_hcpcs_codes.py` |
 | `cms_anesthesia_cf` | CMS anesthesia CF locality files | `scripts/load_anesthesia_cf.py` |
 | `cms_anesthesia_base_units` | CMS anesthesia base unit tables | `scripts/load_anesthesia_base_units.py` |
 | `cms_opps_cap` | CMS OPPS Addendum B files | `scripts/load_opps_cap.py` |
 | `cms_ambulance_rates` | CMS AFS PUF files | `scripts/load_ambulance_rates.py` |
 | `cms_ambulance_zip_locality` | CMS AFS ZIP5 fixed-width files | `scripts/load_ambulance_zip_locality.py` |
-| `hospital_directory` | Payerset hospital scrape (3,119+ hospitals) | `pipeline/scrape_hospital_mrfs.py` |
+| `hospital_directory` | Payerset hospital scrape (~3,100+ hospitals) | `pipeline/scrape_hospital_mrfs.py` |
 | `hospital_charges` | CMS MRF price transparency files | `pipeline/parse_hospital_mrfs.py` |
+| `payer_name_aliases` | Manual curation + CMS payer taxonomy | `scripts/seed_payer_normalizations.py` |
+
+---
+
+## Known Gaps and Future Work
+
+See `docs/future_improvements/` for detailed design docs on:
+
+- **Terminated CPT codes (pre-2024):** Codes retired before our data window are
+  invisible — `cms_pfs_indicators` only contains data from 2024 onward. Codes
+  retired in 2008 are absent from the table and produce no findings.
+  See `terminated-cpt-codes-coverage.md`.
+
+- **Commercial rate benchmarking:** For commercial patients where neither the
+  exact payer rate nor the ceiling fires, the 1.80× Medicare fallback is the
+  only benchmark — and it only catches extreme outliers, not the typical 10–30%
+  above-contract overcharge. See `commercial-rate-benchmarking.md`.
+
+- **MRF discovery pipeline:** Current coverage is ~3,100 of ~7,000 US hospitals.
+  Expanding to full coverage increases NEGOTIATED_RATE_EXCEEDED hit rate from ~45%
+  to ~98% of hospitals. See `mrf-discovery-pipeline.md`.
+
+---
+
+*Last updated: April 23 2026*  
+*Owner: ClaroBill Engineering*

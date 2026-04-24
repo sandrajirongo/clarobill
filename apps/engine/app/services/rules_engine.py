@@ -1,7 +1,91 @@
 """Rules engine — detects billing errors using CMS reference data.
 
-Each rule is a separate method that takes line items and returns BillingErrors.
-Rules are run independently and combined — no rule depends on another's output.
+--- Pipeline overview ---
+
+The rules engine is the fourth stage of the bill analysis pipeline:
+
+  Upload → OCR (Google Vision) → Parser → Rules Engine → AI Summary → PDF Report
+
+Bills.py orchestrates the pipeline. Before instantiating RulesEngine, it loads
+all reference data from Supabase (CMS tables) and BigQuery (hospital MRF data):
+
+  1. CMS PFS indicators → Medicare rates per code (locality-adjusted via GPCIs)
+  2. CMS OPPS cap       → Facility payment caps for hospital outpatient codes
+  3. CMS Ambulance FS   → AFS rates by locality + ZIP rural/urban indicator
+  4. NCCI edit pairs    → Bundling rules: col1 code bundles col2 code
+  5. NCCI MUE limits    → Max allowed units per code per date of service
+  6. CMS PFS indicators → Non-payable proc_stat codes (I/B/N)
+  7. CMS HCPCS codes    → Level II termination dates and coverage codes
+  8. CMS anesthesia CF  → Locality anesthesia conversion factor
+  9. BigQuery hospital_charges (gross)      → Hospital's own chargemaster price
+  10. BigQuery hospital_charges (negotiated) → Exact payer/plan contracted rate
+  11. BigQuery hospital_charges (max_neg)    → Hospital-wide max negotiated ceiling
+
+All reference data is passed into RulesEngine.__init__ as typed dicts. The engine
+does no I/O — it only reads the data it was given. Missing data (empty dict or None)
+disables the corresponding rule rather than causing an error.
+
+--- Rules and benchmarks ---
+
+Rule run order (see run() for authoritative sequence):
+
+  1. DUPLICATE_CHARGE             — same CPT + date + modifier billed twice
+  2. NCCI_UNBUNDLING              — col2 code billed alongside its bundling col1 code
+  3. PRICE_OUTLIER                — charge > Medicare rate × plan-type threshold
+  4. NON_PAYABLE_CODE             — proc_stat I/B/N codes that can't be legitimately billed
+  5. ANESTHESIA_OUTLIER           — implied base units or total units exceed plausible ceiling
+  6. FACILITY_CHARGE_OUTLIER      — charge > OPPS cap × 1.8× (hospital outpatient)
+  7. AMBULANCE_CHARGE_OUTLIER     — charge > AFS rate × 1.8× for ambulance codes
+  8. TERMINATED_CODE_BILLED       — HCPCS Level II code billed after CMS termination date
+  9. HOSPITAL_CHARGE_OUTLIER      — charge > hospital's own published gross charge × 1.1×
+  10. NEGOTIATED_RATE_EXCEEDED    — charge > exact payer/plan contracted rate × 1.1×
+  11. NEGOTIATED_CEILING_EXCEEDED — charge > hospital-wide max negotiated rate × 1.1×
+                                    (fallback when exact rate not available; severity: warning)
+  12. MUE_EXCEEDED                — billed quantity > CMS Medically Unlikely Edit limit
+
+--- Benchmark hierarchy (strongest → weakest) ---
+
+  NEGOTIATED_RATE_EXCEEDED    → the exact contracted dollar amount for this patient's plan.
+                                 Severity: critical. Billing above this is a contract violation.
+  HOSPITAL_CHARGE_OUTLIER     → hospital's own published list price (chargemaster).
+                                 Severity: critical. Billing above is an indisputable error.
+  NEGOTIATED_CEILING_EXCEEDED → highest rate ANY insurer pays at this hospital for this code.
+                                 Severity: warning. Strong signal but not patient-specific.
+  PRICE_OUTLIER / FACILITY /  → Medicare rates are a floor, not a ceiling for commercial plans.
+  AMBULANCE_CHARGE_OUTLIER      Severity: warning. Use hedged language in reports/AI summary.
+
+--- Waterfall deduplication ---
+
+run() suppresses pricing rules for any line item that is fully removed:
+  - DUPLICATE_CHARGE: the second (duplicate) instance is removed entirely.
+  - NCCI_UNBUNDLING: the col2 (component) code is removed; only the col1 pays.
+
+Pricing rules on a removed line item would inflate savings by reporting an
+"overcharge" on charges that don't exist on the final corrected bill. The
+_without_removed() helper in run() filters these out.
+
+Multiple NCCI errors can share the same component code (one col2 may be bundled
+into both of two col1 codes). Its overcharge is counted only in the first NCCI
+error — subsequent errors set estimated_overcharge=0.
+
+--- Threshold design ---
+
+  exact_price_threshold (1.1×):
+    Used for benchmarks that are the actual agreed price: hospital gross charge,
+    negotiated rate, negotiated ceiling. 10% tolerance covers rounding and
+    partial-quantity billing discrepancies.
+
+  medicare_outlier_threshold:
+    Varies by plan type. Medicare/Medicaid: 1.05× (rate is the payment ceiling).
+    Commercial/unknown: 1.80× (normal commercial markup is 1.2–1.6×; 1.8× catches
+    only egregious outliers). TRICARE/self_pay: 1.20×.
+
+--- Quantity handling ---
+
+All pricing rules compare the per-unit charge against the per-unit benchmark,
+then multiply the overcharge by quantity. Comparing total_charge against a
+per-unit benchmark produces an inflated overcharge for multi-unit line items.
+Ambulance mileage codes are the most common case where quantity > 1.
 """
 
 import logging
@@ -25,6 +109,12 @@ class DetectedError:
     estimated_overcharge: Decimal
     medicare_benchmark_rate: Decimal | None
 
+
+# CMS modifiers that override NCCI PTP edits. Modifier 59 was the original
+# override; CMS introduced XE/XS/XP/XU in 2015 as more precise alternatives.
+# All five are equally valid overrides — billers are encouraged to use the X
+# modifiers when applicable, so checking only 59 causes false NCCI_UNBUNDLING flags.
+_NCCI_OVERRIDE_MODIFIERS: frozenset[str] = frozenset({"59", "XE", "XS", "XP", "XU"})
 
 # Price outlier thresholds by plan type.
 # Medicare/Medicaid: the Medicare rate IS the payment ceiling — flag anything above 1.05× (rounding tolerance).
@@ -203,17 +293,23 @@ class RulesEngine:
         return errors
 
     def _detect_duplicates(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
-        """Flag identical CPT code + service date combinations billed more than once.
+        """Flag identical CPT code + modifier + service date combinations billed more than once.
 
         Duplicate billing is one of the most common medical billing errors and is
         explicitly prohibited by CMS. Each CPT code should appear once per service date
         unless the quantity field reflects the repetition.
+
+        Modifier is included in the dedup key because many legitimate billing patterns use
+        the same base code with different modifiers on the same date:
+          99213 + 99213-25 = E&M plus a separately identifiable procedure (modifier 25 is valid)
+          99213-LT + 99213-RT = bilateral procedures billed once per side
+        Flagging these as duplicates would be a false accusation of billing error.
         """
-        seen: dict[tuple[str, str], int] = {}  # (cpt_code, service_date) → first index
+        seen: dict[tuple[str, str, str], int] = {}  # (cpt_code, service_date, modifier) → first index
         errors: list[DetectedError] = []
 
         for index, item in enumerate(line_items):
-            key = (item.cpt_code, str(item.service_date))
+            key = (item.cpt_code, str(item.service_date), item.modifier or "")
             if key in seen:
                 errors.append(DetectedError(
                     code="DUPLICATE_CHARGE",
@@ -251,26 +347,28 @@ class RulesEngine:
                 # Unknown CPT code — flagged separately by a different rule
                 continue
 
-            charge = Decimal(str(item.total_charge))
-            if medicare_rate > 0 and charge > medicare_rate * threshold:
-                overcharge = charge - medicare_rate
+            billed = Decimal(str(item.unit_charge))
+            total = Decimal(str(item.total_charge))
+            if medicare_rate > 0 and billed > medicare_rate * threshold:
+                overcharge = (billed - medicare_rate) * item.quantity
                 label = f" ({item.description})" if item.description else ""
+                qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
                 if self._plan_type in ("medicare", "medicaid"):
                     benchmark_context = (
                         f"The Medicare rate of ${medicare_rate:.2f} is the maximum reimbursable "
-                        f"amount for this service — your charge of ${charge:.2f} exceeds it."
+                        f"amount for this service — your charge of ${billed:.2f}/unit exceeds it."
                     )
                 else:
                     benchmark_context = (
                         f"The Medicare benchmark rate is ${medicare_rate:.2f} "
-                        f"— your charge is {charge / medicare_rate:.1f}× that amount."
+                        f"— your charge is {billed / medicare_rate:.1f}× that amount."
                     )
                 errors.append(DetectedError(
                     code="PRICE_OUTLIER",
                     severity="warning",
                     affected_indices=(index,),
                     description=(
-                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"Your provider charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
                         f"{label}. {benchmark_context} "
                         f"Consider requesting an itemized bill or asking your provider "
                         f"to justify the difference."
@@ -321,7 +419,7 @@ class RulesEngine:
                 if col2_code not in cpt_to_indices:
                     continue
                 col2_items = [line_items[i] for i in cpt_to_indices[col2_code]]
-                if any(item.modifier == "59" for item in col2_items):
+                if any(item.modifier in _NCCI_OVERRIDE_MODIFIERS for item in col2_items):
                     continue
                 component_to_col1s.setdefault(col2_code, []).append(col1_code)
 
@@ -668,19 +766,21 @@ class RulesEngine:
             if gross_charge is None or gross_charge <= 0:
                 continue
 
-            charge = Decimal(str(item.total_charge))
-            if charge > gross_charge * Decimal(str(self._exact_price_threshold)):
-                overcharge = charge - gross_charge
+            billed = Decimal(str(item.unit_charge))
+            total = Decimal(str(item.total_charge))
+            if billed > gross_charge * Decimal(str(self._exact_price_threshold)):
+                overcharge = (billed - gross_charge) * item.quantity
                 label = f" ({item.description})" if item.description else ""
+                qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
                 errors.append(DetectedError(
                     code="HOSPITAL_CHARGE_OUTLIER",
                     severity="critical",
                     affected_indices=(index,),
                     description=(
-                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"Your provider charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
                         f"{label}, but this hospital's own published price list "
                         f"(CMS price transparency file) shows a gross charge of "
-                        f"${gross_charge:.2f}. You were billed "
+                        f"${gross_charge:.2f}/unit. You were billed "
                         f"${overcharge:.2f} more than the hospital's own listed price."
                     ),
                     estimated_overcharge=overcharge,
@@ -715,18 +815,20 @@ class RulesEngine:
             if negotiated_rate is None or negotiated_rate <= 0:
                 continue
 
-            charge = Decimal(str(item.total_charge))
-            if charge > negotiated_rate * Decimal(str(self._exact_price_threshold)):
-                overcharge = charge - negotiated_rate
+            billed = Decimal(str(item.unit_charge))
+            total = Decimal(str(item.total_charge))
+            if billed > negotiated_rate * Decimal(str(self._exact_price_threshold)):
+                overcharge = (billed - negotiated_rate) * item.quantity
                 label = f" ({item.description})" if item.description else ""
+                qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
                 errors.append(DetectedError(
                     code="NEGOTIATED_RATE_EXCEEDED",
                     severity="critical",
                     affected_indices=(index,),
                     description=(
-                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"Your provider charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
                         f"{label}. Your insurance plan's contracted rate at this hospital "
-                        f"for this procedure is ${negotiated_rate:.2f} — a difference of "
+                        f"for this procedure is ${negotiated_rate:.2f}/unit — a difference of "
                         f"${overcharge:.2f}. In-network providers cannot bill above their "
                         f"contracted rate. This may be a billing error or an improper "
                         f"balance-billing attempt."
@@ -764,19 +866,21 @@ class RulesEngine:
             if ceiling_rate is None or ceiling_rate <= 0:
                 continue
 
-            charge = Decimal(str(item.total_charge))
-            if charge > ceiling_rate * Decimal(str(self._exact_price_threshold)):
-                overcharge = charge - ceiling_rate
+            billed = Decimal(str(item.unit_charge))
+            total = Decimal(str(item.total_charge))
+            if billed > ceiling_rate * Decimal(str(self._exact_price_threshold)):
+                overcharge = (billed - ceiling_rate) * item.quantity
                 label = f" ({item.description})" if item.description else ""
+                qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
                 errors.append(DetectedError(
                     code="NEGOTIATED_CEILING_EXCEEDED",
                     severity="warning",
                     affected_indices=(index,),
                     description=(
-                        f"Your provider charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"Your provider charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
                         f"{label}. According to this hospital's published price transparency "
                         f"data, the highest rate any insurer pays for this procedure here is "
-                        f"${ceiling_rate:.2f}. Your charge of ${charge:.2f} exceeds that "
+                        f"${ceiling_rate:.2f}/unit. Your charge exceeds that "
                         f"ceiling by ${overcharge:.2f}. This warrants a closer look — request "
                         f"an itemized review of this charge."
                     ),
@@ -804,19 +908,21 @@ class RulesEngine:
             if opps_cap is None or opps_cap <= 0:
                 continue
 
-            charge = Decimal(str(item.total_charge))
-            if charge > opps_cap * Decimal(str(self._medicare_outlier_threshold)):
-                overcharge = charge - opps_cap
+            billed = Decimal(str(item.unit_charge))
+            total = Decimal(str(item.total_charge))
+            if billed > opps_cap * Decimal(str(self._medicare_outlier_threshold)):
+                overcharge = (billed - opps_cap) * item.quantity
                 label = f" ({item.description})" if item.description else ""
+                qty_note = f" ({item.quantity} units at ${billed:.2f}/unit)" if item.quantity > 1 else ""
                 errors.append(DetectedError(
                     code="FACILITY_CHARGE_OUTLIER",
                     severity="warning",
                     affected_indices=(index,),
                     description=(
-                        f"Your facility charged ${charge:.2f} for CPT {item.cpt_code}"
+                        f"Your facility charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
                         f"{label}. The Medicare OPPS payment cap for this procedure "
                         f"in your area is ${opps_cap:.2f} — your charge is "
-                        f"{charge / opps_cap:.1f}x that amount. Consider requesting "
+                        f"{billed / opps_cap:.1f}x that amount. Consider requesting "
                         f"an itemised bill and asking the facility to review the charge."
                     ),
                     estimated_overcharge=overcharge,
@@ -859,7 +965,11 @@ class RulesEngine:
 
             mue_value, adj_indicator = limit
             if mue_value == 0:
-                # mue_value of 0 means "not separately payable" — flag every occurrence
+                # mue_value of 0 means "not separately payable" — flag every occurrence.
+                # Skip if NON_PAYABLE_CODE already covers this code (proc_stat B codes
+                # frequently have MUE=0 in the same dataset — one finding is enough).
+                if item.cpt_code in self._non_payable_codes:
+                    continue
                 errors.append(DetectedError(
                     code="MUE_EXCEEDED",
                     severity="critical",
