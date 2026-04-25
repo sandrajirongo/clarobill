@@ -8,9 +8,11 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from google.cloud import vision
 from google.oauth2 import service_account
+from google.oauth2.service_account import Credentials
 
 from app.core.config import settings
 
@@ -25,9 +27,13 @@ def _build_vision_client() -> vision.ImageAnnotatorClient:
     GOOGLE_APPLICATION_CREDENTIALS, which the Google SDK reads automatically.
     """
     if settings.google_credentials_json:
-        info = json.loads(settings.google_credentials_json)
-        creds = service_account.Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/cloud-vision"]
+        info: dict[str, Any] = json.loads(settings.google_credentials_json)
+        # WORKAROUND: google-auth's from_service_account_info has no type
+        # annotations on its body, which trips mypy's no-untyped-call check
+        # under --strict. The runtime returns a Credentials instance. A proper
+        # fix would require Google to ship typed stubs (google-auth issue #1118).
+        creds: Credentials = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
+            info, scopes=["https://www.googleapis.com/auth/cloud-vision"],
         )
         return vision.ImageAnnotatorClient(credentials=creds)
     # Fall back to ADC / GOOGLE_APPLICATION_CREDENTIALS file path
@@ -72,7 +78,9 @@ class OcrService:
         if response.error.message:
             raise OcrExtractionError(f"Google Vision API error: {response.error.message}")
 
-        text = response.full_text_annotation.text
+        # response.full_text_annotation.text is typed Any by google-cloud-vision's
+        # protobuf stubs — the runtime always returns str, narrow explicitly.
+        text: str = str(response.full_text_annotation.text)
         if not text:
             raise OcrExtractionError("No text detected in the uploaded image.")
 

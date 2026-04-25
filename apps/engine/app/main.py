@@ -1,11 +1,13 @@
 """FastAPI application entry point for the Clarobill engine service."""
 
 import logging
+from collections.abc import Awaitable, Callable
+from typing import cast
 
 import sentry_sdk
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -13,8 +15,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from app.api.v1.bills import router as bills_router
 from app.api.insurance_card import router as insurance_card_router
+from app.api.v1.bills import router as bills_router
 from app.core.config import settings
 from app.core.security import verify_engine_api_key
 
@@ -49,7 +51,15 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# slowapi's handler signature narrows the second arg to RateLimitExceeded;
+# Starlette's registry expects the broader Exception type. The runtime
+# contract holds because Starlette only dispatches this handler for the
+# registered exception class — cast it to the broader type Starlette wants.
+_StarletteExceptionHandler = Callable[[Request, Exception], Response | Awaitable[Response]]
+app.add_exception_handler(
+    RateLimitExceeded,
+    cast(_StarletteExceptionHandler, _rate_limit_exceeded_handler),
+)
 app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(

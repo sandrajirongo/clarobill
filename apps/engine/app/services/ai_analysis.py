@@ -120,7 +120,10 @@ class AiAnalysisService:
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = message.content[0].text if message.content else ""
+        # Claude returns list[TextBlock | ToolUseBlock]. We never request tool use,
+        # so the first block is always a TextBlock — narrow explicitly so mypy is happy.
+        first_block = message.content[0] if message.content else None
+        text = first_block.text if isinstance(first_block, anthropic.types.TextBlock) else ""
         logger.info("Generated bill summary via Claude fallback (%d chars)", len(text))
         return text
 
@@ -230,7 +233,10 @@ class AiAnalysisService:
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = message.content[0].text if message.content else ""
+        # Claude returns list[TextBlock | ToolUseBlock]. We never request tool use,
+        # so the first block is always a TextBlock — narrow explicitly so mypy is happy.
+        first_block = message.content[0] if message.content else None
+        text = first_block.text if isinstance(first_block, anthropic.types.TextBlock) else ""
         logger.info("Generated dispute letter via Claude fallback (%d chars)", len(text))
         return text
 

@@ -50,6 +50,22 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 
+# Third-party libraries that ship without py.typed markers or type stubs.
+# These packages are stable and type-checking their internals adds no value;
+# silencing the import-untyped warning lets us keep --strict on our own code.
+[[tool.mypy.overrides]]
+module = [
+    "vertexai",
+    "vertexai.*",
+    "sendgrid",
+    "sendgrid.*",
+    "matplotlib",
+    "matplotlib.*",
+    "docx",
+    "docx.*",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
