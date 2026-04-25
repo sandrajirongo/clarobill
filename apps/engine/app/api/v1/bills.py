@@ -1104,6 +1104,8 @@ def _query_charges_by_npi(
     The gross charge is the hospital's own maximum list price — billing above it
     is an unambiguous error regardless of which specific row was used for billing.
     """
+    # `dataset` is an engine config value (settings.bigquery_dataset), never user
+    # input. All user-provided values flow through ScalarQueryParameter below.
     query = f"""
         SELECT code, MAX(gross_charge) AS gross_charge
         FROM `{dataset}.hospital_charges`
@@ -1112,7 +1114,7 @@ def _query_charges_by_npi(
           AND gross_charge IS NOT NULL
           AND gross_charge > 0
         GROUP BY code
-    """
+    """  # noqa: S608
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("npi", "STRING", hospital_npi),
         bigquery.ArrayQueryParameter("codes", "STRING", cpt_codes),
@@ -1178,7 +1180,9 @@ def _resolve_npi_by_name(
             conditions += "\n          AND zip_code = @zip_code"
             params.append(bigquery.ScalarQueryParameter("zip_code", "STRING", zip_code))
 
-        query = f"SELECT hospital_npi FROM `{dataset}.hospital_directory` WHERE {conditions}"
+        # `dataset` is from engine config; `conditions` is built from fixed string
+        # templates with ScalarQueryParameter placeholders — no user input interpolated.
+        query = f"SELECT hospital_npi FROM `{dataset}.hospital_directory` WHERE {conditions}"  # noqa: S608
         try:
             rows = list(bq.query(query, job_config=bigquery.QueryJobConfig(query_parameters=params)).result())
         except Exception as exc:
@@ -1222,13 +1226,14 @@ def _resolve_payer_aliases(
     Falls back gracefully — the caller should fall back to CONTAINS_SUBSTR when
     this returns empty.
     """
+    # `dataset` is engine config; @payer_name is parameterized.
     lookup_query = f"""
         SELECT DISTINCT payer_group
         FROM `{dataset}.payer_name_aliases`
         WHERE CONTAINS_SUBSTR(alias, @payer_name)
            OR CONTAINS_SUBSTR(@payer_name, alias)
         LIMIT 1
-    """
+    """  # noqa: S608
     try:
         rows = list(bq.query(
             lookup_query,
@@ -1249,7 +1254,7 @@ def _resolve_payer_aliases(
         SELECT alias
         FROM `{dataset}.payer_name_aliases`
         WHERE payer_group = @payer_group
-    """
+    """  # noqa: S608
     try:
         alias_rows = list(bq.query(
             alias_query,
@@ -1328,7 +1333,7 @@ def _load_negotiated_charges(
               AND negotiated_charge > 0
               AND negotiated_type IN ('negotiated', 'derived')
             GROUP BY code
-        """
+        """  # noqa: S608
         job_config = bigquery.QueryJobConfig(query_parameters=[
             bigquery.ScalarQueryParameter("npi", "STRING", npi),
             bigquery.ArrayQueryParameter("payer_aliases", "STRING", aliases),
@@ -1350,7 +1355,7 @@ def _load_negotiated_charges(
               AND negotiated_charge > 0
               AND negotiated_type IN ('negotiated', 'derived')
             GROUP BY code
-        """
+        """  # noqa: S608
         job_config = bigquery.QueryJobConfig(query_parameters=[
             bigquery.ScalarQueryParameter("npi", "STRING", npi),
             bigquery.ScalarQueryParameter("payer_substr", "STRING", payer_substr),
@@ -1431,7 +1436,7 @@ def _load_negotiated_ceiling(
           AND max_negotiated IS NOT NULL
           AND max_negotiated > 0
         GROUP BY code
-    """
+    """  # noqa: S608
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("npi", "STRING", npi),
         bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
@@ -1624,7 +1629,10 @@ async def _do_generate_report(
                 affected_line_item_ids=e["affected_line_item_ids"],
                 description=e["description"],
                 estimated_overcharge=Decimal(str(e["estimated_overcharge"])),
-                medicare_benchmark_rate=Decimal(str(e["medicare_benchmark_rate"])) if e.get("medicare_benchmark_rate") else None,
+                medicare_benchmark_rate=(
+                    Decimal(str(e["medicare_benchmark_rate"]))
+                    if e.get("medicare_benchmark_rate") else None
+                ),
             )
             for e in analysis_data["errors"]
         ]
@@ -1647,10 +1655,14 @@ async def _do_generate_report(
 
         report_path = f"{user_id}/{bill_id}/report.pdf"
         dispute_path = f"{user_id}/{bill_id}/dispute-letter.docx"
-        supabase.storage.from_("reports").upload(report_path, report_pdf, {"content-type": "application/pdf", "upsert": "true"})
+        supabase.storage.from_("reports").upload(
+            report_path, report_pdf,
+            {"content-type": "application/pdf", "upsert": "true"},
+        )
+        docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         supabase.storage.from_("reports").upload(
             dispute_path, dispute_docx,
-            {"content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "upsert": "true"},
+            {"content-type": docx_mime, "upsert": "true"},
         )
 
         supabase.table("analysis_results").update({

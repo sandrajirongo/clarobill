@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import anthropic
 import pytest
+from anthropic.types import TextBlock
 
 from app.models.bill import BillingError, BillingErrorCode, ErrorSeverity
 from app.services.ai_analysis import AiAnalysisService
@@ -164,8 +165,11 @@ class TestClaudeFallbackPath:
     """Tests that Claude is used when Gemini fails, and that its response is returned."""
 
     def _mock_claude_response(self, text: str) -> MagicMock:
+        # The production code narrows message.content[0] via isinstance(TextBlock),
+        # so the mock must contain a real TextBlock instance — not a MagicMock with
+        # a .text attribute, which would fail the isinstance check.
         message = MagicMock()
-        message.content = [MagicMock(text=text)]
+        message.content = [TextBlock(text=text, type="text")]
         return message
 
     async def test_summary_falls_back_to_claude_on_gemini_failure(self, live_service: AiAnalysisService) -> None:

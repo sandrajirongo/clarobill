@@ -168,6 +168,7 @@ class TestLoadMedicareRates:
             q.lte.return_value = q
             q.order.return_value = q
             q.limit.return_value = q
+            q.or_.return_value = q
             if name == "cms_pfs_indicators":
                 q.execute.return_value = indicator_response
             else:
@@ -204,6 +205,7 @@ class TestLoadMedicareRates:
             q.lte.return_value = q
             q.order.return_value = q
             q.limit.return_value = q
+            q.or_.return_value = q
             resp = MagicMock()
             resp.data = indicators_rows if name == "cms_pfs_indicators" else gpci_rows
             q.execute.return_value = resp
@@ -225,6 +227,7 @@ class TestLoadMedicareRates:
             q.lte.return_value = q
             q.order.return_value = q
             q.limit.return_value = q
+            q.or_.return_value = q
             resp = MagicMock()
             resp.data = []
             q.execute.return_value = resp

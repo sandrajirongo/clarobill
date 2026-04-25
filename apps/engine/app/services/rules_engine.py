@@ -1045,7 +1045,8 @@ class RulesEngine:
                     continue
                 excess = total_qty - mue_value
                 avg_unit = sum(
-                    Decimal(str(line_items[i].unit_charge)) for i in all_indices
+                    (Decimal(str(line_items[i].unit_charge)) for i in all_indices),
+                    start=Decimal(0),
                 ) / len(all_indices)
                 overcharge = avg_unit * excess
                 errors.append(DetectedError(

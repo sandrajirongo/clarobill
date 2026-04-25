@@ -39,8 +39,7 @@ _VALID_MODIFIERS: frozenset[str] = frozenset({
     # Professional/technical component
     "TC",
     # Surgical team / assistant
-    "AS", "80", "81", "82",
-    # Evaluation & management context
+    "AS", # Evaluation & management context
     "AI", "AW", "GC", "GE", "GF", "GR",
     # NCCI override modifiers (59 already above; X-modifiers added in 2015)
     "XE", "XP", "XS", "XU",
@@ -56,8 +55,7 @@ _VALID_MODIFIERS: frozenset[str] = frozenset({
     # Anesthesia physical status
     "P1", "P2", "P3", "P4", "P5", "P6",
     # Telemedicine
-    "GT", "GQ", "93", "95",
-    # DMEPOS
+    "GT", "GQ", # DMEPOS
     "KA", "KB", "KC", "KD", "KE", "KF", "KG", "KH", "KI", "KJ",
     "KK", "KL", "KM", "KN", "KO", "KP", "KQ", "KR", "KS", "KU", "KX", "KZ",
     "NR", "NU", "RR", "UE", "RP",
@@ -85,7 +83,6 @@ _VALID_MODIFIERS: frozenset[str] = frozenset({
     # Immunosuppressive drug / infusion
     "J1", "J2", "J3", "JA", "JB", "JC", "JD", "JE", "JW", "JZ",
     # Rehabilitation / habilitation
-    "96", "97",
     # Competitive bidding / home health
     "AQ", "AR",
     # Physician team
@@ -100,7 +97,7 @@ _VALID_MODIFIERS: frozenset[str] = frozenset({
     "DA",
     "FB", "FC",
     "G1", "G2", "G3", "G4", "G5", "G6", "G7",
-    "GB", "GD", "GG", "GH", "GI", "GJ", "GK", "GL", "GM", "GS",
+    "GB", "GD", "GG", "GH", "GI", "GJ", "GK", "GL", "GS",
     "JF", "JG",
     "L1", "LE", "LF", "LG", "LH", "LI", "LJ", "LK", "LL",
     "LN", "LO", "LP", "LQ", "LR", "LS",
@@ -109,9 +106,9 @@ _VALID_MODIFIERS: frozenset[str] = frozenset({
     "Q0", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9",
     "QA", "QB", "QC", "QD", "QE", "QF", "QG", "QH", "QJ", "QL",
     "QP", "QR", "QT", "QU", "QV", "QW",
-    "RA", "RB", "RC", "RD", "RE", "RF", "RG", "RH", "RJ", "RK",
+    "RA", "RB", "RD", "RE", "RF", "RG", "RH", "RJ", "RK",
     "RL", "RM", "RN", "RO", "RQ", "RS", "RU", "RV", "RW", "RX", "RY", "RZ",
-    "T3", "TB", "TC", "TD", "TE", "TF", "TG", "TH", "TJ", "TK",
+    "TB", "TD", "TE", "TF", "TG", "TH", "TJ", "TK",
     "TL", "TM", "TN", "TP", "TQ", "TR", "TS", "TU", "TV", "TW",
     "U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U9",
     "UA", "UB", "UC", "UD", "UF", "UG", "UH", "UI", "UJ", "UK",
@@ -299,8 +296,8 @@ class BillParser:
                 modifier = candidate if candidate in _VALID_MODIFIERS else None
 
             # Try to find a charge on the same line first, then look ahead
-            charge, charge_line = self._find_charge_in_window(lines, i)
-            if charge is None:
+            charge_match = self._find_charge_in_window(lines, i)
+            if charge_match is None:
                 # No charge found within proximity — save for sequence-based fallback.
                 # This is the normal outcome for column-interleaved table OCR output.
                 logger.debug("No charge found for code %s at line %d — queuing for fallback", cpt_code, i)
@@ -308,6 +305,7 @@ class BillParser:
                 processed_line_indices.add(i)
                 continue
 
+            charge, charge_line = charge_match
             consumed_amount_lines.add(charge_line)
 
             service_date = self._find_date_in_window(lines, i) or fallback_date
@@ -354,7 +352,7 @@ class BillParser:
         logger.info("Parser extracted %d line items from %d lines", len(line_items), len(lines))
         return line_items
 
-    def _find_charge_in_window(self, lines: list[str], start: int) -> tuple[float, int] | tuple[None, None]:
+    def _find_charge_in_window(self, lines: list[str], start: int) -> tuple[float, int] | None:
         """Search for a dollar amount on the CPT line and up to LOOKAHEAD_LINES below.
 
         Takes the LAST match on the line — on bills with unit-rate + total-charge columns
@@ -362,7 +360,7 @@ class BillParser:
         total charge. Using .search() (first match) would capture the unit rate instead.
 
         Returns:
-            (charge_value, line_index) when found, (None, None) when not found.
+            (charge_value, line_index) when found, None when not found.
         """
         for j in range(start, min(start + _LOOKAHEAD_LINES + 1, len(lines))):
             matches = _AMOUNT_PATTERN.findall(lines[j])
@@ -371,7 +369,7 @@ class BillParser:
                     return float(matches[-1].replace(",", "")), j
                 except ValueError:
                     continue
-        return None, None
+        return None
 
     def _resolve_column_interleaved(
         self,
