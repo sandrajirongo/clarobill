@@ -1492,7 +1492,9 @@ async def generate_report(
     If report_url is set but the file is missing (stale from a crashed run),
     regenerates rather than returning a broken download.
     """
-    bill_row = supabase.table("bills").select("id,file_name,file_path,user_id,hospital_name,payer_name").eq("id", bill_id).single().execute()
+    bill_row = supabase.table("bills").select(
+        "id,file_name,file_path,user_id,hospital_name,payer_name,plan_name,profile_member_id"
+    ).eq("id", bill_id).single().execute()
     if not bill_row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found.")
     if bill_row.data["user_id"] != body.user_id:
@@ -1559,7 +1561,41 @@ async def _do_generate_report(
         user_id: str = bill_data["user_id"]
         hospital_name: str | None = bill_data.get("hospital_name")
         payer_name: str | None = bill_data.get("payer_name")
+        plan_name: str | None = bill_data.get("plan_name")
+        profile_member_id: str | None = bill_data.get("profile_member_id")
         ai_summary: str = analysis_data["ai_summary"]
+
+        # Pull patient identity for the dispute letter closing block.
+        # Falls back to bracketed placeholders inside generate_dispute_letter
+        # when any field is missing — never ask the user to retype data we have.
+        patient_name: str | None = None
+        patient_dob: str | None = None
+        member_id: str | None = None
+        if profile_member_id:
+            member_row = (
+                supabase.table("profile_members")
+                .select("full_name,date_of_birth")
+                .eq("id", profile_member_id)
+                .single()
+                .execute()
+            )
+            if member_row.data:
+                patient_name = member_row.data.get("full_name")
+                dob_raw = member_row.data.get("date_of_birth")
+                patient_dob = str(dob_raw) if dob_raw else None
+
+            if payer_name and plan_name:
+                plan_row = (
+                    supabase.table("insurance_plans")
+                    .select("member_id")
+                    .eq("profile_member_id", profile_member_id)
+                    .eq("payer_name", payer_name)
+                    .eq("plan_name", plan_name)
+                    .limit(1)
+                    .execute()
+                )
+                if plan_row.data:
+                    member_id = plan_row.data[0].get("member_id")
 
         items_row = (
             supabase.table("line_items")
@@ -1599,6 +1635,8 @@ async def _do_generate_report(
             ai_service.generate_dispute_letter(
                 billing_errors, line_items, file_name,
                 hospital_name=hospital_name, payer_name=payer_name,
+                patient_name=patient_name, patient_dob=patient_dob,
+                member_id=member_id,
             ),
             loop.run_in_executor(
                 None,

@@ -20,6 +20,7 @@ All AI calls are funneled through this module. Test mode returns fixture text.
 
 import asyncio
 import logging
+from datetime import date
 
 import anthropic
 import vertexai
@@ -130,6 +131,9 @@ class AiAnalysisService:
         bill_file_name: str,
         hospital_name: str | None = None,
         payer_name: str | None = None,
+        patient_name: str | None = None,
+        patient_dob: str | None = None,
+        member_id: str | None = None,
     ) -> str:
         """Generate a formal dispute letter the patient can send to their provider.
 
@@ -139,6 +143,9 @@ class AiAnalysisService:
             bill_file_name: Original file name — used to identify the bill in the letter.
             hospital_name: Provider name extracted from the bill or user input, if available.
             payer_name: Insurer name from user verification, if available.
+            patient_name: Patient full name from profile_members, if available.
+            patient_dob: Patient date of birth (ISO yyyy-mm-dd) from profile_members, if available.
+            member_id: Insurance member ID from insurance_plans, if available.
 
         Returns:
             Plain-text dispute letter with no Markdown formatting, ready for DOCX conversion.
@@ -147,7 +154,12 @@ class AiAnalysisService:
             return ""
 
         if self._test_mode:
-            return self._fixture_dispute_letter(errors)
+            return self._fixture_dispute_letter(
+                errors,
+                patient_name=patient_name,
+                patient_dob=patient_dob,
+                member_id=member_id,
+            )
 
         total_overcharge = sum(e.estimated_overcharge for e in errors)
         error_list = "\n".join(
@@ -167,6 +179,13 @@ class AiAnalysisService:
         insurer_line = (
             f"Insurance: {payer_name}" if payer_name else ""
         )
+        patient_name_value = patient_name if patient_name else "[YOUR NAME]"
+        patient_dob_value = patient_dob if patient_dob else "[YOUR DATE OF BIRTH]"
+        member_id_value = member_id if member_id else "[YOUR MEMBER ID]"
+        # Format: "April 25, 2026". Server runs in UTC on Cloud Run; a one-day
+        # drift versus the user's local date is acceptable for a dispute letter.
+        today = date.today()
+        today_value = f"{today.strftime('%B')} {today.day}, {today.year}"
 
         prompt = (
             "You are a medical billing advocate helping a patient write a formal dispute letter "
@@ -179,15 +198,15 @@ class AiAnalysisService:
             "followed by a blank line, then the detail paragraph.\n"
             "- No bold, no italics, no underline, no lists.\n\n"
             "Letter structure (use exactly this order):\n"
-            "1. Today's date as [DATE]\n"
+            f"1. Today's date (already filled in — use as-is): {today_value}\n"
             f"2. Recipient block (already filled in — use as-is):\n{recipient_line}\n"
             "3. Subject line: Re: Billing Dispute — [bill reference]\n"
             "4. Salutation: Dear Billing Department,\n"
             "5. Opening paragraph (1-2 sentences citing the total disputed amount)\n"
             "6. One section per billing error, each starting with 'Dispute N:'\n"
             "7. Closing paragraph requesting itemized bill and corrected statement within 30 days\n"
-            f"8. Closing: Sincerely,\n\n[YOUR NAME]\n[YOUR DATE OF BIRTH]\n{insurer_line}\n"
-            "   Member ID: [YOUR MEMBER ID]\n\n"
+            f"8. Closing: Sincerely,\n\n{patient_name_value}\n{patient_dob_value}\n{insurer_line}\n"
+            f"   Member ID: {member_id_value}\n\n"
             f"Bill reference: {bill_file_name}\n"
             f"Total disputed amount: ${total_overcharge:.2f}\n\n"
             f"Billing errors found:\n{error_list}\n\n"
@@ -227,12 +246,23 @@ class AiAnalysisService:
         )
 
     @staticmethod
-    def _fixture_dispute_letter(errors: list[BillingError]) -> str:
+    def _fixture_dispute_letter(
+        errors: list[BillingError],
+        *,
+        patient_name: str | None = None,
+        patient_dob: str | None = None,
+        member_id: str | None = None,
+    ) -> str:
         total = sum(e.estimated_overcharge for e in errors)
+        name_line = patient_name if patient_name else "[YOUR NAME]"
+        dob_line = patient_dob if patient_dob else "[YOUR DATE OF BIRTH]"
+        member_line = member_id if member_id else "[YOUR MEMBER ID]"
+        today = date.today()
+        today_line = f"{today.strftime('%B')} {today.day}, {today.year}"
         return (
-            "[DATE]\n\nBilling Department,\n\n"
+            f"{today_line}\n\nBilling Department,\n\n"
             "I am writing to formally dispute charges on my recent medical bill.\n\n"
             f"Total disputed amount: ${total:.2f}\n\n"
             "Please provide an itemized bill and corrected statement within 30 days.\n\n"
-            "Sincerely,\n[YOUR NAME]"
+            f"Sincerely,\n{name_line}\n{dob_line}\nMember ID: {member_line}"
         )

@@ -59,7 +59,7 @@ The user creates an account and sets up their primary profile:
 3. **Insurance information (at least one plan):**
    - Insurer name (payer) — e.g. "Aetna", "Blue Cross Blue Shield of California"
    - Plan name — e.g. "PPO Gold", "HMO Select Plus"
-   - Member ID (optional — not used for analysis, but useful for dispute letters)
+   - Member ID (optional — not used for analysis; auto-filled into the dispute letter when present, otherwise left as a `[YOUR MEMBER ID]` placeholder)
    - Plan type: Commercial / Medicare / Medicaid / Tricare / Self-pay
 4. **Add dependents** (optional — can be done later from account settings)
 
@@ -249,6 +249,14 @@ informed framing for approaching the dispute.
 Pre-written, personalized dispute letter addressed to the provider's billing
 department. Cites the specific CPT codes, amounts, and regulatory basis for each
 dispute. Ready to send.
+
+The closing block is auto-filled from the user's profile when the data is
+available — letterhead date is the report-generation date, recipient is the
+hospital from OCR, and the signature block uses `profile_members.full_name`,
+`profile_members.date_of_birth`, the bill's confirmed `payer_name`, and
+`insurance_plans.member_id` (matched on the bill's confirmed payer + plan).
+Any field that is missing falls back to a bracketed placeholder (`[YOUR NAME]`,
+`[YOUR DATE OF BIRTH]`, `[YOUR MEMBER ID]`) so the user can hand-fill it.
 
 ---
 

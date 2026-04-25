@@ -87,10 +87,51 @@ class TestGenerateDisputeLetter:
         letter = await service.generate_dispute_letter(errors, [], "bill.pdf")
         assert "350" in letter
 
-    async def test_letter_contains_patient_placeholder(self, service: AiAnalysisService) -> None:
+    async def test_letter_uses_placeholders_when_identity_missing(self, service: AiAnalysisService) -> None:
         errors = [make_error("NCCI_UNBUNDLING", "Unbundling detected", 100.00)]
         letter = await service.generate_dispute_letter(errors, [], "bill.pdf")
-        assert "YOUR NAME" in letter
+        assert "[YOUR NAME]" in letter
+        assert "[YOUR DATE OF BIRTH]" in letter
+        assert "[YOUR MEMBER ID]" in letter
+
+    async def test_letter_uses_real_identity_when_all_provided(self, service: AiAnalysisService) -> None:
+        errors = [make_error("NCCI_UNBUNDLING", "Unbundling detected", 100.00)]
+        letter = await service.generate_dispute_letter(
+            errors, [], "bill.pdf",
+            patient_name="Jane Doe",
+            patient_dob="1985-03-22",
+            member_id="W123456789",
+        )
+        assert "Jane Doe" in letter
+        assert "1985-03-22" in letter
+        assert "W123456789" in letter
+        assert "[YOUR NAME]" not in letter
+        assert "[YOUR DATE OF BIRTH]" not in letter
+        assert "[YOUR MEMBER ID]" not in letter
+
+    async def test_letter_mixes_real_values_and_placeholders(self, service: AiAnalysisService) -> None:
+        """We have name from profile_members but never collected member_id from the card."""
+        errors = [make_error("NCCI_UNBUNDLING", "Unbundling detected", 100.00)]
+        letter = await service.generate_dispute_letter(
+            errors, [], "bill.pdf",
+            patient_name="Jane Doe",
+            patient_dob="1985-03-22",
+            member_id=None,
+        )
+        assert "Jane Doe" in letter
+        assert "1985-03-22" in letter
+        assert "[YOUR MEMBER ID]" in letter
+        assert "[YOUR NAME]" not in letter
+
+    async def test_letter_auto_fills_todays_date(self, service: AiAnalysisService) -> None:
+        """Date should be the date the letter is generated — no [DATE] placeholder."""
+        from datetime import date as _date
+        errors = [make_error("DUPLICATE_CHARGE", "Duplicate charge", 100.00)]
+        letter = await service.generate_dispute_letter(errors, [], "bill.pdf")
+        today = _date.today()
+        expected_date = f"{today.strftime('%B')} {today.day}, {today.year}"
+        assert expected_date in letter
+        assert "[DATE]" not in letter
 
 
 class TestGeminiPrimaryPath:
