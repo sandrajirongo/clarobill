@@ -31,9 +31,12 @@ export const viewport: Viewport = {
 // Required for Next.js to construct absolute URLs for the auto-generated
 // opengraph-image.tsx route. Without metadataBase, social platforms (iMessage,
 // WhatsApp, Slack, Twitter) can't fetch the OG image and render a blank
-// preview card. Override locally with NEXT_PUBLIC_SITE_URL when previewing
-// shares against a tunnel or staging deployment.
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://clarobill.com';
+// preview card. Use the www. canonical URL since the apex redirects there —
+// pointing metadataBase at the apex would make og:image URLs hit a redirect
+// before reaching the actual image, and many scrapers don't follow redirects
+// for image sub-resources. Override locally with NEXT_PUBLIC_SITE_URL when
+// previewing shares against a tunnel or staging deployment.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.clarobill.com';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
