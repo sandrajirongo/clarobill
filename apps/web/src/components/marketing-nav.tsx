@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { LogoWithMark } from '@/components/logo';
+import { BetaBanner } from '@/components/beta-banner';
 import s from './marketing-nav.module.css';
 
 interface MarketingNavProps {
@@ -47,8 +48,14 @@ export function MarketingNav({ activePath }: MarketingNavProps): JSX.Element {
     { href: '/blog',     label: 'Resources' },
   ];
 
+  // /pricing already has its own dedicated beta callout under the nav,
+  // so suppress the banner CTA there to avoid two beta CTAs on the same page.
+  const isPricingPage = activePath === '/pricing';
+
   return (
-    <nav className={s.nav} ref={menuRef}>
+    <>
+      <BetaBanner showCta={!isPricingPage} />
+      <nav className={s.nav} ref={menuRef}>
       <Link href="/" className={s.logo}>
         <LogoWithMark size="md" />
       </Link>
@@ -103,5 +110,6 @@ export function MarketingNav({ activePath }: MarketingNavProps): JSX.Element {
         </Link>
       </div>
     </nav>
+    </>
   );
 }

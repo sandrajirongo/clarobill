@@ -1,0 +1,91 @@
+/* Site-wide beta announcement bar. Renders above the nav.
+   Sticky position so it stays visible during scroll on long pages.
+   Dismissible via localStorage (cb_beta_banner_dismissed). */
+
+.bar {
+  background: var(--sage, #2D4A2A);
+  color: #fff;
+  font-family: var(--fb);
+  position: relative;
+  z-index: 50;
+  border-bottom: 2px solid var(--lime, #C8F060);
+}
+
+.inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding: .55rem clamp(1rem, 4vw, 2rem);
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+.label {
+  background: var(--lime, #C8F060);
+  color: var(--sage, #2D4A2A);
+  font-weight: 700;
+  font-size: .65rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: .22rem .55rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.text {
+  flex: 1;
+  color: rgba(255, 255, 255, .94);
+}
+
+.cta {
+  background: rgba(255, 255, 255, .14);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: .76rem;
+  padding: .38rem .85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  transition: background .15s, border-color .15s;
+  flex-shrink: 0;
+}
+.cta:hover {
+  background: rgba(255, 255, 255, .22);
+  border-color: rgba(255, 255, 255, .4);
+}
+
+.close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, .7);
+  cursor: pointer;
+  padding: .35rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s, background .15s;
+  flex-shrink: 0;
+}
+.close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .12);
+}
+
+@media (max-width: 600px) {
+  .inner {
+    gap: .55rem;
+    padding: .5rem .9rem;
+    font-size: .76rem;
+  }
+  .text {
+    /* Truncate gracefully on narrow screens — full text still readable
+       on /pricing where the dedicated callout shows. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cta { font-size: .72rem; padding: .32rem .65rem; }
+}

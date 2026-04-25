@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getAuthenticatedUser } from '@/lib/supabase/server';
 import { DashboardNav } from '@/components/dashboard-nav';
 import { DashboardFooter } from '@/components/dashboard-footer';
+import { BetaBanner } from '@/components/beta-banner';
 import s from './dashboard.module.css';
 
 export default async function DashboardLayout({
@@ -14,6 +15,7 @@ export default async function DashboardLayout({
 
   return (
     <div className={s.shell}>
+      <BetaBanner />
       <DashboardNav email={user.email ?? ''} />
       <div style={{ flex: 1 }}>{children}</div>
       <DashboardFooter />
