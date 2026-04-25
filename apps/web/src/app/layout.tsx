@@ -28,7 +28,15 @@ export const viewport: Viewport = {
   themeColor: '#2D4A2A',
 };
 
+// Required for Next.js to construct absolute URLs for the auto-generated
+// opengraph-image.tsx route. Without metadataBase, social platforms (iMessage,
+// WhatsApp, Slack, Twitter) can't fetch the OG image and render a blank
+// preview card. Override locally with NEXT_PUBLIC_SITE_URL when previewing
+// shares against a tunnel or staging deployment.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://clarobill.com';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'ClaroBill — Find Errors in Your Medical Bill',
   description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
   openGraph: {
@@ -36,11 +44,21 @@ export const metadata: Metadata = {
     description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
     siteName: 'ClaroBill',
     type: 'website',
+    url: SITE_URL,
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: 'ClaroBill — Find Errors in Your Medical Bill',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'ClaroBill — Find Errors in Your Medical Bill',
     description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+    images: ['/opengraph-image'],
   },
 };
 
