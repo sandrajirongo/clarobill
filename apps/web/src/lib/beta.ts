@@ -15,8 +15,16 @@ export function isBetaMode(): boolean {
 
 export const BETA_COPY = {
   banner: {
-    headline: 'ClaroBill is in public beta — every report is free until launch',
-    cta: 'Help us test',
+    // Short enough that both text and Share button fit a 360px viewport
+    // without truncation. Longer "until launch" framing lives on /pricing.
+    headline: 'ClaroBill is free during public beta',
+    cta: 'Share',
+  },
+  // Used by the Share button — Web Share API on mobile, clipboard on desktop.
+  // Tone is informational and trust-forward, not promotional.
+  share: {
+    title: 'ClaroBill — medical bill review',
+    text: 'ClaroBill reviews medical bills for errors and overcharges, and generates dispute letters. Currently free during their public beta.',
   },
   pricingCallout: {
     eyebrow: 'Beta access',

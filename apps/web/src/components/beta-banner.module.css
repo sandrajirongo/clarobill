@@ -1,5 +1,4 @@
 /* Site-wide beta announcement bar. Renders above the nav.
-   Sticky position so it stays visible during scroll on long pages.
    Dismissible via localStorage (cb_beta_banner_dismissed). */
 
 .bar {
@@ -37,17 +36,27 @@
 .text {
   flex: 1;
   color: rgba(255, 255, 255, .94);
+  /* Truncate gracefully on extremely narrow screens — copy is short
+     enough to fit ~360px viewports, but keep the safety net. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cta {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
   background: rgba(255, 255, 255, .14);
   color: #fff;
+  font-family: var(--fb);
   text-decoration: none;
   font-weight: 600;
   font-size: .76rem;
-  padding: .38rem .85rem;
+  padding: .38rem .75rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, .22);
+  cursor: pointer;
   transition: background .15s, border-color .15s;
   flex-shrink: 0;
 }
@@ -55,6 +64,8 @@
   background: rgba(255, 255, 255, .22);
   border-color: rgba(255, 255, 255, .4);
 }
+.ctaIcon { flex-shrink: 0; }
+.ctaText { white-space: nowrap; }
 
 .close {
   background: transparent;
@@ -74,18 +85,35 @@
   background: rgba(255, 255, 255, .12);
 }
 
+/* Mobile (< 600px): tighter spacing, icon-only Share button so all three
+   chips (BETA / headline / Share / X) fit on a 360px viewport without
+   truncation. The Share aria-label still announces to screen readers. */
 @media (max-width: 600px) {
   .inner {
-    gap: .55rem;
-    padding: .5rem .9rem;
+    gap: .5rem;
+    padding: .5rem .85rem;
     font-size: .76rem;
   }
-  .text {
-    /* Truncate gracefully on narrow screens — full text still readable
-       on /pricing where the dedicated callout shows. */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .cta {
+    padding: .4rem .55rem;
+    font-size: .7rem;
   }
-  .cta { font-size: .72rem; padding: .32rem .65rem; }
+  .ctaText {
+    /* Hide the word but keep the icon — saves ~50px and fits the Beta pill */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* Very narrow screens (< 380px): drop the BETA pill since "free during public
+   beta" already conveys the state — keeps headline + Share visible. */
+@media (max-width: 380px) {
+  .label { display: none; }
 }

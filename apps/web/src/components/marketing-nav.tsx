@@ -48,13 +48,9 @@ export function MarketingNav({ activePath }: MarketingNavProps): JSX.Element {
     { href: '/blog',     label: 'Resources' },
   ];
 
-  // /pricing already has its own dedicated beta callout under the nav,
-  // so suppress the banner CTA there to avoid two beta CTAs on the same page.
-  const isPricingPage = activePath === '/pricing';
-
   return (
     <>
-      <BetaBanner showCta={!isPricingPage} />
+      <BetaBanner />
       <nav className={s.nav} ref={menuRef}>
       <Link href="/" className={s.logo}>
         <LogoWithMark size="md" />
@@ -106,7 +102,7 @@ export function MarketingNav({ activePath }: MarketingNavProps): JSX.Element {
           ))}
         </div>
         <Link href="/auth/sign-in" className={s.drawerCta} onClick={() => setMenuOpen(false)}>
-          Get started
+          Sign in
         </Link>
       </div>
     </nav>
