@@ -294,7 +294,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
         <div className={s.inner}>
           <div className={s.analyzingWrap}>
             <p className={s.analyzingTitle}>Analyzing your bill…</p>
-            <p className={s.analyzingNote}>Running 10 billing checks. About 30 seconds.</p>
+            <p className={s.analyzingNote}>Running 10 billing checks. This takes a few minutes.</p>
             <div className={s.analysisSteps}>
               {ANALYSIS_STEPS.map((label, i) => {
                 const isDone   = i < analysisStep;
@@ -327,7 +327,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
           <h1 className={s.pageTitle}>Before we analyze your bill</h1>
           <p className={s.pageSub}>
             We compare every charge against Medicare benchmarks and your insurer&apos;s
-            contracted rates. Takes about 30 seconds — just tell us who this bill is for.
+            contracted rates. This takes a few minutes — just tell us who this bill is for.
           </p>
           <p className={s.fileName}>{fileName}</p>
         </div>

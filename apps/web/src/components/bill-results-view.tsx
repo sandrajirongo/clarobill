@@ -91,7 +91,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
             <div style={{ width: 28, height: 28, borderRadius: '50%', border: '3px solid rgba(45,74,42,.12)', borderTopColor: 'var(--sage)', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
             <div>
               <p style={{ fontSize: '.9rem', fontWeight: 600, color: 'var(--txt)', marginBottom: '.25rem' }}>Running 10 billing checks</p>
-              <p style={{ fontSize: '.82rem', color: 'var(--txt2)' }}>Comparing charges against Medicare rates, your hospital&apos;s published prices, and your insurer&apos;s contracted rates. About 30 seconds.</p>
+              <p style={{ fontSize: '.82rem', color: 'var(--txt2)' }}>Comparing charges against Medicare rates, your hospital&apos;s published prices, and your insurer&apos;s contracted rates. This takes a few minutes.</p>
             </div>
           </div>
         </div>

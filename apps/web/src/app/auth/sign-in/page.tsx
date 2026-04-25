@@ -80,7 +80,7 @@ export default function SignInPage(): JSX.Element {
           </div>
           <div className={s.benefitItem}>
             <span className={s.benefitIcon}><CheckIcon size={14} /></span>
-            <span>Compares your charges against Medicare benchmarks in 30 seconds</span>
+            <span>Compares your charges against Medicare benchmarks in a few minutes</span>
           </div>
           <div className={s.benefitItem}>
             <span className={s.benefitIcon}><CheckIcon size={14} /></span>
