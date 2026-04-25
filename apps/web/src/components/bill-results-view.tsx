@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
 import { getPriceTier } from '@/lib/pricing';
+import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import { DownloadButton } from '@/components/download-button';
 import s from './bill-results-view.module.css';
 
@@ -186,15 +187,34 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         {/* Paywall CTA — only shown when errors exist to unlock */}
         {showPaywall && (
           <div className={s.paywallCta}>
-            <p className={s.paywallCtaPrice}>{priceTier.priceDisplay}</p>
-            <p className={s.paywallOneTime}>one-time · all findings + PDF report + dispute letter</p>
+            {isBetaMode() ? (
+              <>
+                <div className={s.paywallBetaPriceRow}>
+                  <span className={s.paywallStrikePrice}>{priceTier.priceDisplay}</span>
+                  <span className={s.paywallFreePrice}>Free</span>
+                </div>
+                <p className={s.paywallBetaBadge}>{BETA_COPY.paywall.badge}</p>
+                <p className={s.paywallOneTime}>
+                  All findings + PDF report + dispute letter — no card required
+                </p>
+              </>
+            ) : (
+              <>
+                <p className={s.paywallCtaPrice}>{priceTier.priceDisplay}</p>
+                <p className={s.paywallOneTime}>
+                  one-time · all findings + PDF report + dispute letter
+                </p>
+              </>
+            )}
             {checkoutError && <p className={s.paywallError}>{checkoutError}</p>}
             <button
               onClick={handleGetFullReport}
               disabled={isStartingCheckout}
               className={s.paywallBtn}
             >
-              {isStartingCheckout ? 'Redirecting…' : 'Unlock Report'}
+              {isStartingCheckout
+                ? 'Redirecting…'
+                : isBetaMode() ? BETA_COPY.paywall.button : 'Unlock Report'}
             </button>
           </div>
         )}
