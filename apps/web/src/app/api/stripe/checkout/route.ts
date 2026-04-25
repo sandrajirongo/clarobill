@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { stripe, getPriceTier } from '@/lib/stripe';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
+import { isBetaMode } from '@/lib/beta';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
-// ─── BETA MODE ────────────────────────────────────────────────────────────────
-// Set to false (and configure STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET in env)
-// when ready to enable live payments.
-const BETA_MODE = true;
-// ─────────────────────────────────────────────────────────────────────────────
+// Beta mode is read from NEXT_PUBLIC_BETA_MODE via the shared helper so the
+// frontend (paywall CTA, marketing nav, /pricing page) and this checkout
+// route always agree. See apps/web/src/lib/beta.ts for the launch-flip path.
 
 const REFERRAL_DISCOUNT_CENTS = 500; // $5.00 — applies to any paid tier
 
@@ -72,7 +71,7 @@ export async function POST(
   const origin = request.headers.get('origin') ?? 'http://localhost:3000';
 
   // ─── BETA: Stripe is disabled — grant access for free ───────────────────────
-  if (BETA_MODE) {
+  if (isBetaMode()) {
     await supabase.from('payments').upsert(
       {
         user_id: user.id,

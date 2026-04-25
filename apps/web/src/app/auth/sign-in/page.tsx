@@ -7,6 +7,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { CheckIcon, EyeIcon, EyeOffIcon } from '@/components/icons';
+import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import s from './sign-in.module.css';
 
 type Mode = 'magic-link' | 'password';
@@ -74,6 +75,12 @@ export default function SignInPage(): JSX.Element {
         {mode === 'magic-link' ? <MagicLinkForm /> : <PasswordForm />}
 
         <div className={s.benefits}>
+          {isBetaMode() && (
+            <div className={s.benefitItem}>
+              <span className={s.benefitIcon}><CheckIcon size={14} /></span>
+              <span><strong>{BETA_COPY.signInBenefit}</strong></span>
+            </div>
+          )}
           <div className={s.benefitItem}>
             <span className={s.benefitIcon}><CheckIcon size={14} /></span>
             <span>Finds billing errors — duplicate charges, unbundled codes, inflated fees</span>

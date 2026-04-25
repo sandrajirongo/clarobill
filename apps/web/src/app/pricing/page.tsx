@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { MarketingNav } from '@/components/marketing-nav';
+import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import s from './pricing.module.css';
 
 const TIERS = [
@@ -120,10 +121,22 @@ function PricingFaq(): JSX.Element {
 }
 
 export default function PricingPage(): JSX.Element {
+  const beta = isBetaMode();
   return (
     <div className={s.shell}>
 
       <MarketingNav activePath="/pricing" />
+
+      {/* BETA CALLOUT — only renders when NEXT_PUBLIC_BETA_MODE != 'false' */}
+      {beta && (
+        <section className={s.betaCallout}>
+          <div className={s.betaCalloutInner}>
+            <span className={s.betaCalloutEyebrow}>{BETA_COPY.pricingCallout.eyebrow}</span>
+            <h2 className={s.betaCalloutTitle}>{BETA_COPY.pricingCallout.title}</h2>
+            <p className={s.betaCalloutBody}>{BETA_COPY.pricingCallout.body}</p>
+          </div>
+        </section>
+      )}
 
       {/* HERO */}
       <section className={s.hero}>
@@ -194,40 +207,54 @@ export default function PricingPage(): JSX.Element {
           </div>
 
           <div className={s.tiersGrid}>
-            {TIERS.map((tier) => (
-              <div
-                key={tier.tag}
-                className={s.tierCard}
-              >
-                <span className={s.rangePill}>
-                  {tier.range} found
-                </span>
-                <div className={s.priceRow}>
-                  <span className={s.price}>
-                    {tier.price}
-                  </span>
-                  {tier.priceSub && (
-                    <span className={s.priceSub}>
-                      {tier.priceSub}
-                    </span>
-                  )}
-                </div>
-                <p className={s.tierTag}>{tier.tag}</p>
-                <p className={s.tierTagline}>{tier.tagline}</p>
-                <div className={s.keepLine}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  {tier.keepNote}
-                </div>
-                <Link
-                  className={s.tierBtn}
-                  href="/auth/sign-in"
+            {TIERS.map((tier) => {
+              // In beta, every paid tier is unlocked for free. The "Clean Bill"
+              // tier is already free at all times — no strikethrough applied.
+              const isPaidTier = tier.price !== 'Free';
+              const showStrikethrough = beta && isPaidTier;
+              return (
+                <div
+                  key={tier.tag}
+                  className={`${s.tierCard} ${showStrikethrough ? s.tierCardBeta : ''}`}
                 >
-                  Upload my bill
-                </Link>
-              </div>
-            ))}
+                  {showStrikethrough && (
+                    <span className={s.tierBetaBadge}>{BETA_COPY.paywall.badge}</span>
+                  )}
+                  <span className={s.rangePill}>
+                    {tier.range} found
+                  </span>
+                  <div className={s.priceRow}>
+                    {showStrikethrough ? (
+                      <>
+                        <span className={s.priceStrike}>{tier.price}</span>
+                        <span className={s.price}>Free</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={s.price}>{tier.price}</span>
+                        {tier.priceSub && (
+                          <span className={s.priceSub}>{tier.priceSub}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <p className={s.tierTag}>{tier.tag}</p>
+                  <p className={s.tierTagline}>{tier.tagline}</p>
+                  <div className={s.keepLine}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    {showStrikethrough ? 'You keep 100% during beta' : tier.keepNote}
+                  </div>
+                  <Link
+                    className={s.tierBtn}
+                    href="/auth/sign-in"
+                  >
+                    Upload my bill
+                  </Link>
+                </div>
+              );
+            })}
           </div>
 
           <p className={s.tiersNote}>
