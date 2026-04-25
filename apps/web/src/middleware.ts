@@ -69,7 +69,15 @@ export async function middleware(request: NextRequest) {
 
   const isPublicRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith('/auth/') || pathname.startsWith('/legal/')
-  ) || pathname === '/icon' || pathname === '/apple-icon' || pathname.startsWith('/blog') || pathname.startsWith('/ref/');
+  )
+    || pathname === '/icon'
+    || pathname === '/apple-icon'
+    // /opengraph-image is fetched by social scrapers (iMessage, WhatsApp, Slack,
+    // Twitter, Facebook) when a URL is shared. Auth-redirecting it returns a 307
+    // which scrapers don't follow → blank preview cards. Must stay public.
+    || pathname === '/opengraph-image'
+    || pathname.startsWith('/blog')
+    || pathname.startsWith('/ref/');
 
   if (!user && !isPublicRoute) {
     const signInUrl = request.nextUrl.clone();
