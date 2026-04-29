@@ -303,15 +303,26 @@
   flex-shrink: 0;
 }
 
-/* Grid: 1 → 2 → 4 */
+/* Grid breakpoints: 1 col → 2 → 3 → 5
+ *
+ * Five tiers as of 2026-04-29 (was four). The wide breakpoint stacks all
+ * five on a single row at >= 1100px so the whole pricing structure scans
+ * left-to-right in one band. Mid-range viewports use 3 columns (Free + 4
+ * paid wraps cleanly: 3 on top, 2 on bottom). Below 540px: single column.
+ *
+ * The card padding was tightened slightly so 5 cards fit at 1100px without
+ * forcing a horizontal scroll on a typical 13-inch laptop (1280px content
+ * width minus side gutters).
+ */
 .tiersGrid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1.1rem;
   align-items: stretch;
 }
-@media (min-width: 540px) { .tiersGrid { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 880px) { .tiersGrid { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 540px)  { .tiersGrid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 820px)  { .tiersGrid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1100px) { .tiersGrid { grid-template-columns: repeat(5, 1fr); } }
 
 /* Base card */
 .tierCard {
