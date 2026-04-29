@@ -74,7 +74,7 @@ const FAQS = [
   },
   {
     q: 'How is my tier determined?',
-    a: 'Your tier is set automatically based on the total dollar value of errors our AI finds. You see the tier and fee before any payment is taken.',
+    a: 'Your tier is set automatically based on the total dollar value of errors found in your bill. You see the tier and fee before any payment is taken — no surprise charges.',
   },
   {
     q: 'When am I charged?',
@@ -82,15 +82,19 @@ const FAQS = [
   },
   {
     q: 'What do I get in a paid tier?',
-    a: 'Every paid tier includes a full itemized error report, the specific billing codes violated, plain-English explanations, and a ready-to-send dispute letter tailored to your bill.',
+    a: 'Every paid tier includes a full itemized error report, plain-English explanations of each finding, and a ready-to-send dispute letter tailored to your bill.',
   },
   {
     q: 'How does this compare to a billing advocate?',
     a: 'Medical billing advocates typically charge 25–35% of recovered savings. On a $500 correction that would cost $125–$175. We charge a flat $79.99 — same outcome, far less cost. On a $1,500 correction (advocate fee $375–$525) we charge $199.99.',
   },
   {
+    q: 'Do you use my bill to train AI models?',
+    a: "No. We do not use your bill, your personal information, or any data you upload to train AI models — ours or anyone else's. We do not sell, license, or share your data with advertisers, data brokers, or third parties for marketing. Your bill is used only to produce your audit report and dispute letter.",
+  },
+  {
     q: 'Is my bill data kept private?',
-    a: 'Yes. Your bill is encrypted at upload, never stored beyond your session unless you create an account, and never sold or shared. We are HIPAA-aligned.',
+    a: 'Yes. Uploads are encrypted in transit and at rest. We retain your bill only as long as your account is active; you can delete it at any time. We never sell or share your data, and we are HIPAA-aligned in our handling of protected health information.',
   },
 ] as const;
 

@@ -6,32 +6,36 @@ import s from '@/app/page.module.css';
 const FAQS = [
   {
     q: 'What does ClaroBill do?',
-    a: 'ClaroBill uses AI to scan your medical bill for billing errors — duplicate charges, upcoding, unbundled procedures, and charges for services not rendered. We produce a plain-English error report and a ready-to-send dispute letter you submit directly to your insurer or hospital.',
+    a: 'ClaroBill reviews your medical bill for the kinds of errors that quietly inflate what patients pay — duplicate charges, miscoded procedures, services that were never rendered, and amounts that exceed what the hospital or your insurer has agreed to charge. You receive a plain-English report of every finding and a ready-to-send dispute letter you submit directly to your insurer or hospital.',
     defaultOpen: true,
   },
   {
     q: 'How does ClaroBill work?',
-    a: 'Upload your medical bill as a PDF or image. Our AI cross-references every charge against Medicare fee schedules and NCCI billing rules. Within minutes you receive a detailed error report and a professionally written dispute letter citing every violation by name.',
+    a: 'Upload your bill as a PDF or image. Our analysis engine inspects every line item against published industry rate references and standard billing rules. Within minutes you receive a detailed error report and a tailored dispute letter that names each finding and cites the basis for the dispute.',
   },
   {
     q: 'Do you negotiate on my behalf or contact the hospital?',
-    a: 'No — ClaroBill gives you the report and the letter; you send it. We believe patients should stay in control of their own disputes. Our job is to arm you with documentation so precise and well-cited that billing departments have no choice but to take it seriously.',
+    a: "No. ClaroBill gives you the report and the letter; you send it. Patients should stay in control of their own disputes — our job is to give you documentation so precise and well-cited that billing departments take it seriously.",
   },
   {
     q: 'Do you support my insurance plan?',
-    a: 'Yes — we connect with over 1,300 insurers and patient portals including BlueCross BlueShield, Aetna, Cigna, UnitedHealth, Oscar, and MyChart. We can also review bills for uninsured patients.',
+    a: 'Yes. We work across most major US health insurers including BlueCross BlueShield, Aetna, Cigna, UnitedHealth, Humana, Oscar, and Medicare/Medicaid. We also review bills for uninsured patients.',
   },
   {
     q: 'What does it cost?',
-    a: 'Your first scan is completely free — you see exactly how many errors were found before paying anything. The full report and dispute letter are available for a flat fee. No hidden costs, no percentage of savings taken.',
+    a: 'The analysis itself is always free — you see exactly how many errors were found before paying anything. If we find nothing, you pay nothing, ever. If we do find errors, the fee scales with the dollar value of the savings. See the pricing page for full tier details.',
   },
   {
     q: 'Can I add my partner, kids, or parents?',
     a: 'Yes. You can upload and review bills for any family member. Each bill is reviewed separately and generates its own report and dispute letter.',
   },
   {
+    q: 'Do you use my bill to train AI models?',
+    a: "No. We do not use your bill, your personal information, or any data you upload to train AI models — ours or anyone else's. We do not sell, license, or share your data with advertisers, data brokers, or third parties for marketing. Your bill is used only to produce your audit report and dispute letter.",
+  },
+  {
     q: 'Is my information safe with ClaroBill?',
-    a: 'Absolutely. We are HIPAA-aligned with end-to-end encryption on all uploads. Your bill is processed securely and never sold or shared with third parties.',
+    a: 'Yes. Uploads are encrypted in transit and at rest. Access is restricted to the systems that produce your report and is logged for audit. We are HIPAA-aligned in our handling of protected health information. We retain your bill only as long as your account is active; you can delete it at any time. We never sell or share your data.',
   },
 ] as const;
 
