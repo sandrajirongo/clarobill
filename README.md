@@ -49,15 +49,23 @@ their own data.
 
 ### BigQuery (`clarobill-prd.hospital_prices`) — price transparency data
 Stores hospital price transparency data from CMS Machine Readable Files (MRF):
-- `hospital_directory` — 3,100+ US hospitals with NPI, name, MRF URL
-- `hospital_charges` — per-hospital, per-CPT-code charges including:
+- `hospital_directory` — US hospitals with CCN, NPI, name, MRF URL (~13,833 after CMS-direct discovery cleanup; was ~3,100 under the legacy Payerset seed)
+- `hospital_charges` — per-hospital, per-CPT-code charges keyed by `pricing_effective_year` (NOT NULL), including:
   - `gross_charge` — hospital's own published list price (chargemaster)
   - `negotiated_charge` — insurer-specific contracted rate per payer/plan combination
   - `discounted_cash_price` — self-pay rate
+- `mrf_archive_index` — canonical index of every MRF file archived to GCS, keyed by (hospital_npi, pricing_effective_year, sha256). Drives the parser's work queue.
+- `mrf_discovery_checkpoint` — per-run state for the annual hospital-discovery pipeline. One row per (run_id, ccn) with stage-completion timestamps for resumability.
+- `mrf_discovery_runs` — annual summary, one row per discovery run.
+- `hospital_charges_legacy_stale` — frozen snapshot of pre-effective-dating charges. Do NOT read from this; the rules engine uses `hospital_charges` only.
 
 BigQuery is used for these tables because:
-1. **Scale** — a single hospital's MRF can contain millions of rows (every CPT × every payer × every plan). At 3,100+ hospitals the full dataset is in the billions of rows, which is impractical in Postgres.
+1. **Scale** — a single hospital's MRF can contain millions of rows (every CPT × every payer × every plan). At 13,000+ hospitals the full dataset is in the billions of rows, which is impractical in Postgres.
 2. **Write pattern** — MRF data is bulk-replaced weekly (DELETE + load), not incrementally updated. BigQuery load jobs are purpose-built for this.
+3. **Effective dating** — `hospital_charges` is partitioned by `pricing_effective_year` so a 2026 bill is always evaluated against the 2026 chargemaster, never a future-dated re-publication. Critical for correctness; see `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md`.
+
+### GCS (`gs://mrf-archive-clarobill-prd`) — immutable historical archive
+Coldline bucket holding every MRF file ever downloaded, partitioned by `pricing-year={year}/{hospital_npi}/{sha256_first16}.{ext}`. The pipeline service account has `objectCreator + objectViewer` only (no delete). This is the chain-of-custody vault — if a patient ever cites a ClaroBill audit in a dispute, we can produce the exact MRF that was in force on the bill's service date, years later.
 3. **Query pattern** — The engine issues narrow point queries (specific NPI + CPT codes + payer/plan). BigQuery's columnar storage makes these fast even at scale.
 
 The engine queries BigQuery during bill analysis using Application Default
@@ -94,14 +102,21 @@ Credentials (`clarobill-vision-sa` service account).
 
 See `docs/rules-engine.md` for complete rule documentation.
 
-### MRF Pipeline (weekly)
-A Cloud Run Jobs pipeline scrapes and parses hospital price transparency files:
-- **Scraper** — checks HTTP Last-Modified on 3,100+ hospital MRF URLs, downloads changed files to GCS
-- **Parser** — parses CMS MRF v2.0.0 JSON, loads normalised charge rows into BigQuery
+### Pipelines (scheduled)
 
-Runs every Tuesday: scraper at 02:00 UTC, parser at 06:00 UTC.
+ClaroBill operates two distinct pipelines on different cadences:
 
-See `docs/gcp-architecture.md` for full GCP architecture, service accounts, and IAM.
+**Weekly MRF scrape/parse** — Cloud Run Jobs that keep `hospital_charges` fresh:
+- **Scraper** (Tue 02:00 UTC) — checks HTTP Last-Modified on every hospital_directory MRF URL, downloads changed files to `gs://mrf-staging` and (Phase 4 onward) `gs://mrf-archive-clarobill-prd` partitioned by `pricing_effective_year`
+- **Parser** (Tue 06:00 UTC) — reads pending rows from `mrf_archive_index`, parses CMS MRF v2.0.0 JSON, loads normalised charge rows into `hospital_charges` with `pricing_effective_year` populated
+
+**Annual MRF discovery** — Six-stage pipeline that refreshes `hospital_directory`:
+- Currently run manually via `scripts/mrf_discovery/stage*.py`
+- Will move to a Cloud Run Job + Cloud Scheduler trigger (Phase 3g, planned)
+- Target cadence: once per year (early January, after CMS January re-publication deadline)
+- Sources: CMS PI list, CMS POS file, NPPES Registry API, Wikidata SPARQL, then per-hospital website crawl
+
+See `docs/operations.md` for the full pipeline runbook (schedules, dependencies, what to check when something fails) and `docs/gcp-architecture.md` for service accounts and IAM.
 
 ---
 
@@ -124,20 +139,35 @@ clarobill/
 │       └── tests/
 ├── packages/
 │   └── shared/                  # Shared TypeScript types (Bill, BillingError, etc.)
-├── pipeline/                    # MRF scraper + parser (Cloud Run Jobs)
+├── pipeline/                    # Weekly MRF scraper + parser (Cloud Run Jobs)
 │   ├── scrape_hospital_mrfs.py  # Downloads MRF files to GCS
 │   ├── parse_hospital_mrfs.py   # Parses MRF JSON → BigQuery
 │   ├── hospital_mrf_utils.py    # CMS MRF v2.0.0 stream parser
 │   ├── deploy.sh                # Build image, create/update jobs + schedules
 │   └── Dockerfile
-├── scripts/                     # CMS reference data load scripts (run once/annually)
+├── scripts/                     # Data loaders run on cadences from quarterly to one-time
+│   ├── load_*.py                # Annual CMS reference-data loaders (PFS, NCCI, OPPS, etc.)
+│   ├── refresh_cms_data.py      # Orchestrates the annual CMS loaders
+│   ├── seed_payer_normalizations.py
+│   └── mrf_discovery/           # Annual hospital MRF discovery pipeline (CMS-direct)
+│       ├── migrate_bq_schema.py        # One-time BQ schema migration
+│       ├── setup_archive_bucket.sh     # One-time GCS archive bucket provisioning
+│       ├── bq_checkpoint.py            # Shared resumable-checkpoint helpers
+│       ├── archive_layout.py           # GCS path scheme for MRF archive
+│       ├── nppes_client.py             # NPPES Registry API client
+│       ├── stage1_cms_hospital_list.py # CMS PI hospital list seeder
+│       ├── stage2_pos_file.py          # CMS POS file enricher
+│       ├── stage2_npi_registry.py      # NPI lookups via NPPES Registry API
+│       └── stage2_wikidata.py          # Wikidata SPARQL website seeder
 ├── supabase/
 │   └── migrations/              # Supabase schema migrations
 └── docs/
-    ├── rules-engine.md          # All 10 rules documented
+    ├── rules-engine.md          # All rules documented
     ├── user-workflow.md         # Full user journey + verification flow
     ├── gcp-architecture.md      # GCP services, IAM, pipelines, data flow
-    └── mrf-discovery-pipeline.md
+    ├── operations.md            # Pipeline runbook — what runs when, what to check on failure
+    ├── decisions/               # Architecture decision records
+    └── future_improvements/     # Planned enhancements
 ```
 
 ---
@@ -240,6 +270,20 @@ bash pipeline/deploy.sh
 ```
 
 See `docs/gcp-architecture.md` for complete GCP setup instructions.
+
+---
+
+## Beta Status (2026)
+
+ClaroBill is in beta. Pricing tiers are locked in (`apps/web/src/lib/pricing.ts`) but charges are bypassed via `NEXT_PUBLIC_BETA_MODE=true` until General Availability.
+
+| Phase | Window | Audience | State |
+|---|---|---|---|
+| Closed beta | now → 2026-05-31 | invite-only, ~50–100 users | active |
+| Open beta | 2026-06-01 → 2026-06-30 OR 200 bills processed (whichever first) | public, free signup | upcoming |
+| GA | 2026-07-02 onward | public, paid | upcoming |
+
+GA flips `NEXT_PUBLIC_BETA_MODE` to `false` in Vercel and activates Stripe. Full timeline + tier values at `docs/pricing.md`.
 
 ---
 

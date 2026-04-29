@@ -1,0 +1,41 @@
+# ClaroBill MRF Discovery Pipeline — annual discovery Cloud Run Job image.
+#
+# Separate image from the weekly scraper/parser (pipeline/Dockerfile) because:
+#   1. Weekly jobs run 52x/year; faster cold starts matter.
+#   2. The discovery pipeline has different deps (NPPES API client, Places
+#      API client, Wikidata SPARQL, BeautifulSoup-style URL verification).
+#   3. The discovery pipeline does NOT need the heavy MRF JSON streaming
+#      libraries (ijson) that the weekly parser uses.
+#
+# Both images share the same service account (clarobill-pipeline-sa) so they
+# read/write the same BQ + GCS resources.
+#
+# Build context is the REPO ROOT (NOT pipeline/), because the discovery
+# scripts live in scripts/mrf_discovery/, not pipeline/. Build command:
+#
+#   gcloud builds submit \
+#     --tag us-central1-docker.pkg.dev/clarobill-prd/clarobill-pipeline/mrf-discovery:latest \
+#     --file pipeline/Dockerfile.discovery \
+#     .
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies before copying source so this layer is cached across
+# code-only changes.
+COPY pipeline/requirements.discovery.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy the discovery scripts. The orchestrator at scripts/discover_mrf_pipeline.py
+# imports from scripts/mrf_discovery/, so the directory layout must mirror the
+# repo's scripts/ exactly.
+COPY scripts/discover_mrf_pipeline.py /app/scripts/
+COPY scripts/mrf_discovery/ /app/scripts/mrf_discovery/
+
+ENV LOG_LEVEL=INFO
+ENV PYTHONUNBUFFERED=1
+
+# Default entrypoint runs the full annual pipeline. Cloud Run Job creation
+# can override via --command or --args at deploy time if needed.
+CMD ["python", "/app/scripts/discover_mrf_pipeline.py", "--project", "clarobill-prd"]

@@ -1,0 +1,10 @@
+# Annual MRF discovery pipeline requirements (separate from weekly scraper/parser).
+# Pin exact versions so the Cloud Run Job is reproducible. Update via a
+# manual `pip-compile`-equivalent process when bumping deps; do not let
+# pip resolve floating versions in production.
+
+google-cloud-bigquery==3.25.0
+google-cloud-storage==2.18.2
+google-cloud-secret-manager==2.20.0
+google-auth==2.29.0
+requests==2.31.0

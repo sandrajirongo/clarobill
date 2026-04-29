@@ -461,8 +461,9 @@ code (bundled codes often have both proc_stat='B' and MUE=0; only one finding fi
 | `cms_opps_cap` | CMS OPPS Addendum B files | `scripts/load_opps_cap.py` |
 | `cms_ambulance_rates` | CMS AFS PUF files | `scripts/load_ambulance_rates.py` |
 | `cms_ambulance_zip_locality` | CMS AFS ZIP5 fixed-width files | `scripts/load_ambulance_zip_locality.py` |
-| `hospital_directory` | Payerset hospital scrape (~3,100+ hospitals) | `pipeline/scrape_hospital_mrfs.py` |
-| `hospital_charges` | CMS MRF price transparency files | `pipeline/parse_hospital_mrfs.py` |
+| `hospital_directory` | CMS-direct discovery pipeline (~13,833 US civilian hospitals) | `scripts/mrf_discovery/stage*.py` (annual) |
+| `hospital_charges` | CMS MRF price transparency files (effective-dated by year) | `pipeline/parse_hospital_mrfs.py` (weekly) |
+| `mrf_archive_index` | Canonical index of MRF files archived to GCS | `pipeline/scrape_hospital_mrfs.py` (weekly, Phase 4 onward) |
 | `payer_name_aliases` | Manual curation + CMS payer taxonomy | `scripts/seed_payer_normalizations.py` |
 
 ---
@@ -481,9 +482,14 @@ See `docs/future_improvements/` for detailed design docs on:
   only benchmark — and it only catches extreme outliers, not the typical 10–30%
   above-contract overcharge. See `commercial-rate-benchmarking.md`.
 
-- **MRF discovery pipeline:** Current coverage is ~3,100 of ~7,000 US hospitals.
-  Expanding to full coverage increases NEGOTIATED_RATE_EXCEEDED hit rate from ~45%
-  to ~98% of hospitals. See `mrf-discovery-pipeline.md`.
+- **MRF discovery pipeline:** Pivoted on 2026-04-28 from third-party Payerset scrape
+  (~3,100 hospitals) to CMS-direct discovery (~13,833 US civilian hospitals after
+  filtering distinct-part units, federal facilities, and non-US rows). Phase 1-2
+  done + applied to BQ; Stages 1-2 of discovery shipped + applied; Stages 3-6
+  pending. Effective-dating (`pricing_effective_year`) is enforced at schema level
+  to prevent comparing a 2026 bill against an unknown-vintage chargemaster.
+  See `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md` and
+  `docs/future_improvements/mrf-discovery-pipeline.md`.
 
 ---
 
