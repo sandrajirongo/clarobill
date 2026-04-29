@@ -1,8 +1,19 @@
 # Phase 4: Effective-Dated Archiver + Parser — Design Proposal
 
 **Date:** 2026-04-29
-**Status:** Designed — code not started; awaiting Sandra approval before implementation
+**Status:** Approved by Sandra 2026-04-29 (decisions in-line below); implementation starting same day.
 **Phase:** 4 of 6 (post Phase 3 = MRF discovery; pre Phase 5 = rules engine cutover)
+
+## Sandra's decisions (2026-04-29)
+
+| Question | Decision |
+|---|---|
+| Q1 — archive key NPI vs CCN | Mixed keys, AND actively backfill NPI when the parser extracts it from MRF JSON root. Hospitals starting with CCN-keyed archives get their NPI written back to `hospital_directory.hospital_npi` once a parseable MRF lands. |
+| Q2 — legacy table fate | Keep `hospital_charges_legacy_stale` and **tag every row with `pricing_effective_year = 2025`**. Rationale: Payerset data was scraped during 2025-2026 from MRFs hospitals published throughout 2025; tagging as 2025 makes it queryable as 2025-vintage data instead of "unknown vintage." |
+| Q3 — re-publish handling | Append-only + query MAX(scraped_at). **Plus operational change:** hospitals publish twice/year (Feb + Aug), so the Phase 3 annual discovery schedule moves from Jan-15-only to **Feb 1 + Aug 1** (two annual runs to catch both publication waves). |
+| Q4 — concurrency | **Bump from 20 → 60.** Hospital list is large (~13,833) and per-server load stays at 1 concurrent (we hit 13,833 different domains, not one origin). |
+| Q5a — stuck-pending bug | Fix in Phase 4: set `website_found_at = NOW()` for Tier 3 `no_result` and `ambiguous_no_verify` outcomes. Apply this fix to `stage3_tier3_places.py` immediately. |
+| Q5b — parse robustness | **"Make parsing as functional as possible — we don't want to end up with almost no data because of parsing issues."** Phase 4 parser implements multi-strategy fallback: v2.0.0 strict → v2.0.0 lenient → CSV fallback → XLSX fallback → log specific error category. Per-row error tolerance: one bad row doesn't kill the whole file. |
 
 ---
 

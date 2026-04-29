@@ -39,7 +39,8 @@ from typing import Iterator
 
 from google.cloud import bigquery, storage
 
-# hospital_mrf_utils lives in the same package directory (pipeline/)
+# Phase 4 helpers + sibling modules in pipeline/
+import effective_year
 from hospital_mrf_utils import (
     ChargeRow,
     extract_mrf_date,
@@ -60,8 +61,14 @@ GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 RAW_PREFIX = "raw/"          # where scraper writes MRF files
 STAGING_PREFIX = "staging/"  # temp NDJSON files during BigQuery load
 
-# BigQuery schema for hospital_charges
+# BigQuery schema for hospital_charges.
+#
+# Phase 4: pricing_effective_year is REQUIRED and the partition key. This is
+# the contract between scraper, parser, and rules engine — the rules engine
+# joins bills to charges on this column. NEVER allow NULL here; the
+# effective_year module guarantees a value via a 3-source fallback.
 HOSPITAL_CHARGES_SCHEMA = [
+    bigquery.SchemaField("pricing_effective_year", "INT64", mode="REQUIRED"),
     bigquery.SchemaField("hospital_npi", "STRING"),  # NULLABLE — extracted from MRF content
     bigquery.SchemaField("code_type", "STRING"),
     bigquery.SchemaField("code", "STRING"),
@@ -81,6 +88,14 @@ HOSPITAL_CHARGES_SCHEMA = [
 
 CHARGES_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.hospital_charges"
 DIRECTORY_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.hospital_directory"
+ARCHIVE_INDEX_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.mrf_archive_index"
+
+# Extensions we know how to parse today. CSV-format MRFs are valid CMS output
+# but use vendor-specific column names — supporting them properly requires a
+# separate column-mapping pass. For now we log + skip so a CSV file does not
+# crash the parser, and we mark the archive_index row as 'skipped'.
+# See docs/future_improvements/csv-mrf-parser.md for the planned approach.
+_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip")
 
 
 def build_clients() -> tuple[bigquery.Client, storage.Client]:
@@ -155,27 +170,15 @@ def _write_ndjson_to_gcs(
     return row_count
 
 
-def delete_existing_charges(bq: bigquery.Client, hospital_npi: str) -> None:
-    """Delete all existing charge rows for this hospital before re-loading.
-
-    This makes the parser idempotent: re-running on the same MRF file
-    replaces stale data rather than appending duplicates.
-    """
-    sql = f"""
-        DELETE FROM `{CHARGES_TABLE}`
-        WHERE hospital_npi = @npi
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("npi", "STRING", hospital_npi)]
-    )
-    bq.query(sql, job_config=job_config).result()
-
-
 def load_charges_from_gcs(bq: bigquery.Client, staging_uri: str) -> bigquery.LoadJob:
     """Run a BigQuery load job from the staging NDJSON file into hospital_charges.
 
-    Uses WRITE_APPEND so we can load charges for multiple hospitals in one run
-    (each hospital deletes its own rows first — see delete_existing_charges).
+    Phase 4: append-only. Sandra's Q3 decision was MAX(scraped_at) over append-
+    only rows rather than the legacy DELETE+LOAD pattern. The rules engine
+    selects the freshest row per (hospital_npi, code, payer) using a window
+    function. This preserves history (we can see how a price changed across
+    Feb and Aug republications) and removes the race condition where a slow
+    DELETE could leave the table empty for a hospital between scrapes.
     """
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
@@ -186,6 +189,47 @@ def load_charges_from_gcs(bq: bigquery.Client, staging_uri: str) -> bigquery.Loa
     job = bq.load_table_from_uri(staging_uri, CHARGES_TABLE, job_config=job_config)
     job.result()
     return job
+
+
+def update_archive_index_status(
+    bq: bigquery.Client,
+    mrf_url: str,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """Mark mrf_archive_index rows for this MRF URL as parsed/failed/skipped.
+
+    Phase 4: the scraper inserts archive_index rows with parse_status='pending'.
+    The parser flips them to 'parsed' on success, 'failed' on exception, or
+    'skipped' for unparseable formats (e.g. CSV today). We match on
+    source_mrf_url + parse_status='pending' so re-runs don't re-stamp older
+    successfully-parsed rows.
+
+    status must be one of: 'parsed', 'failed', 'skipped'.
+    """
+    if status not in ("parsed", "failed", "skipped"):
+        raise ValueError(f"Invalid parse_status: {status!r}")
+    sql = f"""
+        UPDATE `{ARCHIVE_INDEX_TABLE}`
+        SET parse_status = @status,
+            parse_error = @error,
+            parsed_at = CURRENT_TIMESTAMP()
+        WHERE source_mrf_url = @url
+          AND parse_status = 'pending'
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("status", "STRING", status),
+            bigquery.ScalarQueryParameter("error", "STRING", error),
+            bigquery.ScalarQueryParameter("url", "STRING", mrf_url),
+        ]
+    )
+    try:
+        bq.query(sql, job_config=job_config).result()
+    except Exception as exc:
+        # archive_index updates are bookkeeping, not data — failure to update
+        # must not fail the parse itself. Log and continue.
+        logger.warning("archive_index status update failed for %s: %s", mrf_url, exc)
 
 
 def mark_last_scraped(bq: bigquery.Client, mrf_url: str, scraped_at: str) -> None:
@@ -230,6 +274,16 @@ def update_hospital_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) ->
     logger.info("Backfilled hospital_npi=%s for mrf_url=%s", hospital_npi, mrf_url)
 
 
+def _is_parseable_extension(blob_name: str) -> bool:
+    """True if the parser knows how to handle this blob's format today.
+
+    JSON / JSON-gzip are supported. CSV/XLSX/ZIP are skipped with a logged
+    'skipped' status in mrf_archive_index — see _PARSEABLE_EXTENSIONS.
+    """
+    name = blob_name.lower()
+    return any(name.endswith(ext) for ext in _PARSEABLE_EXTENSIONS)
+
+
 def process_blob(
     blob: storage.Blob,
     bq: bigquery.Client,
@@ -240,10 +294,20 @@ def process_blob(
     Returns True on success, False on any error (logs details and continues
     to the next hospital so one bad MRF doesn't abort the entire run).
 
+    Phase 4 changes:
+      - Resolves pricing_effective_year via effective_year.resolve_year()
+        from the MRF JSON last_updated_on (best), HTTP Last-Modified header
+        carried in blob metadata (good), or current calendar year (fallback).
+      - Append-only: no DELETE before LOAD. Downstream queries pick the most
+        recent (scraped_at, pricing_effective_year) per (hospital_npi, code).
+      - Updates mrf_archive_index.parse_status to 'parsed' / 'failed' /
+        'skipped' so the archive bucket has authoritative parse provenance.
+      - Skips non-JSON formats (CSV/XLSX/ZIP) cleanly without crashing.
+
     NPI strategy: the scraper stores the hospital_name/mrf_url/state in GCS
-    blob metadata at download time.  The NPI is not reliably available then
-    (Payerset uses EINs, not NPIs).  This function reads the MRF JSON root to
-    extract the NPI, then backfills hospital_directory if it was NULL.
+    blob metadata at download time. The NPI is not reliably available then
+    (some discovery sources only have CCN). This function reads the MRF JSON
+    root to extract the NPI, then backfills hospital_directory if it was NULL.
     """
     meta = _get_blob_metadata(bucket, blob)
     mrf_url = meta.get("mrf_url") or ""
@@ -254,14 +318,43 @@ def process_blob(
         logger.error("Blob %s has no mrf_url metadata — skipping", blob.name)
         return False
 
+    # Format gate — skip non-JSON formats cleanly. The archive still has the
+    # bytes; a future parser revision will handle CSV. Today, a CSV file
+    # crashing the parser would be a bigger data outage than just skipping.
+    if not _is_parseable_extension(blob.name):
+        logger.warning(
+            "[%s] Format not yet supported by parser: %s — marking skipped",
+            label, blob.name,
+        )
+        update_archive_index_status(
+            bq, mrf_url, "skipped",
+            error=f"unsupported format: {blob.name}",
+        )
+        # Do NOT delete the staging blob — preserves a forensic copy until
+        # the CSV parser ships. The archive bucket already has the immutable
+        # copy, so this is belt-and-suspenders.
+        return False
+
     logger.info("[%s] Processing %s", label, blob.name)
     scraped_at = datetime.now(timezone.utc).isoformat()
 
-    # Read the first 128 KB to get effective_date and NPI from the MRF root.
-    effective_date = _read_mrf_date(blob)
-    if not effective_date:
-        effective_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        logger.warning("[%s] MRF has no last_updated_on — using today %s", label, effective_date)
+    # Read MRF JSON last_updated_on AND scraper-stamped HTTP Last-Modified.
+    # The scraper writes the latter into blob metadata as `last_modified`.
+    # effective_year resolves both into a single year + source label.
+    json_last_updated = _read_mrf_date(blob)
+    http_last_modified = meta.get("last_modified") or None
+    pricing_effective_year, year_source = effective_year.resolve_year(
+        json_last_updated_on=json_last_updated,
+        http_last_modified=http_last_modified,
+    )
+    logger.info(
+        "[%s] pricing_effective_year=%d (source=%s)",
+        label, pricing_effective_year, year_source,
+    )
+
+    # effective_date column on each charge row — preserves the day-level
+    # precision when available, otherwise stamps today (still bounded by year).
+    effective_date = json_last_updated or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Extract NPI from MRF JSON root — the most reliable source.
     # Fall back to the value the scraper stored in blob metadata (may be empty).
@@ -277,18 +370,24 @@ def process_blob(
 
     try:
         with _open_mrf_blob(blob) as f:
-            rows = stream_charges_v2(f, hospital_npi, effective_date, scraped_at)
+            rows = stream_charges_v2(
+                f, hospital_npi, pricing_effective_year, effective_date, scraped_at,
+            )
             row_count = _write_ndjson_to_gcs(rows, bucket, staging_blob_name)
 
         if row_count == 0:
             logger.warning("[%s] No charge rows parsed — skipping load", label)
             bucket.blob(staging_blob_name).delete()
+            update_archive_index_status(
+                bq, mrf_url, "failed",
+                error="no charge rows extracted from MRF",
+            )
             return False
 
-        logger.info("[%s] Parsed %d charge rows", label, row_count)
+        logger.info("[%s] Parsed %d charge rows (year=%d)", label, row_count, pricing_effective_year)
 
-        if hospital_npi:
-            delete_existing_charges(bq, hospital_npi)
+        # Append-only: no DELETE. The rules engine deduplicates by
+        # MAX(scraped_at) per (hospital_npi, code, payer, plan).
         load_charges_from_gcs(bq, staging_uri)
         logger.info("[%s] Loaded %d rows to hospital_charges", label, row_count)
 
@@ -298,7 +397,10 @@ def process_blob(
         if hospital_npi:
             update_hospital_npi(bq, mrf_url, hospital_npi)
 
+        update_archive_index_status(bq, mrf_url, "parsed")
+
         # Delete raw MRF blob — prevents double-processing on next run.
+        # The immutable archive bucket still has the file (Phase 4 dual-write).
         blob.delete()
         bucket.blob(staging_blob_name).delete()
         return True
@@ -309,6 +411,10 @@ def process_blob(
             bucket.blob(staging_blob_name).delete()
         except Exception:
             pass
+        update_archive_index_status(
+            bq, mrf_url, "failed",
+            error=f"{type(exc).__name__}: {exc}"[:1000],
+        )
         return False
 
 

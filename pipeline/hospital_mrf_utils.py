@@ -39,6 +39,11 @@ _METHODOLOGY_KEYS = ("methodology", "standard_charge_type")
 class ChargeRow:
     """One normalised charge row ready for BigQuery insertion."""
 
+    # Phase 4: partition key. Every row carries the year of the MRF it came
+    # from so the rules engine can join 2026 bills to 2026 charges (and a
+    # fallback to 2025 if no 2026 data exists for that hospital). Resolved
+    # by pipeline.effective_year.resolve_year() at parse time.
+    pricing_effective_year: int
     hospital_npi: str
     code_type: str
     code: str
@@ -58,6 +63,7 @@ class ChargeRow:
     def to_bq_row(self) -> dict[str, Any]:
         """Serialise to a BigQuery-compatible dict."""
         return {
+            "pricing_effective_year": self.pricing_effective_year,
             "hospital_npi": self.hospital_npi,
             "code_type": self.code_type,
             "code": self.code,
@@ -156,6 +162,7 @@ def _first(d: dict[str, Any], keys: tuple[str, ...]) -> Any:
 def stream_charges_v2(
     file_obj: BinaryIO,
     hospital_npi: str,
+    pricing_effective_year: int,
     effective_date: str,
     scraped_at: str,
 ) -> Generator[ChargeRow, None, None]:
@@ -168,9 +175,19 @@ def stream_charges_v2(
     no payer-specific rates, emits one row with payer_name=None so that gross
     charge and cash price data is not lost.
 
+    Phase 4 (Sandra Q5b — "make parsing as functional as possible"):
+      - Per-item try/except so a single malformed charge entry doesn't kill
+        the rest of the file. We log the error and keep streaming.
+      - File-level fallback chain: if both _CHARGE_INFO_KEYS variants fail,
+        we log the structural reason rather than silently emitting zero rows.
+
     Args:
         file_obj: Binary file-like object pointing to an MRF JSON file.
         hospital_npi: The NPI of the hospital this file belongs to.
+        pricing_effective_year: Year the MRF's prices apply to. Resolved by
+            pipeline.effective_year.resolve_year() — see that module for the
+            three-source fallback (JSON last_updated_on, HTTP Last-Modified,
+            current calendar year).
         effective_date: ISO date string to use as effective_date on all rows.
         scraped_at: ISO datetime string (UTC) to use as scraped_at on all rows.
 
@@ -183,9 +200,31 @@ def stream_charges_v2(
         try:
             items = ijson.items(file_obj, f"{root_key}.item")
             row_count = 0
+            bad_items = 0
             for item in items:
-                yield from _expand_charge_item(item, hospital_npi, effective_date, scraped_at)
-                row_count += 1
+                # Per-item tolerance: a single weird charge object (missing
+                # required keys, wrong types, etc.) does not abort the whole
+                # file. We log and skip to the next item. At ~13k hospitals,
+                # one bad item per file would be a survivable rounding error;
+                # one bad item killing a whole hospital is a data outage.
+                try:
+                    yield from _expand_charge_item(
+                        item, hospital_npi, pricing_effective_year,
+                        effective_date, scraped_at,
+                    )
+                    row_count += 1
+                except Exception as exc:  # noqa: BLE001 — see comment above
+                    bad_items += 1
+                    if bad_items <= 5:
+                        logger.warning(
+                            "Skipping malformed charge item for NPI %s: %s",
+                            hospital_npi, exc,
+                        )
+            if bad_items:
+                logger.warning(
+                    "NPI %s: %d malformed items skipped out of %d total",
+                    hospital_npi, bad_items, row_count + bad_items,
+                )
             logger.info(
                 "Parsed %d charge items for NPI %s (key=%s)",
                 row_count,
@@ -197,6 +236,19 @@ def stream_charges_v2(
             # File ended prematurely or wrong key — try next candidate
             file_obj.seek(0)
             continue
+        except Exception as exc:  # noqa: BLE001 — robustness over strictness
+            # ijson can raise UnicodeDecodeError, JSONDecodeError, or vendor-
+            # specific errors on truly broken files. Try the next root key
+            # before giving up entirely.
+            logger.warning(
+                "Unexpected error parsing NPI %s with key=%s: %s — trying next variant",
+                hospital_npi, root_key, exc,
+            )
+            try:
+                file_obj.seek(0)
+            except Exception:
+                pass
+            continue
 
     logger.warning("No standard_charge_information found for NPI %s", hospital_npi)
 
@@ -204,6 +256,7 @@ def stream_charges_v2(
 def _expand_charge_item(
     item: dict[str, Any],
     hospital_npi: str,
+    pricing_effective_year: int,
     effective_date: str,
     scraped_at: str,
 ) -> Generator[ChargeRow, None, None]:
@@ -237,6 +290,7 @@ def _expand_charge_item(
             if payers:
                 for payer in payers:
                     yield ChargeRow(
+                        pricing_effective_year=pricing_effective_year,
                         hospital_npi=hospital_npi,
                         code_type=code_type,
                         code=code,
@@ -257,6 +311,7 @@ def _expand_charge_item(
                 # No payer rates — emit a single row with gross charge + cash price only.
                 # These are still valuable for ABOVE_GROSS_CHARGE comparisons.
                 yield ChargeRow(
+                    pricing_effective_year=pricing_effective_year,
                     hospital_npi=hospital_npi,
                     code_type=code_type,
                     code=code,

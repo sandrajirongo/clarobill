@@ -33,8 +33,13 @@ PIPELINE_SA="clarobill-pipeline-sa@${PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA="clarobill-scheduler-sa@${PROJECT}.iam.gserviceaccount.com"
 
 JOB_NAME="clarobill-mrf-discovery"
-SCHEDULE_NAME="clarobill-mrf-discovery-annual"
-SCHEDULE_CRON="0 2 15 1 *"  # 02:00 UTC on January 15 every year
+# Bi-annual schedule (decided 2026-04-29 in Phase 4 design Q3): hospitals
+# republish their chargemasters in February and August, so the discovery
+# pipeline runs both times to catch each publication wave.
+SCHEDULE_FEB_NAME="clarobill-mrf-discovery-feb"
+SCHEDULE_AUG_NAME="clarobill-mrf-discovery-aug"
+SCHEDULE_FEB_CRON="0 2 1 2 *"  # 02:00 UTC on February 1 every year
+SCHEDULE_AUG_CRON="0 2 1 8 *"  # 02:00 UTC on August 1 every year
 
 echo "==> Building and pushing image (${IMAGE})..."
 echo "    Build context is the repo root so the Docker COPY paths can find"
@@ -89,31 +94,41 @@ gcloud run jobs add-iam-policy-binding "${JOB_NAME}" \
   --role "roles/run.jobsExecutor" \
   --project "${PROJECT}"
 
-echo "==> Creating/updating Cloud Scheduler trigger ${SCHEDULE_NAME}..."
-echo "    Schedule: ${SCHEDULE_CRON}  (02:00 UTC on Jan 15 every year)"
-gcloud scheduler jobs create http "${SCHEDULE_NAME}" \
-  --location "${REGION}" \
-  --schedule "${SCHEDULE_CRON}" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
-  --http-method POST \
-  --oauth-service-account-email "${SCHEDULER_SA}" \
-  --description "Annual MRF discovery pipeline — runs Jan 15 each year" \
-  --project "${PROJECT}" \
-  2>/dev/null || \
-gcloud scheduler jobs update http "${SCHEDULE_NAME}" \
-  --location "${REGION}" \
-  --schedule "${SCHEDULE_CRON}" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
-  --http-method POST \
-  --oauth-service-account-email "${SCHEDULER_SA}" \
-  --description "Annual MRF discovery pipeline — runs Jan 15 each year" \
-  --project "${PROJECT}"
+_create_or_update_schedule() {
+  local name="$1"
+  local cron="$2"
+  local description="$3"
+  echo "==> Creating/updating Cloud Scheduler trigger ${name} (${cron})..."
+  gcloud scheduler jobs create http "${name}" \
+    --location "${REGION}" \
+    --schedule "${cron}" \
+    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
+    --http-method POST \
+    --oauth-service-account-email "${SCHEDULER_SA}" \
+    --description "${description}" \
+    --project "${PROJECT}" \
+    2>/dev/null || \
+  gcloud scheduler jobs update http "${name}" \
+    --location "${REGION}" \
+    --schedule "${cron}" \
+    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
+    --http-method POST \
+    --oauth-service-account-email "${SCHEDULER_SA}" \
+    --description "${description}" \
+    --project "${PROJECT}"
+}
+
+_create_or_update_schedule "${SCHEDULE_FEB_NAME}" "${SCHEDULE_FEB_CRON}" \
+  "MRF discovery — February run (catches Jan 1 republish wave)"
+_create_or_update_schedule "${SCHEDULE_AUG_NAME}" "${SCHEDULE_AUG_CRON}" \
+  "MRF discovery — August run (catches mid-year republish wave)"
 
 echo ""
 echo "==> Discovery pipeline deployed."
-echo "    Job:       ${JOB_NAME}"
-echo "    Schedule:  ${SCHEDULE_NAME}  (${SCHEDULE_CRON})"
-echo "    Image:     ${IMAGE}"
+echo "    Job:        ${JOB_NAME}"
+echo "    Schedule 1: ${SCHEDULE_FEB_NAME}  (${SCHEDULE_FEB_CRON} — Feb 1 02:00 UTC)"
+echo "    Schedule 2: ${SCHEDULE_AUG_NAME}  (${SCHEDULE_AUG_CRON} — Aug 1 02:00 UTC)"
+echo "    Image:      ${IMAGE}"
 echo ""
 echo "    Manual trigger (uses default args — full annual run, \$450 ceiling):"
 echo "      gcloud run jobs execute ${JOB_NAME} --region ${REGION}"

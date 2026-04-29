@@ -43,6 +43,10 @@ from typing import Any
 import requests
 from google.cloud import bigquery, storage
 
+# Phase 4 helpers — pulled from sibling files in pipeline/
+import effective_year
+import archive_writer
+
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -52,11 +56,17 @@ logger = logging.getLogger(__name__)
 GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "clarobill-prd")
 BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "hospital_prices")
 GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
+# Phase 4 archive bucket (immutable historical). Dual-write: every download
+# lands in BOTH mrf-staging (legacy parser path, ephemeral) AND mrf-archive
+# (year-partitioned, immutable). Parser reads from staging today; future
+# parser revision reads from archive. Set as env var so tests can override.
+GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive-clarobill-prd")
 
-# Concurrent download workers. Each worker owns its own requests.Session so
-# connection pools are fully isolated. 20 workers × 16MB GCS chunks ≈ 320MB
-# peak upload buffer, well within the 4Gi container limit.
-MAX_WORKERS = 20
+# Concurrent download workers. Sandra's call (Phase 4 Q4): bumped from 20 -> 60
+# because the hospital list has grown ~4x (from ~3,100 to ~13,833) and each
+# worker hits a different domain (no per-server contention). 60 × 16MB GCS
+# chunks ≈ 1GB peak upload buffer, within the 4Gi container limit.
+MAX_WORKERS = 60
 
 # GCS resumable upload chunk size (bytes). 16MB is a good balance — large
 # enough for throughput, small enough to keep per-worker memory bounded.
@@ -90,11 +100,15 @@ def build_clients() -> tuple[bigquery.Client, storage.Client]:
 def load_hospitals(bq: bigquery.Client) -> list[dict[str, Any]]:
     """Load all hospitals that have an MRF URL from BigQuery.
 
-    Returns list of dicts with keys: hospital_npi, hospital_name, state,
+    Returns list of dicts with keys: hospital_npi, ccn, hospital_name, state,
     mrf_url, last_modified.
+
+    Phase 4: also pulls `ccn` so we can use it as the archive key when NPI is
+    missing (mixed-key strategy from Phase 4 Q1). The parser will backfill NPI
+    from MRF JSON metadata after the first successful parse.
     """
     query = f"""
-        SELECT hospital_npi, hospital_name, state, mrf_url, last_modified
+        SELECT hospital_npi, ccn, hospital_name, state, mrf_url, last_modified
         FROM `{GCP_PROJECT}.{BQ_DATASET}.hospital_directory`
         WHERE mrf_url IS NOT NULL AND TRIM(mrf_url) != ''
         ORDER BY hospital_name
@@ -102,6 +116,22 @@ def load_hospitals(bq: bigquery.Client) -> list[dict[str, Any]]:
     rows = list(bq.query(query).result())
     logger.info("Loaded %d hospitals with MRF URLs", len(rows))
     return [dict(row) for row in rows]
+
+
+def _archive_key(hospital: dict[str, Any]) -> str | None:
+    """Return the GCS archive key for a hospital — NPI if known, else CCN.
+
+    Per Phase 4 Q1: mixed keys are acceptable. The parser later backfills
+    NPI when it parses the MRF JSON root. archive_layout's path-builder
+    accepts either format; downstream queries don't care which one was used.
+    """
+    npi = (hospital.get("hospital_npi") or "").strip()
+    if npi and npi.isdigit() and len(npi) == 10:
+        return npi
+    ccn = (hospital.get("ccn") or "").strip()
+    if ccn:
+        return ccn
+    return None
 
 
 def _name_slug(name: str) -> str:
@@ -177,6 +207,7 @@ def _download_to_gcs(
     bucket: storage.Bucket,
     hospital: dict[str, Any],
     scraped_at: str,
+    last_modified: str | None = None,
 ) -> str | None:
     """Download a hospital's MRF file and upload it to GCS.
 
@@ -221,11 +252,15 @@ def _download_to_gcs(
         blob = bucket.blob(blob_name, chunk_size=GCS_UPLOAD_CHUNK_SIZE)
         # Store hospital context in blob metadata — parser reads these to link
         # rows to hospital_directory without needing NPI at scrape time.
+        # Phase 4: also stamp `last_modified` so the parser can use it as a
+        # second-source signal for pricing_effective_year (after the JSON
+        # `last_updated_on` field, which is more authoritative).
         blob.metadata = {
             "hospital_name": name,
             "mrf_url": url,
             "state": hospital.get("state") or "",
             "hospital_npi": hospital.get("hospital_npi") or "",
+            "last_modified": last_modified or "",
         }
         # decode_content=False: store the raw compressed bytes as received.
         # The Content-Length header reflects the compressed size — if we let
@@ -247,6 +282,7 @@ def _download_to_gcs(
 def scrape_hospital(
     hospital: dict[str, Any],
     bucket: storage.Bucket,
+    archive_bucket: storage.Bucket | None,
     scraped_at: str,
 ) -> dict[str, Any] | None:
     """Check and conditionally download one hospital's MRF file.
@@ -255,8 +291,17 @@ def scrape_hospital(
     connection pool — shared sessions cause urllib3 pool contention and
     leave stale buffers when connections are reused across threads.
 
-    Returns an update dict {mrf_url, last_modified} if the file was downloaded,
-    or None if it was unchanged or an error occurred.
+    Phase 4: dual-writes to BOTH the legacy mrf-staging bucket (for the
+    existing parser) AND the immutable mrf-archive-clarobill-prd bucket
+    (year-partitioned, content-hashed). Returns archive metadata so the
+    caller can also insert a row into mrf_archive_index.
+
+    Returns either:
+      - dict with {mrf_url, last_modified, archive_meta} on success
+      - None on skip or failure
+
+    archive_meta (when present) is a dict ready to insert into mrf_archive_index.
+    archive_bucket may be None for tests; when None the archive write is skipped.
     """
     with requests.Session() as session:
         session.headers.update(REQUEST_HEADERS)
@@ -267,11 +312,119 @@ def scrape_hospital(
             logger.debug("[%s] Unchanged, skipping", label)
             return None
 
-        blob_name = _download_to_gcs(session, bucket, hospital, scraped_at)
+        blob_name = _download_to_gcs(session, bucket, hospital, scraped_at, new_lm)
         if blob_name is None:
             return None
 
-        return {"mrf_url": hospital["mrf_url"], "last_modified": new_lm or ""}
+        # Phase 4 dual-write: also archive to the immutable bucket.
+        # The legacy bucket already has the bytes; we re-download for the
+        # archive write because the legacy upload streamed directly from
+        # `resp.raw` and is no longer available. This doubles per-hospital
+        # bandwidth but is the smallest-blast-radius way to ship dual-write
+        # without rewriting the whole download path.
+        archive_meta = None
+        if archive_bucket is not None:
+            try:
+                archive_meta = _archive_from_legacy_blob(
+                    bucket, archive_bucket, blob_name, hospital, new_lm,
+                )
+            except Exception as exc:
+                # Archive failures must NOT kill the legacy path. The legacy
+                # bucket has the file; the parser can still process it. We
+                # just lose the immutable copy for this run, which is
+                # recovered on next week's scrape.
+                logger.warning("[%s] Archive write failed (legacy still OK): %s", label, exc)
+
+        return {
+            "mrf_url": hospital["mrf_url"],
+            "last_modified": new_lm or "",
+            "archive_meta": archive_meta,
+        }
+
+
+def _archive_from_legacy_blob(
+    legacy_bucket: storage.Bucket,
+    archive_bucket: storage.Bucket,
+    legacy_blob_name: str,
+    hospital: dict[str, Any],
+    last_modified: str | None,
+) -> dict[str, Any] | None:
+    """Read the just-written legacy blob and re-write to archive bucket.
+
+    Computes SHA256 inline, resolves pricing_effective_year, writes to the
+    year/key/sha-keyed path, plus a sibling meta.json.
+
+    Returns a dict ready to insert into mrf_archive_index, or None if the
+    hospital lacks an archive key (no NPI and no CCN — rare but possible).
+    """
+    key = _archive_key(hospital)
+    if not key:
+        logger.debug("Skipping archive: no NPI or CCN for %s", hospital.get("hospital_name"))
+        return None
+
+    legacy_blob = legacy_bucket.blob(legacy_blob_name)
+    legacy_blob.reload()  # populate metadata
+    metadata = legacy_blob.metadata or {}
+
+    # Determine pricing_effective_year. Without parsing the MRF JSON here,
+    # we lean on Last-Modified header + calendar-year fallback. The parser
+    # will refine the year when it actually opens the file.
+    year, year_source = effective_year.resolve_year(
+        json_last_updated_on=None,
+        http_last_modified=last_modified,
+    )
+
+    # Infer extension from the legacy blob name (already correct from the
+    # original download path).
+    ext = _legacy_blob_to_extension(legacy_blob_name)
+
+    # Stream legacy bytes through the archive writer. download_as_bytes is
+    # OK at MRF scale (median ~5 MB, max ~500 MB).
+    body = legacy_blob.download_as_bytes()
+    body_stream = io.BytesIO(body)
+
+    result = archive_writer.write_archive(
+        storage_client=archive_bucket.client,
+        pricing_effective_year=year,
+        key=key,
+        extension=ext,
+        source_url=metadata.get("mrf_url") or hospital.get("mrf_url", ""),
+        content_type=legacy_blob.content_type,
+        byte_stream=body_stream,
+        last_modified=last_modified,
+        bucket_name=archive_bucket.name,
+    )
+
+    return {
+        "hospital_npi": hospital.get("hospital_npi"),
+        "ccn": hospital.get("ccn"),
+        "pricing_effective_year": year,
+        "source_mrf_url": metadata.get("mrf_url") or hospital.get("mrf_url", ""),
+        "gcs_uri": result.gcs_uri,
+        "sha256": result.sha256,
+        "file_size_bytes": result.file_size_bytes,
+        "content_type": legacy_blob.content_type,
+        "mrf_last_modified_header": last_modified,
+        "mrf_etag_header": None,
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+        "parse_status": "pending",
+        "parse_error": None,
+        "parsed_at": None,
+        "_year_source": year_source,  # log-only, stripped before insert
+    }
+
+
+def _legacy_blob_to_extension(blob_name: str) -> str:
+    """Extract the canonical extension (csv, json, json.gz, etc.) from a
+    legacy GCS blob name like 'raw/foo-hospital/2026-04-29T00:00:00Z.json.gz'.
+    Maps to archive_layout.VALID_EXTENSIONS.
+    """
+    name = blob_name.lower()
+    # Match longest first so .json.gz wins over .json
+    for ext in ("json.gz", "csv.gz", "json", "csv", "xlsx", "xml", "zip"):
+        if name.endswith("." + ext):
+            return ext
+    return "json"  # default; should never happen given _infer_extension at download time
 
 
 def update_last_modified(
@@ -352,12 +505,46 @@ def _task_shard(items: list, task_index: int, task_count: int) -> list:
     return items[task_index::task_count]
 
 
+def insert_archive_index_rows(
+    bq: bigquery.Client,
+    archive_metas: list[dict[str, Any]],
+) -> None:
+    """Insert one row per archived MRF into mrf_archive_index.
+
+    Each row's parse_status='pending' so the parser picks it up. The parser
+    later updates parse_status to 'parsed' / 'failed' / 'skipped'.
+
+    Drops the internal `_year_source` field (log-only) before insert.
+    """
+    if not archive_metas:
+        return
+    table_id = f"{GCP_PROJECT}.{BQ_DATASET}.mrf_archive_index"
+    rows = []
+    for meta in archive_metas:
+        if meta is None:
+            continue
+        row = {k: v for k, v in meta.items() if not k.startswith("_")}
+        rows.append(row)
+    if not rows:
+        return
+
+    BATCH = 500
+    for i in range(0, len(rows), BATCH):
+        chunk = rows[i : i + BATCH]
+        errors = bq.insert_rows_json(table_id, chunk)
+        if errors:
+            logger.error("mrf_archive_index insert errors: %s", errors[:3])
+            raise RuntimeError(f"BigQuery insert failed: {errors[:3]}")
+    logger.info("Inserted %d rows into mrf_archive_index", len(rows))
+
+
 def main() -> None:
     task_index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
     task_count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
 
     bq, gcs = build_clients()
     bucket = gcs.bucket(GCS_BUCKET)
+    archive_bucket = gcs.bucket(GCS_ARCHIVE_BUCKET) if GCS_ARCHIVE_BUCKET else None
     all_hospitals = load_hospitals(bq)
 
     if not all_hospitals:
@@ -373,10 +560,11 @@ def main() -> None:
 
     scraped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     updates: list[dict[str, Any]] = []
+    archive_metas: list[dict[str, Any]] = []
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {
-            pool.submit(scrape_hospital, h, bucket, scraped_at): (
+            pool.submit(scrape_hospital, h, bucket, archive_bucket, scraped_at): (
                 h.get("hospital_name") or h.get("mrf_url", "?")
             )
             for h in hospitals
@@ -386,16 +574,18 @@ def main() -> None:
             try:
                 result = future.result()
                 if result:
-                    updates.append(result)
+                    updates.append({k: v for k, v in result.items() if k != "archive_meta"})
+                    if result.get("archive_meta"):
+                        archive_metas.append(result["archive_meta"])
             except Exception as exc:
                 logger.error("[%s] Unexpected error: %s", label, exc)
 
     logger.info(
-        "Scrape complete: %d/%d files downloaded",
-        len(updates),
-        len(hospitals),
+        "Scrape complete: %d/%d files downloaded, %d archived to %s",
+        len(updates), len(hospitals), len(archive_metas), GCS_ARCHIVE_BUCKET,
     )
     update_last_modified(bq, updates, task_index=task_index)
+    insert_archive_index_rows(bq, archive_metas)
 
 
 if __name__ == "__main__":

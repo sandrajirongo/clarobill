@@ -284,15 +284,38 @@ def apply_results(
     bq_client: bigquery.Client,
     project: str,
     run_id: str,
-    matched: dict[str, dict],  # ccn -> {website, formatted_address, place_id, matched_via}
+    matched: dict[str, dict],
+    definitive_negatives: list[str] | None = None,
     dataset: str = bq_checkpoint.DEFAULT_DATASET,
     dry_run: bool = False,
 ) -> int:
-    """MERGE Places-resolved websites into the checkpoint."""
-    if not matched:
+    """MERGE Places results into the checkpoint.
+
+    Two effects in one MERGE:
+
+      1. For CCNs with a resolved website (`matched`): write hospital_website
+         + website_source='google_places' + website_found_at=NOW().
+
+      2. For CCNs with definitive Tier 3 negatives (`no_result` or
+         `ambiguous_no_verify`): set website_found_at=NOW() WITHOUT writing
+         a website. This marks the row as "we tried, Google has no answer"
+         so re-runs don't keep re-counting them as pending Tier 3 input.
+         Sandra spotted this on 2026-04-29: the cost-preview projected $63
+         for 1,294 hospitals that were ALL definitive negatives from the
+         prior run, because places_client cached the negatives but the
+         checkpoint row's website_found_at stayed NULL.
+
+    Returns the number of rows updated (matched + definitive_negatives).
+    """
+    definitive_negatives = list(definitive_negatives or [])
+
+    if not matched and not definitive_negatives:
         return 0
     if dry_run:
-        logger.info("[dry-run] would set hospital_website for %d CCNs from Places", len(matched))
+        logger.info(
+            "[dry-run] would update %d matched + %d definitive-negative rows",
+            len(matched), len(definitive_negatives),
+        )
         return 0
 
     checkpoint_table = f"{project}.{dataset}.mrf_discovery_checkpoint"
@@ -304,35 +327,49 @@ def apply_results(
           run_id            STRING,
           ccn               STRING,
           hospital_website  STRING,
-          website_found_at  TIMESTAMP
+          website_found_at  TIMESTAMP,
+          is_negative       BOOL
         )
     """).result()
 
     try:
-        rows = [
-            {
-                "run_id": run_id,
-                "ccn": ccn,
-                "hospital_website": v["website"],
+        rows: list[dict] = []
+        for ccn, v in matched.items():
+            if v.get("website"):
+                rows.append({
+                    "run_id": run_id, "ccn": ccn,
+                    "hospital_website": v["website"],
+                    "website_found_at": now_iso,
+                    "is_negative": False,
+                })
+        for ccn in definitive_negatives:
+            rows.append({
+                "run_id": run_id, "ccn": ccn,
+                "hospital_website": None,
                 "website_found_at": now_iso,
-            }
-            for ccn, v in matched.items()
-            if v.get("website")
-        ]
+                "is_negative": True,
+            })
+
         BATCH = 500
         for i in range(0, len(rows), BATCH):
             errors = bq_client.insert_rows_json(staging_table, rows[i : i + BATCH])
             if errors:
                 raise RuntimeError(f"Tier 3 staging insert failed at batch {i}: {errors[:3]}")
 
+        # Two MERGE branches: matched rows get website+source+timestamp;
+        # definitive-negative rows get only the timestamp (preserves NULL website).
         merge_sql = f"""
         MERGE `{checkpoint_table}` T
         USING `{staging_table}` S
         ON T.run_id = S.run_id AND T.ccn = S.ccn
-        WHEN MATCHED AND T.hospital_website IS NULL THEN
+        WHEN MATCHED AND NOT S.is_negative AND T.hospital_website IS NULL THEN
           UPDATE SET
             hospital_website = S.hospital_website,
             website_source   = 'google_places',
+            website_found_at = S.website_found_at,
+            last_updated_at  = S.website_found_at
+        WHEN MATCHED AND S.is_negative AND T.website_found_at IS NULL THEN
+          UPDATE SET
             website_found_at = S.website_found_at,
             last_updated_at  = S.website_found_at
         """
@@ -417,6 +454,10 @@ def run(
     client = PlacesClient(api_key=api_key, cost_meter=cost_meter, cache=cache)
 
     matched: dict[str, dict] = {}
+    # CCNs where Places gave us a definitive negative (no_result or
+    # ambiguous_no_verify) — they need website_found_at set so re-runs
+    # don't keep re-querying them. Q5a fix from the Phase 4 design.
+    definitive_negatives: list[str] = []
     skipped_pre_call = 0
     no_match_count = 0
     by_outcome: dict[str, int] = {}
@@ -467,6 +508,12 @@ def run(
                 }
             else:
                 no_match_count += 1
+                # Mark as definitive negative if Places returned no website
+                # for any reason. The cache will short-circuit future runs at
+                # $0, but we also set the BQ checkpoint timestamp so the
+                # SQL filter for "pending Tier 3" stops including them.
+                if result.matched_via in ("no_result", "ambiguous_no_verify", "cache"):
+                    definitive_negatives.append(ccn)
 
             if i % 200 == 0:
                 logger.info(
@@ -499,13 +546,17 @@ def run(
             len(targets) - len(pending_ccns), len(pending_ccns),
         )
 
-    apply_count = apply_results(bq_client, project, run_id, matched,
-                                dataset=dataset, dry_run=dry_run)
+    apply_count = apply_results(
+        bq_client, project, run_id, matched,
+        definitive_negatives=definitive_negatives,
+        dataset=dataset, dry_run=dry_run,
+    )
 
     return {
         "target_count": len(targets),
         "matched": len(matched),
         "no_match": no_match_count,
+        "definitive_negatives": len(definitive_negatives),
         "skipped_pre_call": skipped_pre_call,
         "by_outcome": by_outcome,
         "running_usd": cost_meter.running_usd,

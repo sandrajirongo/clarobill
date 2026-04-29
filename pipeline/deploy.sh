@@ -42,7 +42,7 @@ gcloud run jobs create clarobill-mrf-scraper \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}" \
   2>/dev/null || \
 gcloud run jobs update clarobill-mrf-scraper \
@@ -53,7 +53,7 @@ gcloud run jobs update clarobill-mrf-scraper \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}"
 
 echo "==> Creating/updating clarobill-mrf-parser Cloud Run Job..."
@@ -66,7 +66,7 @@ gcloud run jobs create clarobill-mrf-parser \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}" \
   2>/dev/null || \
 gcloud run jobs update clarobill-mrf-parser \
@@ -78,7 +78,7 @@ gcloud run jobs update clarobill-mrf-parser \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}"
 
 # Grant Cloud Scheduler SA permission to invoke both jobs
