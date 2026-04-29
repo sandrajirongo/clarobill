@@ -17,27 +17,35 @@ const TIERS = [
   },
   {
     range: '$21 – $100',
-    price: '$9.99',
+    price: '$14.99',
     priceSub: 'one-time',
     tag: 'Small Win',
     tagline: "We've discounted the fee so you keep the lion's share of every dollar saved.",
-    keepNote: 'You keep ≥\u202f$11',
+    keepNote: 'You keep ≥\u202f$6',
   },
   {
-    range: '$101 – $1,000',
-    price: '$49.99',
+    range: '$101 – $500',
+    price: '$79.99',
     priceSub: 'one-time',
-    tag: 'The Standard Fix',
+    tag: 'Standard Fix',
     tagline: 'High ROI — a fraction of what a billing advocate charges for the same result.',
-    keepNote: 'You keep ≥\u202f$51',
+    keepNote: 'You keep ≥\u202f$21',
   },
   {
-    range: '$1,000+',
-    price: '$99.99',
+    range: '$501 – $1,500',
+    price: '$129.99',
     priceSub: 'one-time',
-    tag: 'The Heavy Hitter',
+    tag: 'Major Fix',
+    tagline: 'Material savings on a four-figure error. Pays for itself many times over.',
+    keepNote: 'You keep ≥ $371',
+  },
+  {
+    range: '$1,500+',
+    price: '$199.99',
+    priceSub: 'one-time',
+    tag: 'Heavy Hitter',
     tagline: 'Significant financial impact. Worth every cent on a four-figure correction.',
-    keepNote: 'You keep ≥\u202f$900',
+    keepNote: 'You keep ≥\u202f$1,300',
   },
 ] as const;
 
@@ -78,7 +86,7 @@ const FAQS = [
   },
   {
     q: 'How does this compare to a billing advocate?',
-    a: 'Medical billing advocates typically charge 25–35% of recovered savings. On a $500 correction that would cost $125–175. We charge a flat $49.99. Same outcome, far less cost.',
+    a: 'Medical billing advocates typically charge 25–35% of recovered savings. On a $500 correction that would cost $125–$175. We charge a flat $79.99 — same outcome, far less cost. On a $1,500 correction (advocate fee $375–$525) we charge $199.99.',
   },
   {
     q: 'Is my bill data kept private?',
@@ -280,7 +288,7 @@ export default function PricingPage(): JSX.Element {
             <tbody>
               <tr className={s.compHighlight}>
                 <td>ClaroBill</td>
-                <td>$0 – $99.99 flat</td>
+                <td>$0 – $199.99 flat</td>
                 <td>Minutes</td>
                 <td className={s.compCheck}>Included</td>
               </tr>
