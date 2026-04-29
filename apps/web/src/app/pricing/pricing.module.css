@@ -277,7 +277,11 @@
   background: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(200, 240, 96, .08), transparent 65%);
   pointer-events: none;
 }
-.tiersInner { max-width: 940px; margin: 0 auto; position: relative; }
+/* Inner content cap. 1280px gives 5 tiers ~225px each at full width with the
+ * 1.1rem gaps still readable. The cap only applies on viewports wider than
+ * 1280px (centers the grid); narrower viewports use 100% of the section's
+ * inner width so the grid still wraps cleanly. */
+.tiersInner { max-width: 1280px; margin: 0 auto; position: relative; width: 100%; }
 .tiersHeader { max-width: 520px; margin: 0 auto 2.75rem; text-align: center; }
 .tiersSubtitle {
   font-size: clamp(.88rem, 2vw, .96rem);
@@ -319,12 +323,18 @@
   grid-template-columns: 1fr;
   gap: 1.1rem;
   align-items: stretch;
+  /* Width 100% with no explicit padding — the parent .tiersInner provides
+   * the centering at >=1280px and the section provides the gutters at smaller
+   * viewports. Without width 100% here, intrinsic-size grid items can
+   * collapse the grid and produce uneven left/right whitespace. */
+  width: 100%;
 }
 @media (min-width: 540px)  { .tiersGrid { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 820px)  { .tiersGrid { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 1100px) { .tiersGrid { grid-template-columns: repeat(5, 1fr); } }
+@media (min-width: 1100px) { .tiersGrid { grid-template-columns: repeat(5, 1fr); gap: .9rem; } }
 
-/* Base card */
+/* Base card. Padding tightens on the 5-up breakpoint (>=1100px) so the
+ * cards don't get content-squeezed when displayed in a single row. */
 .tierCard {
   background: linear-gradient(160deg, #ffffff 0%, #f7f5ef 100%);
   border: 1px solid var(--border);
@@ -335,6 +345,13 @@
   gap: .65rem;
   position: relative;
   transition: box-shadow .2s, transform .2s, border-color .2s;
+  min-width: 0; /* allow grid to shrink the card; prevents one card pushing wider than its column */
+}
+@media (min-width: 1100px) {
+  .tierCard {
+    padding: 1.5rem 1.15rem 1.25rem;
+    border-radius: 1.25rem;
+  }
 }
 .tierCard:hover {
   transform: translateY(-3px);
