@@ -220,7 +220,29 @@ Today's scraper uses ThreadPoolExecutor with 20 workers. Phase 4's archive write
 
 **Recommendation:** keep 20. Existing behavior is known-good; no need to change concurrency in a rewrite that's already changing logic.
 
-### Q5 — Failed-parse handling
+### Q5a — Cleanup the stuck-pending hospitals from definitive Tier 3 negatives
+
+When Stage 3 Tier 3 returns `no_result` or `ambiguous_no_verify`, the
+`places_client` caches the negative answer but does NOT set the checkpoint
+row's `website_found_at` timestamp. As a result, those rows still match
+the "pending Tier 3" SQL filter on subsequent runs (the cache short-
+circuits at $0 cost, but the cost-preview still projects calls for them).
+
+Sandra spotted this on 2026-04-29 when running `--tier3-cost-preview`
+after the production sweep — the preview projected $63.53 for 1,294
+hospitals that were ALL definitive Tier 3 negatives from the prior run.
+
+**Fix in Phase 4 4d (parser rewrite)**: when applying Tier 3 results,
+also set `website_found_at = NOW()` for hospitals where Places returned
+`no_result` or `ambiguous_no_verify`. This means "we tried, we know there's
+no website to find via Google" — which is a final state, not a pending
+one. Their `hospital_website` stays NULL; the rules engine correctly
+skips the MRF rule for those hospitals.
+
+The fix is one extra MERGE clause in `apply_results` that targets the
+no-website branch.
+
+### Q5b — Failed-parse handling
 
 Some hospitals publish malformed JSON or non-spec MRFs. The legacy parser would crash on these. Phase 4 needs explicit handling:
 
