@@ -44,5 +44,8 @@ supabase/.temp/
 
 # CMS reference data — large files, loaded into DB via scripts/, gitignored for local use only
 data/
+# Re-allow application source code that lives under any path containing 'data':
+!apps/**/data/
+!apps/**/data/**
 *.csv
 *.html

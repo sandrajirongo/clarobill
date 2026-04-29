@@ -42,6 +42,10 @@ Rule run order (see run() for authoritative sequence):
   11. NEGOTIATED_CEILING_EXCEEDED — charge > hospital-wide max negotiated rate × 1.1×
                                     (fallback when exact rate not available; severity: warning)
   12. MUE_EXCEEDED                — billed quantity > CMS Medically Unlikely Edit limit
+  13. REDUNDANT_CLINICAL_PAIR     — curated payer-policy redundancies that NCCI does not
+                                    cover (e.g. OB transabdominal + transvaginal ultrasound,
+                                    ABO + Rh blood typing). Severity: warning. The curated
+                                    list lives in app/data/redundant_clinical_pairs.py.
 
 --- Benchmark hierarchy (strongest → weakest) ---
 
@@ -98,6 +102,33 @@ from app.services.parser import ParsedLineItem
 logger = logging.getLogger(__name__)
 
 
+def _ncci_flagged_code_pairs(
+    ncci_errors: list["DetectedError"],
+    line_items: list["ParsedLineItem"],
+) -> set[frozenset[str]]:
+    """Extract the set of {col1_code, col2_code} pairs already flagged by NCCI.
+
+    Used by the REDUNDANT_CLINICAL_PAIR rule to dedup against NCCI — if a pair
+    is already in NCCI, NCCI wins and the redundancy rule stays silent.
+
+    DetectedError holds line-item indices, not CPT codes. We resolve indices
+    back to CPTs via the original line_items list.
+    """
+    pairs: set[frozenset[str]] = set()
+    for err in ncci_errors:
+        codes = {line_items[i].cpt_code for i in err.affected_indices}
+        if len(codes) >= 2:
+            # An NCCI error can carry more than 2 codes (one component bundled
+            # into multiple comprehensive codes). Emit every pairwise combo so
+            # the redundancy rule's lookup hits regardless of which order the
+            # curated list uses.
+            code_list = list(codes)
+            for i in range(len(code_list)):
+                for j in range(i + 1, len(code_list)):
+                    pairs.add(frozenset({code_list[i], code_list[j]}))
+    return pairs
+
+
 @dataclass(frozen=True)
 class DetectedError:
     """A billing error detected by a rule. Mirrors the BillingError TypeScript type."""
@@ -115,6 +146,12 @@ class DetectedError:
 # All five are equally valid overrides — billers are encouraged to use the X
 # modifiers when applicable, so checking only 59 causes false NCCI_UNBUNDLING flags.
 _NCCI_OVERRIDE_MODIFIERS: frozenset[str] = frozenset({"59", "XE", "XS", "XP", "XU"})
+
+# Curated payer-policy redundancies (non-NCCI). See module docstring rule #13
+# and app/data/redundant_clinical_pairs.py for the full list and curation
+# criteria. Imported lazily inside the rule to keep the constructor surface
+# small and to allow tests to substitute their own list.
+from app.data.redundant_clinical_pairs import REDUNDANT_PAIRS, RedundantPair  # noqa: E402
 
 # Price outlier thresholds by plan type.
 # Medicare/Medicaid: the Medicare rate IS the payment ceiling — flag anything above 1.05× (rounding tolerance).
@@ -169,6 +206,7 @@ class RulesEngine:
         negotiated_charges: dict[str, Decimal] | None = None,
         negotiated_ceiling: dict[str, Decimal] | None = None,
         mue_limits: dict[str, tuple[int, int]] | None = None,
+        redundant_pairs: tuple[RedundantPair, ...] | None = None,
     ) -> None:
         """
         Args:
@@ -228,6 +266,10 @@ class RulesEngine:
                                         indicator 1). adjudication_indicator: 0=unknown, 1=claim edit,
                                         2=DOS policy (hard denial), 3=DOS clinical (documentable).
                                         When provided, enables MUE violation detection.
+            redundant_pairs:            Curated tuple of RedundantPair entries for payer-policy
+                                        redundancies that are NOT in NCCI PTP. Defaults to
+                                        REDUNDANT_PAIRS from app.data.redundant_clinical_pairs.
+                                        Tests can substitute a custom list.
         """
         self._ncci_pairs = ncci_edit_pairs
         self._medicare_rates = medicare_rates
@@ -245,6 +287,7 @@ class RulesEngine:
         self._negotiated_charges = negotiated_charges or {}
         self._negotiated_ceiling = negotiated_ceiling or {}
         self._mue_limits = mue_limits or {}
+        self._redundant_pairs = redundant_pairs if redundant_pairs is not None else REDUNDANT_PAIRS
 
     def run(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Run all rules and return the combined list of detected errors.
@@ -301,6 +344,15 @@ class RulesEngine:
         errors.extend(_without_removed(self._detect_negotiated_rate_exceeded(line_items)))
         errors.extend(_without_removed(self._detect_negotiated_ceiling_exceeded(line_items)))
         errors.extend(_without_removed(self._detect_mue_violations(line_items)))
+
+        # REDUNDANT_CLINICAL_PAIR runs last so it can dedup against any
+        # already-flagged NCCI pairs. If a pair appears in both lists, NCCI
+        # wins (it's the authoritative source). The redundancy rule only
+        # fires for pairs NOT already covered by NCCI on this bill.
+        already_flagged_pairs = _ncci_flagged_code_pairs(ncci_errors, line_items)
+        errors.extend(_without_removed(
+            self._detect_redundant_clinical_pairs(line_items, already_flagged_pairs)
+        ))
         logger.info("Rules engine found %d errors in %d line items", len(errors), len(line_items))
         return errors
 
@@ -508,6 +560,122 @@ class RulesEngine:
             ))
 
         return errors, all_component_indices
+
+    def _detect_redundant_clinical_pairs(
+        self,
+        line_items: list[ParsedLineItem],
+        already_flagged_pairs: set[frozenset[str]],
+    ) -> list[DetectedError]:
+        """Detect curated payer-policy redundancies that are NOT in NCCI PTP.
+
+        Fires when both codes of a curated pair appear on the same service date
+        without a per-pair suppression modifier on either line item. The
+        cheaper line item (by total_charge) is treated as the redundant one
+        and its charge becomes the estimated overcharge — hedged language in
+        the description tells the user to ask the hospital to justify or
+        remove one. Severity: warning (payer policy varies).
+
+        Dedup: any pair already flagged by NCCI on this bill is skipped here
+        to avoid double-counting savings. NCCI is the authoritative source
+        for procedure-bundling.
+
+        Args:
+            line_items: All parsed line items from the bill.
+            already_flagged_pairs: Set of frozenset({code_a, code_b}) covering
+                every NCCI pair already detected. Used for dedup.
+
+        Returns:
+            Zero or more DetectedError instances. Empty when no curated pair
+            is present on the bill, or when all matches are NCCI-deduped.
+        """
+        if not self._redundant_pairs:
+            return []
+
+        # Bucket line items by (cpt_code, service_date) so we can look up
+        # whether both codes of a pair appear on the same encounter.
+        by_code_date: dict[tuple[str, str], list[int]] = {}
+        for index, item in enumerate(line_items):
+            key = (item.cpt_code, str(item.service_date))
+            by_code_date.setdefault(key, []).append(index)
+
+        present_codes = {code for code, _ in by_code_date.keys()}
+
+        errors: list[DetectedError] = []
+        seen_pair_dates: set[tuple[frozenset[str], str]] = set()
+
+        for pair in self._redundant_pairs:
+            # Quick reject: skip if either code isn't on the bill at all.
+            if pair.code_a not in present_codes or pair.code_b not in present_codes:
+                continue
+
+            # Skip pairs NCCI already flagged on this bill.
+            if frozenset({pair.code_a, pair.code_b}) in already_flagged_pairs:
+                continue
+
+            # Find every service_date where BOTH codes appear.
+            dates_for_a = {d for code, d in by_code_date.keys() if code == pair.code_a}
+            dates_for_b = {d for code, d in by_code_date.keys() if code == pair.code_b}
+            shared_dates = dates_for_a & dates_for_b
+            if not shared_dates:
+                continue
+
+            for service_date in shared_dates:
+                # Avoid duplicate emissions if the same pair is curated twice
+                # under different orderings (defensive — list is small).
+                fingerprint = (frozenset({pair.code_a, pair.code_b}), service_date)
+                if fingerprint in seen_pair_dates:
+                    continue
+                seen_pair_dates.add(fingerprint)
+
+                a_indices = by_code_date[(pair.code_a, service_date)]
+                b_indices = by_code_date[(pair.code_b, service_date)]
+                a_items = [line_items[i] for i in a_indices]
+                b_items = [line_items[i] for i in b_indices]
+
+                # Suppression: any line item carrying a per-pair override
+                # modifier means this billing is intentional and justified.
+                if pair.suppression_modifiers:
+                    if any(
+                        item.modifier in pair.suppression_modifiers
+                        for item in a_items + b_items
+                    ):
+                        continue
+
+                # The cheaper line item is treated as the redundant one — its
+                # charge is the estimated overcharge. If a payer were to deny
+                # one, they'd typically allow the more comprehensive (more
+                # expensive) procedure and deny the lower-tier one.
+                cheapest_a = min(a_items, key=lambda it: it.total_charge)
+                cheapest_b = min(b_items, key=lambda it: it.total_charge)
+                if cheapest_a.total_charge <= cheapest_b.total_charge:
+                    redundant_item = cheapest_a
+                    redundant_index = a_indices[a_items.index(cheapest_a)]
+                else:
+                    redundant_item = cheapest_b
+                    redundant_index = b_indices[b_items.index(cheapest_b)]
+                kept_code = pair.code_b if redundant_item.cpt_code == pair.code_a else pair.code_a
+
+                overcharge = Decimal(str(redundant_item.total_charge))
+
+                errors.append(DetectedError(
+                    code="REDUNDANT_CLINICAL_PAIR",
+                    severity="warning",
+                    affected_indices=tuple(dict.fromkeys(a_indices + b_indices)),
+                    description=(
+                        f"CPT {pair.code_a} and CPT {pair.code_b} were both billed on "
+                        f"{service_date}. {pair.rationale} {pair.payer_policy_note} "
+                        f"Ask the hospital to justify both charges or remove CPT "
+                        f"{redundant_item.cpt_code} (potential overcharge "
+                        f"${overcharge:.2f}); CPT {kept_code} would typically remain."
+                    ),
+                    estimated_overcharge=overcharge,
+                    medicare_benchmark_rate=self._medicare_rates.get(redundant_item.cpt_code),
+                ))
+                # Reference unused-variable to keep linters quiet; the index
+                # is captured for future use (e.g., per-line UI highlighting).
+                _ = redundant_index
+
+        return errors
 
     def _detect_non_payable_codes(self, line_items: list[ParsedLineItem]) -> list[DetectedError]:
         """Flag CPT codes that CMS has marked as non-payable under the Physician Fee Schedule.

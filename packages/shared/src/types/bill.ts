@@ -93,7 +93,8 @@ export type BillingErrorCode =
   | 'HOSPITAL_CHARGE_OUTLIER'
   | 'NEGOTIATED_RATE_EXCEEDED'
   | 'NEGOTIATED_CEILING_EXCEEDED'
-  | 'MUE_EXCEEDED';
+  | 'MUE_EXCEEDED'
+  | 'REDUNDANT_CLINICAL_PAIR';
 
 export interface BillingError {
   code: BillingErrorCode;

@@ -35,6 +35,7 @@ The engine receives all data it needs at construction time — it does no I/O.
 | `_load_hospital_charges()` | BigQuery `hospital_charges` (gross) | HOSPITAL_CHARGE_OUTLIER |
 | `_load_negotiated_charges()` | BigQuery `hospital_charges` (per-payer) | NEGOTIATED_RATE_EXCEEDED |
 | `_load_negotiated_ceiling()` | BigQuery `hospital_charges` (max_negotiated) | NEGOTIATED_CEILING_EXCEEDED |
+| (no loader — curated module) | `app/data/redundant_clinical_pairs.py` | REDUNDANT_CLINICAL_PAIR |
 
 **Locality resolution:** `_resolve_locality()` resolves a 7-character CMS MAC locality
 code from the patient's state + county. This code drives GPCI-adjusted Medicare rate
@@ -72,6 +73,7 @@ fire independently. The hierarchy determines how assertive the report language s
 | FACILITY_CHARGE_OUTLIER | OPPS Medicare payment cap | Lower — proxy for commercial | warning |
 | AMBULANCE_CHARGE_OUTLIER | CMS Ambulance Fee Schedule | Lower — proxy | warning |
 | PRICE_OUTLIER | Commercial: Medicare × service-type multiplier (1.40–2.64×). Others: Medicare × plan multiplier | Weakest — population proxy | warning |
+| REDUNDANT_CLINICAL_PAIR | Curated payer-policy redundancy list (non-NCCI) | Medium — payer policy varies | warning |
 
 **Report language guidance:** NEGOTIATED_RATE_EXCEEDED and HOSPITAL_CHARGE_OUTLIER
 warrant assertive language ("you were overcharged"). NEGOTIATED_CEILING_EXCEEDED and
@@ -446,6 +448,45 @@ code (bundled codes often have both proc_stat='B' and MUE=0; only one finding fi
 
 ---
 
+### REDUNDANT_CLINICAL_PAIR
+**Severity:** warning  
+**Data source:** Hand-curated allowlist at `apps/engine/app/data/redundant_clinical_pairs.py`
+
+**What it detects:**  
+Pairs of CPT codes that are clinically redundant when billed for the same encounter
+but are NOT formal CMS NCCI PTP edits. Commercial payer medical-policy documents
+routinely deny these pairs even though CMS does not formally bundle them. Filling
+this gap converts "the engine isn't catching this overcharge" into a real finding
+with hedged language that respects the payer-policy uncertainty.
+
+**Curated categories (as of 2026-04-29):**
+
+| Category | Pair | Suppression modifier(s) | Why redundant |
+|---|---|---|---|
+| OB ultrasound | 76801 ↔ 76817 | 59, XS | Transabdominal first-trimester complete + transvaginal — typically alternatives, not complements |
+| OB ultrasound | 76805 ↔ 76817 | 59, XS | Transabdominal after first trimester + transvaginal — same logic |
+| OB ultrasound | 76815 ↔ 76817 | 59, XS | Limited + transvaginal — transvaginal typically supplants the limited study |
+| OB ultrasound | 76817 ↔ 76819 | 59, XS | Transvaginal + biophysical profile — BPP includes ultrasound assessment |
+| Lab panel | 86900 ↔ 86901 | (none) | ABO + Rh = single "type and Rh" panel in clinical practice |
+| Lab panel | 82565 ↔ 82550 | (none) | Creatinine + creatine kinase outside muscle/cardiac workup |
+| E&M with procedure | 36415 ↔ 99211 | 25 | Routine venipuncture is bundled into a minimal-level E&M |
+
+**How a pair gets added:** see the curation criteria in
+`apps/engine/app/data/redundant_clinical_pairs.py` module docstring. Every entry
+must (a) not be in NCCI PTP, (b) cite a documented payer-policy reason, (c) not
+depend on diagnosis to determine redundancy, and (d) include a suppression
+modifier when one applies.
+
+**Dedup against NCCI:** if a pair is added that *is* in NCCI on a given bill, NCCI
+wins and this rule stays silent. The check happens in `_ncci_flagged_code_pairs()`.
+
+**Estimated overcharge:** the cheaper line item's `total_charge`. Hedged language
+in the report description: "Ask the hospital to justify both charges or remove CPT
+\<cheaper code\>." Severity is `warning` because payer policy varies — the
+expected user action is to request justification, not to demand a refund.
+
+---
+
 ## Reference Data Sources
 
 | Table | Source | Loader |
@@ -493,5 +534,5 @@ See `docs/future_improvements/` for detailed design docs on:
 
 ---
 
-*Last updated: April 23 2026*  
+*Last updated: April 29 2026 (added REDUNDANT_CLINICAL_PAIR + Phase 4 effective-dated MRF pipeline references)*  
 *Owner: ClaroBill Engineering*

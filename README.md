@@ -79,11 +79,11 @@ Credentials (`clarobill-vision-sa` service account).
 1. Create account — add profile members (self + dependents) and insurance plans
 2. Upload a medical bill (PDF or image)
 3. Pre-analysis verification — confirm hospital, insurance plan, service dates, patient name
-4. Analysis runs — 10 independent rules check for errors (see `docs/rules-engine.md`)
+4. Analysis runs — 13 independent rules check for errors (see `docs/rules-engine.md`)
 5. Results teaser — see total potential savings before paying
 6. Pay → receive full PDF report + dispute letter by email
 
-### Rules engine (11 rules)
+### Rules engine (13 rules)
 | Rule | Benchmark | Severity |
 |------|-----------|----------|
 | `NEGOTIATED_RATE_EXCEEDED` | Insurer's contracted rate (MRF) | Critical |
@@ -96,7 +96,9 @@ Credentials (`clarobill-vision-sa` service account).
 | `MUE_EXCEEDED` | CMS Medically Unlikely Edit limits | Critical/Warning |
 | `FACILITY_CHARGE_OUTLIER` | CMS OPPS cap | Warning |
 | `AMBULANCE_CHARGE_OUTLIER` | CMS Ambulance Fee Schedule | Warning |
+| `NEGOTIATED_CEILING_EXCEEDED` | Hospital-wide max negotiated rate (MRF) | Warning |
 | `PRICE_OUTLIER` | Medicare fee schedule (plan-type-aware threshold) | Warning |
+| `REDUNDANT_CLINICAL_PAIR` | Curated payer-policy redundancies (non-NCCI) | Warning |
 
 `PRICE_OUTLIER` thresholds: medicare/medicaid 1.05×, tricare/self_pay 1.20×, commercial/unknown 1.80×.
 

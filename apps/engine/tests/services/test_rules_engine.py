@@ -1076,3 +1076,146 @@ class TestMueViolation:
         errors = mue_engine.run(items)
         mue_errors = [e for e in errors if e.code == "MUE_EXCEEDED"]
         assert len(mue_errors) == 0
+
+
+class TestRedundantClinicalPairs:
+    """REDUNDANT_CLINICAL_PAIR — curated payer-policy redundancies (non-NCCI).
+
+    The curated list lives in app/data/redundant_clinical_pairs.py. These tests
+    exercise behavior, not the specific list contents — adding new pairs to
+    the data file should not require changes here unless a new category needs
+    distinct semantics.
+    """
+
+    def test_flags_ob_ultrasound_transabdominal_plus_transvaginal(self) -> None:
+        # 76801 (transabdominal first trimester) + 76817 (transvaginal) on same date.
+        # Not in NCCI PTP — confirmed against 2026 v3.21 MCR file.
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("76801", 450.00, service_date=date(2026, 3, 15)),
+            make_line_item("76817", 350.00, service_date=date(2026, 3, 15)),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 1
+        assert flagged[0].severity == "warning"
+        # The cheaper line item is treated as the redundant one.
+        assert flagged[0].estimated_overcharge == Decimal("350.00")
+        assert "76801" in flagged[0].description and "76817" in flagged[0].description
+
+    def test_flags_blood_typing_abo_plus_rh(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("86900", 25.00),
+            make_line_item("86901", 25.00),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 1
+        assert flagged[0].severity == "warning"
+
+    def test_no_flag_when_only_one_code_present(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [make_line_item("76801", 450.00)]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 0
+
+    def test_no_flag_on_different_service_dates(self) -> None:
+        # Same pair, different encounters = different medical-necessity context.
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("76801", 450.00, service_date=date(2026, 3, 15)),
+            make_line_item("76817", 350.00, service_date=date(2026, 4, 1)),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 0
+
+    def test_suppression_modifier_59_overrides_ob_pair(self) -> None:
+        # Modifier 59 documents distinct anatomical sites (e.g. twin pregnancy).
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("76801", 450.00, modifier="59"),
+            make_line_item("76817", 350.00),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 0
+
+    def test_suppression_modifier_25_overrides_em_with_venipuncture(self) -> None:
+        # 36415 + 99211 with modifier 25 on the E&M = separately identifiable.
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("36415", 12.00),
+            make_line_item("99211", 50.00, modifier="25"),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 0
+
+    def test_no_suppression_when_modifier_does_not_match_pair(self) -> None:
+        # Modifier 25 does NOT suppress the OB ultrasound pair (only 59 / XS does).
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("76801", 450.00, modifier="25"),
+            make_line_item("76817", 350.00),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 1
+
+    def test_dedup_against_ncci_when_pair_in_both_lists(self) -> None:
+        # Custom curated list mirroring an NCCI-flagged pair → NCCI wins, the
+        # redundancy rule stays silent. Confirms the dedup mechanism.
+        from app.data.redundant_clinical_pairs import RedundantPair
+
+        custom_pairs = (
+            RedundantPair(
+                code_a="99213",
+                code_b="36415",
+                category="em_with_procedure",
+                rationale="Test fixture only.",
+                suppression_modifiers=frozenset(),
+                payer_policy_note="Test.",
+            ),
+        )
+        engine = RulesEngine(
+            ncci_edit_pairs={"99213": {"36415"}},  # also covered by NCCI
+            medicare_rates={},
+            redundant_pairs=custom_pairs,
+        )
+        items = [
+            make_line_item("99213", 75.00),
+            make_line_item("36415", 12.00),
+        ]
+        errors = engine.run(items)
+        ncci_flags = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
+        redundancy_flags = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(ncci_flags) == 1
+        assert len(redundancy_flags) == 0  # NCCI dedup suppressed it
+
+    def test_picks_cheapest_as_redundant_for_overcharge(self) -> None:
+        engine = RulesEngine(ncci_edit_pairs={}, medicare_rates={})
+        items = [
+            make_line_item("76801", 600.00),
+            make_line_item("76817", 200.00),  # cheaper
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 1
+        assert flagged[0].estimated_overcharge == Decimal("200.00")
+
+    def test_no_flag_when_redundant_pairs_explicitly_empty(self) -> None:
+        engine = RulesEngine(
+            ncci_edit_pairs={},
+            medicare_rates={},
+            redundant_pairs=(),
+        )
+        items = [
+            make_line_item("76801", 450.00),
+            make_line_item("76817", 350.00),
+        ]
+        errors = engine.run(items)
+        flagged = [e for e in errors if e.code == "REDUNDANT_CLINICAL_PAIR"]
+        assert len(flagged) == 0

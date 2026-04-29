@@ -72,6 +72,8 @@ Used for rules where the benchmark is the exact agreed or published price:
 | Ambulance Fee Schedule | CMS AFS final rule tables | `cms_ambulance_rates` | AMBULANCE_CHARGE_OUTLIER |
 | Hospital gross charges | CMS price transparency MRF files | BigQuery `hospital_charges` | HOSPITAL_CHARGE_OUTLIER |
 | Negotiated rates | CMS price transparency MRF files | BigQuery `hospital_charges` | NEGOTIATED_RATE_EXCEEDED |
+| Hospital-wide max negotiated | CMS price transparency MRF files | BigQuery `hospital_charges` | NEGOTIATED_CEILING_EXCEEDED |
+| Curated payer-policy redundancies | Hand-curated allowlist | `apps/engine/app/data/redundant_clinical_pairs.py` | REDUNDANT_CLINICAL_PAIR |
 
 ---
 
