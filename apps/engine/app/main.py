@@ -1,4 +1,8 @@
-"""FastAPI application entry point for the Clarobill engine service."""
+"""FastAPI application entry point for the Clarobill engine service.
+
+Deployed via Cloud Build trigger `rmgpgab-clarobill-engine-us-central1-...`
+on every push to main that touches `apps/engine/**`.
+"""
 
 import logging
 from collections.abc import Awaitable, Callable
