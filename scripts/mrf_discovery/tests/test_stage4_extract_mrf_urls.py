@@ -134,6 +134,104 @@ def test_find_toc_url_returns_none_when_missing() -> None:
 # --- TOC walker (no network) ----------------------------------------------
 
 
+class TestSystemListingPages:
+    """The 2026-04-30 widening added a curated dict of hospital-system
+    listing pages so we hit Sutter / HCA / Ascension etc. directly. These
+    tests guard the lookup contract — substring host match, first-hit-wins.
+    """
+
+    def test_sutter_homepage_resolves_to_listing(self) -> None:
+        path = s4._system_listing_path("www.sutterhealth.org")
+        assert path == "/billing-insurance/costs-and-charges/cost-transparency"
+
+    def test_unknown_system_returns_none(self) -> None:
+        path = s4._system_listing_path("www.tinyruralhospital.com")
+        assert path is None
+
+    def test_subdomain_match(self) -> None:
+        # `mychart.sutterhealth.org` is still a Sutter property.
+        path = s4._system_listing_path("mychart.sutterhealth.org")
+        assert path is not None
+        assert "cost-transparency" in path
+
+    def test_curated_list_has_at_least_10_systems(self) -> None:
+        # Guard against accidental list shrinkage.
+        assert len(s4._SYSTEM_LISTING_PAGES) >= 10
+
+
+class TestKeywordAnchorFollow:
+    """The 2026-04-30 rewrite added depth-1 follow-link from the homepage.
+    Generic Sutter solution: homepage → 'Cost Transparency' anchor →
+    fetch that page → CMS filename regex matches 50+ embedded MRF URLs.
+    """
+
+    def test_finds_keyword_anchor(self) -> None:
+        html = (
+            '<a href="/billing/cost-transparency">Cost Transparency</a>'
+            '<a href="/about-us">About Us</a>'  # not a keyword anchor
+        )
+        # Pass session=None — _follow_keyword_anchors doesn't actually fetch
+        # in this helper, only collects URLs to follow.
+        out = s4._follow_keyword_anchors(None, html, "https://example.com/")  # type: ignore[arg-type]
+        assert ("https://example.com/billing/cost-transparency", "Cost Transparency") in out
+
+    def test_skips_direct_file_links(self) -> None:
+        # File links aren't followed as HTML — they're handled by the
+        # filename regex extractor on the parent page.
+        html = (
+            '<a href="/files/123_x_standardcharges.csv">Standard Charges</a>'
+            '<a href="/billing/cost-transparency">Cost Transparency</a>'
+        )
+        out = s4._follow_keyword_anchors(None, html, "https://example.com/")  # type: ignore[arg-type]
+        assert all(not u.endswith(".csv") for u, _ in out)
+
+    def test_caps_followups(self) -> None:
+        # Build a page with 20 keyword anchors — should cap at 5.
+        anchors = "".join(
+            f'<a href="/page{i}">Pricing Information</a>' for i in range(20)
+        )
+        out = s4._follow_keyword_anchors(None, anchors, "https://example.com/", max_followups=5)  # type: ignore[arg-type]
+        assert len(out) == 5
+
+    def test_dedupes_by_target_url(self) -> None:
+        html = (
+            '<a href="/cost-transparency">Cost Transparency</a>'
+            '<a href="/cost-transparency">View Standard Charges</a>'  # same target
+        )
+        out = s4._follow_keyword_anchors(None, html, "https://example.com/")  # type: ignore[arg-type]
+        assert len(out) == 1
+
+
+class TestWidenedKeywordRegex:
+    """The 2026-04-30 widening added 12 new keyword variants. Tests guard
+    that real-world phrases hospitals use are still recognised."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("Cost Transparency", True),       # Sutter
+        ("Costs and Charges", True),       # Sutter
+        ("Cost Estimator", True),          # Sutter
+        ("Shoppable Services", True),      # CMS-defined
+        ("Hospital Charges", True),
+        ("Estimate of Charges", True),
+        ("Patient Pricing", True),
+        ("Pricing Information", True),
+        ("View Our Charges", True),
+        ("Fee Schedule", True),
+        ("Financial Information", True),
+        # Originals still match
+        ("Standard Charges", True),
+        ("Price Transparency", True),
+        ("Machine Readable File", True),
+        ("Chargemaster", True),
+        # Non-matches — guard against over-broad regex
+        ("About Us", False),
+        ("Patient Portal", False),
+        ("Appointments", False),
+    ])
+    def test_keyword_variants(self, text: str, expected: bool) -> None:
+        assert bool(s4._KEYWORD_RE.search(text)) is expected
+
+
 def test_toc_walker_extracts_url_keys() -> None:
     """_expand_toc walks any JSON shape and pulls out url-like keys."""
     # Inline-test the inner walker by simulating a successful response.

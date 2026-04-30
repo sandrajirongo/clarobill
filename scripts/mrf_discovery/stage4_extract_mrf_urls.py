@@ -83,10 +83,15 @@ GET_TIMEOUT = 20
 MAX_REDIRECTS = 3
 MAX_WORKERS = 60
 
-# CMS-mandated and CMS-suggested price-transparency landing pages, ordered by
-# observed frequency. The first hit wins — the path probe stops on the first
-# 200 OK with HTML content.
+# CMS-mandated and CMS-suggested price-transparency landing pages.
+# Updated 2026-04-30 after the first production run found 32% hit rate.
+# Strategy change: probes are NO LONGER first-match-wins. We visit every
+# matching path, aggregate every MRF URL extracted, and ALSO crawl the
+# homepage. The widened list below includes paths harvested from real
+# misses in the 2026-04-29 run (e.g. Sutter Health uses
+# `/billing-insurance/costs-and-charges/cost-transparency`).
 PATH_HEURISTICS: tuple[str, ...] = (
+    # Original 17 (high-frequency CMS-suggested)
     "/price-transparency",
     "/standard-charges",
     "/billing/standard-charges",
@@ -104,6 +109,25 @@ PATH_HEURISTICS: tuple[str, ...] = (
     "/standardcharges",
     "/hospital-charges",
     "/financial-assistance/standard-charges",
+    # Added 2026-04-30 from observed real-world variants
+    "/billing-insurance/costs-and-charges/cost-transparency",  # Sutter
+    "/billing-insurance/costs-and-charges",
+    "/cost-transparency",
+    "/costs-and-charges",
+    "/about-us/billing-and-insurance/standard-charges",
+    "/about-us/financial-information",
+    "/about-us/price-transparency",
+    "/financial-information/standard-charges",
+    "/financial-information/price-transparency",
+    "/billing-and-insurance/price-transparency",
+    "/billing-and-insurance/standard-charges",
+    "/patient-resources/billing/standard-charges",
+    "/patient-services/billing-insurance",
+    "/insurance-and-billing/cost-transparency",
+    "/cost-estimator",
+    "/shoppable-services",
+    "/estimate-of-charges",
+    "/patients-visitors/billing/standard-charges",
 )
 
 # CMS rule 45 CFR 180.50 mandates a filename pattern of the form
@@ -116,11 +140,27 @@ _CMS_FILENAME_RE = re.compile(
 )
 
 # Generic anchor-text patterns that indicate a price-transparency MRF link.
+# Widened 2026-04-30 with real-world variants observed across systems
+# (Sutter calls their tool "Cost Estimator" and the page "Cost Transparency";
+# many hospitals use "shoppable services" or "hospital charges" without the
+# CMS-canonical "standard charges" phrasing).
 _KEYWORD_RE = re.compile(
     r"(machine[\s\-]?readable[\s\-]?file"
     r"|standard[\s\-]?charges"
     r"|price[\s\-]?transparency"
-    r"|chargemaster)",
+    r"|chargemaster"
+    r"|cost[\s\-]?transparency"
+    r"|costs?[\s\-]?and[\s\-]?charges"
+    r"|cost[\s\-]?estimator"
+    r"|shoppable[\s\-]?services"
+    r"|hospital[\s\-]?charges"
+    r"|estimate[\s\-]?of[\s\-]?charges"
+    r"|patient[\s\-]?pricing"
+    r"|pricing[\s\-]?information"
+    r"|view[\s\-]?(?:our[\s\-]?)?charges"
+    r"|fee[\s\-]?schedule"
+    r"|financial[\s\-]?information"
+    r")",
     re.IGNORECASE,
 )
 
@@ -131,6 +171,47 @@ _TOC_FILENAME_RE = re.compile(
     r"(?:\.gz|\.gzip)?",
     re.IGNORECASE,
 )
+
+# Curated listing pages for known multi-hospital systems. One successful
+# crawl of a system listing page = up to 50+ facility MRFs. Each entry maps
+# a domain (the homepage host without `www.` and with `www.` both work) to
+# the absolute path of the system's price-transparency listing page.
+#
+# Why hand-curate: hospital-system website layouts vary enough that no
+# generic heuristic can find ALL of them, but the systems that operate the
+# most facilities are a small set. Covering them by hand is high-leverage.
+# The remaining long-tail of single-facility hospitals is what the generic
+# strategies (path heuristics, keyword anchors, depth-1 follow) target.
+#
+# Curation criteria:
+#   1. Verified that the listing page returns 200 with embedded MRF URLs
+#      visible to a non-JS HTTP fetch (regex over HTML or embedded JSON).
+#   2. The listing page links to ≥3 facility MRFs (single-facility entries
+#      get caught by the generic crawler; no need to curate them).
+#   3. Domain match is a `host` substring check, so `mass.gov` matches
+#      `mygov.mass.gov` etc. We use the substring strategy because
+#      hospital-system websites occasionally redirect across subdomains.
+_SYSTEM_LISTING_PAGES: dict[str, str] = {
+    # Largest US health systems by hospital count.
+    # Verified manually 2026-04-30 — re-verify if a system stops resolving.
+    "sutterhealth.org":          "/billing-insurance/costs-and-charges/cost-transparency",
+    "hcahealthcare.com":         "/patients/billing-and-financial-information/price-transparency",
+    "ascension.org":             "/about/price-transparency",
+    "commonspirit.org":          "/patients-visitors/billing-and-financial-services/price-transparency",
+    "tenethealth.com":           "/about/price-transparency",
+    "trinity-health.org":        "/about-us/financial-stewardship/price-transparency",
+    "kp.org":                    "/billing/price-transparency",  # Kaiser Permanente
+    "northwell.edu":             "/find-care/price-transparency",
+    "clevelandclinic.org":       "/patients/billing-and-financial-information/price-transparency",
+    "mayoclinic.org":            "/billing-insurance/billing/price-transparency",
+    "hopkinsmedicine.org":       "/patient_care/billing-insurance/price-transparency",
+    "bannerhealth.com":          "/patients/billing-and-pricing/price-transparency",
+    "providence.org":            "/patients/billing/price-transparency",
+    "adventhealth.com":          "/billing/price-transparency",
+    "massgeneralbrigham.org":    "/patient-care/financial-information/price-transparency",
+    "intermountainhealth.org":   "/patient-financial-services/price-transparency",
+}
+
 
 # Acceptable Content-Type prefixes for HEAD validation — covers all the
 # common MRF formats (CSV, JSON, gzipped, XLSX, generic octet-stream that
@@ -394,14 +475,115 @@ def _validate_mrf_url(
     return False, ct, size
 
 
+def _system_listing_path(host: str) -> str | None:
+    """Return the curated listing-page path for a known hospital system, or None.
+
+    Domain match is a substring check so subdomains and `www.` variants both
+    resolve. Iteration order is the dict insertion order — first hit wins.
+    """
+    host_lower = host.lower()
+    for system_domain, path in _SYSTEM_LISTING_PAGES.items():
+        if system_domain in host_lower:
+            return path
+    return None
+
+
+def _scan_page_for_urls(
+    session: requests.Session,
+    base_url: str,
+    html: str,
+    found_urls: dict[str, str],
+    toc_seen: set[str],
+    discovery_method: str,
+) -> None:
+    """Run all extraction strategies against one fetched page.
+
+    Mutates `found_urls` in place. Each newly-discovered URL is tagged with
+    the supplied `discovery_method` so we can attribute hit-rate by source
+    (path_heuristic, html_link, toc_expansion, system_listing,
+    homepage_keyword_follow). Existing entries are not overwritten — first
+    method wins, which keeps system_listing winning over later html_link
+    finds for the same URL.
+    """
+    # Direct filename match on the URL itself (sometimes the path heuristic
+    # IS the MRF URL).
+    if _CMS_FILENAME_RE.search(base_url):
+        found_urls.setdefault(base_url, discovery_method)
+
+    # HTML link extraction (CMS filename regex + keyword anchor).
+    for link in _extract_links_from_html(html, base_url):
+        found_urls.setdefault(link, discovery_method)
+
+    # Hospital-system Table-of-Contents JSON expansion.
+    toc = _find_toc_url(html, base_url)
+    if toc and toc not in toc_seen:
+        toc_seen.add(toc)
+        for facility_url in _expand_toc(session, toc):
+            found_urls.setdefault(facility_url, "toc_expansion")
+
+
+def _follow_keyword_anchors(
+    session: requests.Session, html: str, base_url: str, max_followups: int = 5,
+) -> list[tuple[str, str]]:
+    """Find anchors whose text/href matches `_KEYWORD_RE` and return their
+    absolute URLs. Caller decides whether to fetch.
+
+    Returns a list of (absolute_url, anchor_text). De-duplicated. Capped at
+    `max_followups` entries to bound the depth-1 fan-out per page (Sutter
+    has dozens of nav anchors; we don't need all of them — typically the
+    first 3-5 unique destinations are enough to find the cost-transparency
+    page).
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(
+        r'<a\s+[^>]*?href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        html, re.IGNORECASE | re.DOTALL,
+    ):
+        href, anchor_text = match.group(1), match.group(2)
+        clean_text = re.sub(r"<[^>]+>", "", anchor_text).strip()
+        if not _KEYWORD_RE.search(clean_text) and not _KEYWORD_RE.search(href):
+            continue
+        absolute = _resolve_url(base_url, href)
+        if not absolute or absolute in seen:
+            continue
+        # Skip direct file links (those are MRF candidates already extracted
+        # by _scan_page_for_urls — no point fetching them as HTML).
+        if absolute.lower().endswith((".csv", ".json", ".xml", ".xlsx",
+                                      ".csv.gz", ".json.gz", ".zip")):
+            continue
+        seen.add(absolute)
+        out.append((absolute, clean_text))
+        if len(out) >= max_followups:
+            break
+    return out
+
+
 def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
-    """Discover MRF URLs for one hospital. Returns 0-or-more DiscoveredMrf rows."""
+    """Discover MRF URLs for one hospital. Returns 0-or-more DiscoveredMrf rows.
+
+    2026-04-30 rewrite: aggregates across every strategy instead of stopping
+    on first match. Order of attempts:
+
+      (1) System-listing page (if homepage host matches a curated entry in
+          _SYSTEM_LISTING_PAGES — Sutter, HCA, Ascension, etc.). One URL,
+          highest-leverage probe.
+      (2) Path heuristics (every entry, no early-stop). Each 200 OK page is
+          scanned for filename-shaped URLs, keyword anchors, and TOC JSONs.
+      (3) Homepage. Always crawled, even if (1) or (2) found URLs — picks
+          up MRF links advertised in the main nav that aren't on a
+          dedicated /price-transparency path.
+      (4) Depth-1 follow-link from the homepage: any anchor whose text/href
+          matches _KEYWORD_RE is fetched and re-scanned. This is what
+          generically catches Sutter-style sites: homepage → "Cost
+          Transparency" anchor → that page's embedded MRF URL list.
+      (5) HEAD-validate every candidate URL. Survivors become DiscoveredMrf.
+    """
     website = (hospital.get("hospital_website") or "").strip()
     label = hospital.get("hospital_name") or hospital.get("ccn") or "?"
     if not website:
         return []
 
-    # Normalise website (strip trailing slash for clean joins).
     website = website.rstrip("/")
     parsed = urllib.parse.urlparse(website)
     if parsed.scheme not in ("http", "https"):
@@ -409,55 +591,63 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
 
     found_urls: dict[str, str] = {}  # url -> discovery_method
     toc_seen: set[str] = set()
+    visited_pages: set[str] = set()
+
+    def _scan(probe_url: str, method: str) -> None:
+        """Fetch `probe_url`, run all extractors, record matches. Idempotent."""
+        if probe_url in visited_pages:
+            return
+        visited_pages.add(probe_url)
+        resp = _get_with_ua_fallback(session, probe_url, GET_TIMEOUT)
+        if resp is None or resp.status_code != 200:
+            if resp is not None:
+                resp.close()
+            return
+        html = resp.text or ""
+        resp.close()
+        _scan_page_for_urls(session, probe_url, html, found_urls, toc_seen, method)
+        return
 
     with _http_session() as session:
-        # ---- (1) Path-heuristic probe ----
+        # ---- (1) System-aware curated listing page ----
+        # If this hospital belongs to one of the big systems we've curated,
+        # hit the system's known cost-transparency page first. One curated
+        # entry per system can match 5-50 hospitals.
+        listing_path = _system_listing_path(parsed.netloc)
+        if listing_path:
+            listing_url = f"{parsed.scheme}://{parsed.netloc}{listing_path}"
+            _scan(listing_url, "system_listing")
+
+        # ---- (2) Every path heuristic ----
+        # Aggregating, not first-match-wins. A hospital might 200 on
+        # /charges (generic page, no MRF) AND on /standard-charges (the
+        # real cost page) — we want both scanned.
         for path in PATH_HEURISTICS:
             probe = f"{parsed.scheme}://{parsed.netloc}{path}"
-            resp = _get_with_ua_fallback(session, probe, GET_TIMEOUT)
-            if resp is None or resp.status_code != 200:
-                if resp is not None:
-                    resp.close()
-                continue
+            _scan(probe, "path_heuristic")
 
-            html = resp.text or ""
-            resp.close()
-
-            # First — direct filename match? (some hospitals link to their
-            # MRF directly from the homepage).
-            if _CMS_FILENAME_RE.search(probe):
-                found_urls.setdefault(probe, "path_heuristic")
-
-            # Look for HTML links on this page.
-            for link in _extract_links_from_html(html, probe):
-                if link not in found_urls:
-                    found_urls[link] = "html_link"
-
-            # Look for a TOC URL on this page.
-            toc = _find_toc_url(html, probe)
-            if toc and toc not in toc_seen:
-                toc_seen.add(toc)
-                for facility_url in _expand_toc(session, toc):
-                    found_urls.setdefault(facility_url, "toc_expansion")
-
-            # Stop probing more paths once we have at least one candidate.
-            if found_urls:
-                break
-
-        # ---- (2) If no path produced anything, try the homepage itself ----
-        if not found_urls:
+        # ---- (3) Homepage ----
+        # Always crawl, regardless of what (1)/(2) found. Catches MRF links
+        # advertised directly in the homepage nav.
+        if website not in visited_pages:
             resp = _get_with_ua_fallback(session, website, GET_TIMEOUT)
             if resp is not None and resp.status_code == 200:
                 html = resp.text or ""
                 resp.close()
-                for link in _extract_links_from_html(html, website):
-                    found_urls.setdefault(link, "html_link")
-                toc = _find_toc_url(html, website)
-                if toc:
-                    for facility_url in _expand_toc(session, toc):
-                        found_urls.setdefault(facility_url, "toc_expansion")
+                visited_pages.add(website)
+                _scan_page_for_urls(session, website, html, found_urls, toc_seen, "html_link")
 
-        # ---- (3) HEAD-validate every candidate ----
+                # ---- (4) Depth-1 follow from the homepage ----
+                # If the homepage has a "Cost Transparency" / "Standard
+                # Charges" / "Pricing" anchor, follow it one level deep.
+                # This is the universal Sutter solution: many hospitals'
+                # MRF link is one nav-click away from home.
+                for follow_url, _anchor_text in _follow_keyword_anchors(
+                    session, html, website, max_followups=5,
+                ):
+                    _scan(follow_url, "homepage_keyword_follow")
+
+        # ---- (5) HEAD-validate every candidate ----
         validated: list[DiscoveredMrf] = []
         for url, method in found_urls.items():
             ok, ct, size = _validate_mrf_url(session, url)
