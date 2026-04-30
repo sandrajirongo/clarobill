@@ -33,13 +33,24 @@ PIPELINE_SA="clarobill-pipeline-sa@${PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA="clarobill-scheduler-sa@${PROJECT}.iam.gserviceaccount.com"
 
 JOB_NAME="clarobill-mrf-discovery"
-# Bi-annual schedule (decided 2026-04-29 in Phase 4 design Q3): hospitals
-# republish their chargemasters in February and August, so the discovery
-# pipeline runs both times to catch each publication wave.
-SCHEDULE_FEB_NAME="clarobill-mrf-discovery-feb"
-SCHEDULE_AUG_NAME="clarobill-mrf-discovery-aug"
-SCHEDULE_FEB_CRON="0 2 1 2 *"  # 02:00 UTC on February 1 every year
-SCHEDULE_AUG_CRON="0 2 1 8 *"  # 02:00 UTC on August 1 every year
+# Annual + quarterly schedule (decided 2026-04-30 — see
+# docs/decisions/2026-04-30-pipeline-cadence.md):
+#
+#   - Annual full discovery on Feb 15 (gives hospitals 6 weeks past the
+#     Jan 1 CMS republish deadline to fix any errors before we crawl).
+#   - Quarterly gap-fill on the 15th of Feb / May / Aug / Nov — re-runs
+#     only the hospitals where validated_mrf_urls is still NULL after the
+#     prior pass. The Feb 15 quarterly anchor coincides with the annual
+#     run; same job, same date, --gap-fill-only is implicit on the annual
+#     run because it sweeps everyone.
+#   - Tier 3 (PAID Google Places) only runs in the annual; quarterly
+#     gap-fills skip it via --gap-fill-only without --include-tier3.
+SCHEDULE_ANNUAL_NAME="clarobill-mrf-discovery-annual"
+SCHEDULE_QUARTERLY_NAME="clarobill-mrf-discovery-quarterly"
+SCHEDULE_ANNUAL_CRON="0 2 15 2 *"          # 02:00 UTC, Feb 15
+SCHEDULE_QUARTERLY_CRON="0 2 15 5,8,11 *"  # 02:00 UTC, May/Aug/Nov 15
+# Note: Feb 15 is intentionally NOT in the quarterly cron — the annual run
+# on Feb 15 already covers everyone, including the gap-fill cohort.
 
 echo "==> Building and pushing image (${IMAGE})..."
 echo "    Build context is the repo root so the Docker COPY paths can find"
@@ -98,6 +109,7 @@ _create_or_update_schedule() {
   local name="$1"
   local cron="$2"
   local description="$3"
+  local body="$4"  # JSON body for the run request — controls --args overrides
   echo "==> Creating/updating Cloud Scheduler trigger ${name} (${cron})..."
   gcloud scheduler jobs create http "${name}" \
     --location "${REGION}" \
@@ -106,6 +118,7 @@ _create_or_update_schedule() {
     --http-method POST \
     --oauth-service-account-email "${SCHEDULER_SA}" \
     --description "${description}" \
+    --message-body "${body}" \
     --project "${PROJECT}" \
     2>/dev/null || \
   gcloud scheduler jobs update http "${name}" \
@@ -115,27 +128,52 @@ _create_or_update_schedule() {
     --http-method POST \
     --oauth-service-account-email "${SCHEDULER_SA}" \
     --description "${description}" \
+    --update-message-body "${body}" \
     --project "${PROJECT}"
 }
 
-_create_or_update_schedule "${SCHEDULE_FEB_NAME}" "${SCHEDULE_FEB_CRON}" \
-  "MRF discovery — February run (catches Jan 1 republish wave)"
-_create_or_update_schedule "${SCHEDULE_AUG_NAME}" "${SCHEDULE_AUG_CRON}" \
-  "MRF discovery — August run (catches mid-year republish wave)"
+# Annual: no --args override — runs every stage including Tier 3 (paid).
+_create_or_update_schedule "${SCHEDULE_ANNUAL_NAME}" "${SCHEDULE_ANNUAL_CRON}" \
+  "MRF discovery — ANNUAL Feb 15 full run (Stages 1-4, includes Tier 3 paid sweep)" \
+  "{}"
+
+# Quarterly gap-fill: pass --gap-fill-only via container args override.
+# Cloud Scheduler --message-body JSON shape for run-jobs override:
+#   { "overrides": { "containerOverrides": [{ "args": ["--gap-fill-only"] }] } }
+_create_or_update_schedule "${SCHEDULE_QUARTERLY_NAME}" "${SCHEDULE_QUARTERLY_CRON}" \
+  "MRF discovery — QUARTERLY gap-fill (May/Aug/Nov 15) — only hospitals still missing URLs, free stages only" \
+  '{"overrides":{"containerOverrides":[{"args":["--gap-fill-only"]}]}}'
+
+# Old Feb 1 + Aug 1 schedules are superseded — delete them if they exist
+# from earlier deploys so they don't double-trigger.
+for old in clarobill-mrf-discovery-feb clarobill-mrf-discovery-aug; do
+  echo "==> Removing legacy schedule ${old} if present..."
+  gcloud scheduler jobs delete "${old}" \
+    --location "${REGION}" --project "${PROJECT}" --quiet 2>/dev/null || true
+done
 
 echo ""
 echo "==> Discovery pipeline deployed."
-echo "    Job:        ${JOB_NAME}"
-echo "    Schedule 1: ${SCHEDULE_FEB_NAME}  (${SCHEDULE_FEB_CRON} — Feb 1 02:00 UTC)"
-echo "    Schedule 2: ${SCHEDULE_AUG_NAME}  (${SCHEDULE_AUG_CRON} — Aug 1 02:00 UTC)"
-echo "    Image:      ${IMAGE}"
+echo "    Job:           ${JOB_NAME}"
+echo "    Annual run:    ${SCHEDULE_ANNUAL_NAME}    (${SCHEDULE_ANNUAL_CRON} — Feb 15 02:00 UTC)"
+echo "    Quarterly:     ${SCHEDULE_QUARTERLY_NAME} (${SCHEDULE_QUARTERLY_CRON} — May/Aug/Nov 15 02:00 UTC)"
+echo "    Image:         ${IMAGE}"
 echo ""
-echo "    Manual trigger (uses default args — full annual run, \$450 ceiling):"
+echo "    Manual triggers:"
+echo "      # Full annual run (Stages 1-4 + Tier 3 paid)"
 echo "      gcloud run jobs execute ${JOB_NAME} --region ${REGION}"
 echo ""
-echo "    Manual trigger with custom args (e.g. start from a specific stage):"
+echo "      # Gap-fill (free stages only, skips Tier 3)"
+echo "      gcloud run jobs execute ${JOB_NAME} --region ${REGION} --args=--gap-fill-only"
+echo ""
+echo "      # Re-run only Tier 3 with a fresh budget on a specific run"
 echo "      gcloud run jobs execute ${JOB_NAME} --region ${REGION} \\"
 echo "        --args=--start-stage=stage3_tier3,--run-id=<existing-run-id>"
 echo ""
-echo "    Verify schedule next-run time:"
-echo "      gcloud scheduler jobs describe ${SCHEDULE_NAME} --location ${REGION}"
+echo "      # Re-run only Stage 4 (URL crawler) on an existing run"
+echo "      gcloud run jobs execute ${JOB_NAME} --region ${REGION} \\"
+echo "        --args=--start-stage=stage4_mrf_urls,--run-id=<existing-run-id>"
+echo ""
+echo "    Verify schedule next-run times:"
+echo "      gcloud scheduler jobs describe ${SCHEDULE_ANNUAL_NAME}    --location ${REGION}"
+echo "      gcloud scheduler jobs describe ${SCHEDULE_QUARTERLY_NAME} --location ${REGION}"

@@ -61,7 +61,7 @@ Stores hospital price transparency data from CMS Machine Readable Files (MRF):
 
 BigQuery is used for these tables because:
 1. **Scale** — a single hospital's MRF can contain millions of rows (every CPT × every payer × every plan). At 13,000+ hospitals the full dataset is in the billions of rows, which is impractical in Postgres.
-2. **Write pattern** — MRF data is bulk-replaced weekly (DELETE + load), not incrementally updated. BigQuery load jobs are purpose-built for this.
+2. **Write pattern** — MRF data is bulk-loaded twice per year (Phase 4 append-only model — `pricing_effective_year` partitioning preserves history; rules engine deduplicates via `MAX(scraped_at)`). BigQuery load jobs are purpose-built for this.
 3. **Effective dating** — `hospital_charges` is partitioned by `pricing_effective_year` so a 2026 bill is always evaluated against the 2026 chargemaster, never a future-dated re-publication. Critical for correctness; see `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md`.
 
 ### GCS (`gs://mrf-archive-clarobill-prd`) — immutable historical archive
@@ -108,11 +108,11 @@ See `docs/rules-engine.md` for complete rule documentation.
 
 ClaroBill operates two distinct pipelines on different cadences:
 
-**Weekly MRF scrape/parse** — Cloud Run Jobs that keep `hospital_charges` fresh:
-- **Scraper** (Tue 02:00 UTC) — checks HTTP Last-Modified on every hospital_directory MRF URL, downloads changed files to `gs://mrf-staging` and (Phase 4 onward) `gs://mrf-archive-clarobill-prd` partitioned by `pricing_effective_year`
-- **Parser** (Tue 06:00 UTC) — reads pending rows from `mrf_archive_index`, parses CMS MRF v2.0.0 JSON, loads normalised charge rows into `hospital_charges` with `pricing_effective_year` populated
+**Annual + mid-year MRF scrape/parse** — Cloud Run Jobs that keep `hospital_charges` fresh. CMS rule 42 CFR 180 requires hospitals to publish/refresh MRFs at most once a year, so we run twice — annual full sweep + mid-year safety net for the ~10% summer republishers. (Replaces the prior weekly cadence; see `docs/decisions/2026-04-30-pipeline-cadence.md`.)
+- **Scraper** (Feb 15 + Aug 15 02:00 UTC) — checks HTTP Last-Modified on every hospital_directory MRF URL, downloads changed files to `gs://mrf-staging` and `gs://mrf-archive-clarobill-prd` partitioned by `pricing_effective_year` (Phase 4 dual-write)
+- **Parser** (Feb 15 + Aug 15 06:00 UTC) — reads pending rows from `mrf_archive_index`, parses CMS MRF v2.0.0 JSON (UTF-8 BOM-safe + per-row tolerance), append-only loads to `hospital_charges` with `pricing_effective_year` populated
 
-**Annual MRF discovery** — Six-stage pipeline that refreshes `hospital_directory`:
+**Annual + quarterly MRF discovery** — Multi-stage pipeline that refreshes `hospital_directory`. Annual run on Feb 15 covers Stages 1-4 + paid Tier 3. Quarterly gap-fills on May/Aug/Nov 15 retry hospitals where `validated_mrf_urls` is still NULL (free; skips Tier 3).
 - Currently run manually via `scripts/mrf_discovery/stage*.py`
 - Will move to a Cloud Run Job + Cloud Scheduler trigger (Phase 3g, planned)
 - Target cadence: once per year (early January, after CMS January re-publication deadline)
@@ -141,7 +141,7 @@ clarobill/
 │       └── tests/
 ├── packages/
 │   └── shared/                  # Shared TypeScript types (Bill, BillingError, etc.)
-├── pipeline/                    # Weekly MRF scraper + parser (Cloud Run Jobs)
+├── pipeline/                    # MRF scraper + parser (Cloud Run Jobs, Feb 15 + Aug 15)
 │   ├── scrape_hospital_mrfs.py  # Downloads MRF files to GCS
 │   ├── parse_hospital_mrfs.py   # Parses MRF JSON → BigQuery
 │   ├── hospital_mrf_utils.py    # CMS MRF v2.0.0 stream parser
@@ -151,7 +151,7 @@ clarobill/
 │   ├── load_*.py                # Annual CMS reference-data loaders (PFS, NCCI, OPPS, etc.)
 │   ├── refresh_cms_data.py      # Orchestrates the annual CMS loaders
 │   ├── seed_payer_normalizations.py
-│   └── mrf_discovery/           # Annual hospital MRF discovery pipeline (CMS-direct)
+│   └── mrf_discovery/           # Annual+quarterly hospital MRF discovery pipeline (Stages 1-4)
 │       ├── migrate_bq_schema.py        # One-time BQ schema migration
 │       ├── setup_archive_bucket.sh     # One-time GCS archive bucket provisioning
 │       ├── bq_checkpoint.py            # Shared resumable-checkpoint helpers

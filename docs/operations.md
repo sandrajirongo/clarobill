@@ -21,27 +21,37 @@ If you are onboarding, read this end-to-end before touching any pipeline.
 
 ## Pipeline inventory
 
-### 1. Weekly MRF scrape + parse
+### 1. Annual + mid-year MRF scrape + parse
 
-Keeps `hospital_charges` fresh by re-downloading any MRF whose `Last-Modified` header has changed.
+Keeps `hospital_charges` fresh by re-downloading any MRF whose `Last-Modified` header has changed. Runs only twice a year because CMS rule 42 CFR 180 requires hospitals to publish/refresh MRFs at most once per year, with ~10% of hospitals also updating in summer. Weekly polling produced no new data 51 weeks per year — the cadence change shipped 2026-04-30 (commit on `main`).
 
 | Property | Value |
 |---|---|
-| **Cadence** | Weekly, Tuesdays |
+| **Cadence** | Annual (Feb 15) + mid-year (Aug 15) |
 | **Scraper job** | `clarobill-mrf-scraper` (Cloud Run Job) |
 | **Parser job** | `clarobill-mrf-parser` (Cloud Run Job) |
-| **Scraper schedule** | Tue 02:00 UTC (`clarobill-mrf-scraper-weekly`) |
-| **Parser schedule** | Tue 06:00 UTC (`clarobill-mrf-parser-weekly`) |
+| **Scraper schedules** | Feb 15 02:00 UTC (`clarobill-mrf-scraper-annual`), Aug 15 02:00 UTC (`clarobill-mrf-scraper-midyear`) |
+| **Parser schedules** | Feb 15 06:00 UTC (`clarobill-mrf-parser-annual`), Aug 15 06:00 UTC (`clarobill-mrf-parser-midyear`) |
 | **Image** | `us-central1-docker.pkg.dev/clarobill-prd/clarobill-pipeline/mrf-pipeline:latest` |
 | **Service account** | `clarobill-pipeline-sa@clarobill-prd.iam.gserviceaccount.com` |
 | **Reads from** | `hospital_directory` (mrf_url + last_modified) |
-| **Writes to** | `gs://mrf-staging/raw/` (scraper), `mrf_archive_index` (Phase 4+), `hospital_charges` (parser) |
-| **Why Tuesday** | Hospitals typically update MRF files Mon/Tue after CMS quarterly deadlines. |
+| **Writes to** | `gs://mrf-staging/raw/` (scraper), `gs://mrf-archive-clarobill-prd/` (immutable archive, Phase 4+), `mrf_archive_index` (Phase 4+), `hospital_charges` (parser) |
+| **Why Feb 15** | 6 weeks past the Jan 1 CMS republish deadline — gives hospitals time to fix first-pass errors. Same date as annual discovery so newly-discovered URLs feed straight into the scrape. |
+| **Why Aug 15** | Catches the ~10% of hospitals that republish in summer. |
+| **Why not weekly** | MRFs change at most twice a year per CMS rule. Weekly polling burned ~96% of compute on no-op `If-Modified-Since` checks. See `docs/decisions/2026-04-30-pipeline-cadence.md`. |
 
-**Health check (run weekly):**
-- Were both jobs invoked Tuesday? `gcloud run jobs executions list --job clarobill-mrf-scraper --region us-central1`
-- Did the parser write rows? `SELECT COUNT(*) FROM hospital_charges WHERE scraped_at > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 8 DAY)` should be > 0
-- Did the scraper detect any change? Some weeks no MRFs change; that's normal. Concerning if zero changes for 4+ consecutive weeks — likely an upstream issue.
+**Health check (run after each Feb 15 / Aug 15 firing):**
+- Were both jobs invoked? `gcloud run jobs executions list --job clarobill-mrf-scraper --region us-central1`
+- Did the parser write rows? `SELECT COUNT(*) FROM hospital_charges WHERE scraped_at > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)` should be in the millions for an annual run, in the hundreds-of-thousands for mid-year (only the ~10% summer republishers register).
+- Did `mrf_archive_index.parse_status` flip from 'pending' to 'parsed' for most rows? Some 'failed' is acceptable; many 'failed' = parser regression.
+
+**Manual trigger (one-off for a customer report):**
+```bash
+# Forces all hospitals' If-Modified-Since to re-evaluate. The scraper still
+# skips unchanged files via Last-Modified — this just runs the comparison.
+gcloud run jobs execute clarobill-mrf-scraper --region us-central1 --tasks 6
+gcloud run jobs execute clarobill-mrf-parser  --region us-central1 --tasks 6
+```
 
 **Common failures:**
 | Symptom | Cause | Fix |
@@ -52,44 +62,47 @@ Keeps `hospital_charges` fresh by re-downloading any MRF whose `Last-Modified` h
 
 ---
 
-### 2. Annual MRF discovery
+### 2. Annual + quarterly MRF discovery
 
-Refreshes `hospital_directory` with newly-certified hospitals, retired hospitals, and changed MRF URLs.
+Refreshes `hospital_directory` with newly-certified hospitals, retired hospitals, and changed MRF URLs. Runs Feb 15 (full) + the 15th of May/Aug/Nov (gap-fill only).
 
 | Property | Value |
 |---|---|
-| **Cadence** | Annually, mid-January |
-| **Why January** | CMS rule 42 CFR 180 requires hospitals to re-publish chargemasters by January 1 each year. Running January 15-20 catches the new versions. |
-| **Status** | Stages 1-2 done + applied; Stages 3-6 pending; Cloud Run Job scheduling planned in Phase 3g |
-| **Current trigger** | Manual (run `scripts/mrf_discovery/stage*.py` in sequence) |
-| **Future trigger** | Cloud Run Job `clarobill-mrf-discovery-annual` on Cloud Scheduler `0 2 15 1 *` (15 January 02:00 UTC) |
+| **Cadence** | Annual full run + quarterly gap-fills |
+| **Job** | `clarobill-mrf-discovery` (Cloud Run Job) |
+| **Annual schedule** | Feb 15 02:00 UTC (`clarobill-mrf-discovery-annual`) — runs every stage including Tier 3 paid sweep |
+| **Quarterly schedule** | May 15 / Aug 15 / Nov 15 02:00 UTC (`clarobill-mrf-discovery-quarterly`) — passes `--gap-fill-only`; only crawls hospitals where `validated_mrf_urls IS NULL` plus any new CMS-listed hospitals; **skips Tier 3 paid** unless `--include-tier3` is also passed |
+| **Why Feb 15** | 6 weeks past Jan 1 CMS republish deadline — hospitals get time to fix first-pass errors before we crawl. |
+| **Why the 15th of May/Aug/Nov** | 45 days into each remaining quarter — picks up newly-certified hospitals + retries the ~20% Stage 4 didn't resolve on the previous pass. |
 | **Reads from** | CMS PI API, CMS POS API, NPPES Registry API, Wikidata SPARQL, hospital websites |
-| **Writes to** | `mrf_discovery_checkpoint` (working state), `hospital_directory` (final), `mrf_discovery_runs` (summary) |
+| **Writes to** | `mrf_discovery_checkpoint` (working state, all stages), `hospital_directory` (final, MERGEd by Stage 4) |
+| **Stages** | 1 (CMS list) → 2A/B/B'/C (NPI + website) → 3.1/3.2/3.3 (website discovery) → 4 (MRF URL extraction) |
 
-**Run order (manual, until Phase 3g):**
+**Stage 4 (MRF URL extraction):** for each hospital with `hospital_website` set, probes ~17 common CMS-mandated paths (`/price-transparency`, `/standard-charges`, etc.), extracts MRF download links via HTML regex (CMS filename pattern `\d{6,12}_..._standardcharges.{csv,json,xml}` and keyword anchor scan), expands hospital-system Table-of-Contents JSONs (`*-toc.json`), HEAD-validates every candidate, persists to `validated_mrf_urls` AND MERGEs into `hospital_directory` so the scraper picks them up. Free, ~15-25 min wall-clock at 60 concurrent workers for ~12,000 hospitals.
+
+**Manual triggers:**
 
 ```bash
-# Generate a fresh run_id once and capture it
-RUN_ID=$(python3 scripts/mrf_discovery/stage1_cms_hospital_list.py --project clarobill-prd | tail -1)
+# Full annual run (Stages 1-4 + Tier 3 paid)
+gcloud run jobs execute clarobill-mrf-discovery --region us-central1
 
-# Stages 2A + 2B + 2C run in sequence; each can be re-run if it fails
-python3 scripts/mrf_discovery/stage2_pos_file.py --run-id $RUN_ID --project clarobill-prd
-python3 scripts/mrf_discovery/stage2_npi_registry.py --run-id $RUN_ID --project clarobill-prd
-python3 scripts/mrf_discovery/stage2_wikidata.py --run-id $RUN_ID --project clarobill-prd
+# Gap-fill only (free, skips Tier 3)
+gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
+  --args=--gap-fill-only
 
-# Stages 3-6 (not yet built):
-# stage3_website_discovery.py
-# stage4_website_crawler.py
-# stage5_mrf_validator.py
-# stage6_directory_merge.py
+# Re-run only Stage 4 (URL crawler) on an existing run
+gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
+  --args=--start-stage=stage4_mrf_urls,--run-id=<existing-run-id>
+
+# Re-run only Tier 3 with a fresh budget
+gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
+  --args=--start-stage=stage3_tier3,--run-id=<existing-run-id>
 ```
 
-**Cost estimate (per annual run):**
-- Stages 1-2: free (CMS public APIs + NPPES Registry API)
-- Stage 3 Tier 3 (Google Places): hard ceiling $450, expected ~$180-220 Year 1, ~$10-20 Year 2+ (cache-driven). See `docs/decisions/2026-04-28-google-places-cost-design.md`.
-- Cloud Run Job runtime (~6 hr at 4Gi/2CPU): ~$3
-- BigQuery storage: ~$1/yr
-- **Total: ~$185-225 first year, ~$15-25/yr after**
+**Cost estimate:**
+- **Annual run (Feb 15):** Stages 1-2 free; Stage 3 Tier 3 hard ceiling $450 (Year 1 actual ran $349.92); Stage 4 free; Cloud Run runtime ~$3-5. **~$355-460 first year, ~$15-25/yr after** (cache-driven post-Year-1 Tier 3).
+- **Quarterly gap-fills (May/Aug/Nov 15):** all free — `--gap-fill-only` skips Tier 3 by default. Cloud Run runtime ~$1 each. **~$3/yr total.**
+- See `docs/decisions/2026-04-28-google-places-cost-design.md` and `docs/decisions/2026-04-30-pipeline-cadence.md`.
 
 **Annual immutable snapshots:** every external-API cache (NPPES at `gs://mrf-staging/nppes-api-cache.json`, Google Places at `gs://mrf-staging/places-api-cache.json`) is snapshotted at end-of-run to `gs://mrf-archive-clarobill-prd/{nppes-api,places-api}-cache-snapshots/{year}.json` for forensic reproducibility. Working caches mutate; snapshots are immutable.
 

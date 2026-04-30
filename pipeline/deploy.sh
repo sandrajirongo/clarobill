@@ -98,50 +98,83 @@ gcloud run jobs add-iam-policy-binding clarobill-mrf-parser \
 
 echo "==> Creating/updating Cloud Scheduler jobs..."
 
-# Scraper runs Tuesday 02:00 UTC — hospitals often update MRFs Mon/Tue after CMS deadlines.
-gcloud scheduler jobs create http clarobill-mrf-scraper-weekly \
-  --location "${REGION}" \
-  --schedule "0 2 * * 2" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/clarobill-mrf-scraper:run" \
-  --http-method POST \
-  --oauth-service-account-email "${SCHEDULER_SA}" \
-  --project "${PROJECT}" \
-  2>/dev/null || \
-gcloud scheduler jobs update http clarobill-mrf-scraper-weekly \
-  --location "${REGION}" \
-  --schedule "0 2 * * 2" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/clarobill-mrf-scraper:run" \
-  --http-method POST \
-  --oauth-service-account-email "${SCHEDULER_SA}" \
-  --project "${PROJECT}"
+# 2026-04-30 cadence change (see docs/decisions/2026-04-30-pipeline-cadence.md):
+# MRFs change at most twice per year per CMS rule, so weekly polling was wasteful.
+# New schedule:
+#   - Annual scrape + parse on Feb 15 (matches annual discovery; gives hospitals
+#     6 weeks past Jan 1 republish deadline to fix any errors before we crawl).
+#   - Mid-year safety scrape + parse on Aug 15 (catches the ~10% of hospitals
+#     that republish in summer).
+# The legacy weekly schedules are deleted at the bottom of this script.
+_create_or_update_schedule() {
+  local name="$1"
+  local cron="$2"
+  local target_job="$3"
+  local description="$4"
+  echo "==> Creating/updating Cloud Scheduler trigger ${name} (${cron})..."
+  gcloud scheduler jobs create http "${name}" \
+    --location "${REGION}" \
+    --schedule "${cron}" \
+    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${target_job}:run" \
+    --http-method POST \
+    --oauth-service-account-email "${SCHEDULER_SA}" \
+    --description "${description}" \
+    --project "${PROJECT}" \
+    2>/dev/null || \
+  gcloud scheduler jobs update http "${name}" \
+    --location "${REGION}" \
+    --schedule "${cron}" \
+    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${target_job}:run" \
+    --http-method POST \
+    --oauth-service-account-email "${SCHEDULER_SA}" \
+    --description "${description}" \
+    --project "${PROJECT}"
+}
 
-# Parser runs Tuesday 06:00 UTC — 4 hours after scraper to let downloads complete.
-gcloud scheduler jobs create http clarobill-mrf-parser-weekly \
-  --location "${REGION}" \
-  --schedule "0 6 * * 2" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/clarobill-mrf-parser:run" \
-  --http-method POST \
-  --oauth-service-account-email "${SCHEDULER_SA}" \
-  --project "${PROJECT}" \
-  2>/dev/null || \
-gcloud scheduler jobs update http clarobill-mrf-parser-weekly \
-  --location "${REGION}" \
-  --schedule "0 6 * * 2" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/clarobill-mrf-parser:run" \
-  --http-method POST \
-  --oauth-service-account-email "${SCHEDULER_SA}" \
-  --project "${PROJECT}"
+# Scraper: annual Feb 15 + mid-year Aug 15.
+_create_or_update_schedule \
+  "clarobill-mrf-scraper-annual" \
+  "0 2 15 2 *" \
+  "clarobill-mrf-scraper" \
+  "MRF scraper — ANNUAL Feb 15 02:00 UTC (full chargemaster refresh)"
+_create_or_update_schedule \
+  "clarobill-mrf-scraper-midyear" \
+  "0 2 15 8 *" \
+  "clarobill-mrf-scraper" \
+  "MRF scraper — MID-YEAR Aug 15 02:00 UTC (catches summer republishers)"
+
+# Parser: 4 hours after each scraper, same dates.
+_create_or_update_schedule \
+  "clarobill-mrf-parser-annual" \
+  "0 6 15 2 *" \
+  "clarobill-mrf-parser" \
+  "MRF parser — ANNUAL Feb 15 06:00 UTC (4h after annual scraper)"
+_create_or_update_schedule \
+  "clarobill-mrf-parser-midyear" \
+  "0 6 15 8 *" \
+  "clarobill-mrf-parser" \
+  "MRF parser — MID-YEAR Aug 15 06:00 UTC (4h after mid-year scraper)"
+
+# Delete the legacy weekly schedules so they don't double-trigger alongside
+# the new annual/mid-year schedules. Idempotent — silent if already gone.
+for old in clarobill-mrf-scraper-weekly clarobill-mrf-parser-weekly; do
+  echo "==> Removing legacy weekly schedule ${old} if present..."
+  gcloud scheduler jobs delete "${old}" \
+    --location "${REGION}" --project "${PROJECT}" --quiet 2>/dev/null || true
+done
 
 echo ""
 echo "==> Pipeline deployed."
-echo "    Scraper:  runs Tuesdays at 02:00 UTC"
-echo "    Parser:   runs Tuesdays at 06:00 UTC"
+echo "    Scraper annual:    Feb 15 02:00 UTC"
+echo "    Scraper mid-year:  Aug 15 02:00 UTC"
+echo "    Parser annual:     Feb 15 06:00 UTC"
+echo "    Parser mid-year:   Aug 15 06:00 UTC"
 echo ""
-echo "    Manual trigger — single task (current, up to ~1,200 hospitals):"
+echo "    Manual trigger — single task (small fleet test):"
 echo "      gcloud run jobs execute clarobill-mrf-scraper --region ${REGION}"
 echo "      gcloud run jobs execute clarobill-mrf-parser  --region ${REGION}"
 echo ""
-echo "    Manual trigger — 6 parallel tasks (for ~7,200 hospitals, ~4h wall-clock):"
+echo "    Manual trigger — 6 parallel tasks (for ~13,989 hospitals, ~4h wall-clock):"
 echo "      gcloud run jobs execute clarobill-mrf-scraper --tasks 6 --region ${REGION}"
 echo "      gcloud run jobs execute clarobill-mrf-parser  --tasks 6 --region ${REGION}"
 echo "    Note: parallelism defaults to 0 (unlimited) — all 6 tasks run concurrently."

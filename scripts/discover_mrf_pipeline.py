@@ -81,6 +81,7 @@ from mrf_discovery import stage2_wikidata
 from mrf_discovery import stage3_tier1_validate_urls
 from mrf_discovery import stage3_tier2_pattern_inference
 from mrf_discovery import stage3_tier3_places
+from mrf_discovery import stage4_extract_mrf_urls
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ STAGES: list[tuple[str, str]] = [
     ("stage3_tier1",       "Stage 3.1 — Validate existing URLs"),
     ("stage3_tier2",       "Stage 3.2 — Domain pattern inference"),
     ("stage3_tier3",       "Stage 3.3 — Google Places API (PAID)"),
+    ("stage4_mrf_urls",    "Stage 4 — Crawl websites for MRF URLs"),
 ]
 
 
@@ -176,6 +178,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run every stage in its dry-run mode (no BQ writes, no API calls).",
     )
+    parser.add_argument(
+        "--gap-fill-only",
+        action="store_true",
+        help="Quarterly gap-fill mode: only crawl/process hospitals where "
+             "validated_mrf_urls is still NULL (i.e. previous run couldn't "
+             "find them) plus any new CMS-listed hospitals. Skips the heavy "
+             "Tier 3 paid stage by default unless --include-tier3 is also "
+             "passed. Designed for the May/Aug/Nov quarterly runs.",
+    )
+    parser.add_argument(
+        "--include-tier3",
+        action="store_true",
+        help="When combined with --gap-fill-only, allows Tier 3 (paid) to "
+             "run during the gap-fill. Off by default — quarterly gap-fills "
+             "should be free unless explicitly opted in.",
+    )
     args = parser.parse_args(argv)
 
     run_id = args.run_id or bq_checkpoint.new_run_id()
@@ -240,6 +258,14 @@ def main(argv: list[str] | None = None) -> int:
                     dataset=args.dataset, dry_run=args.dry_run,
                 )
             elif key == "stage3_tier3":
+                if args.gap_fill_only and not args.include_tier3:
+                    logger.info(
+                        "Stage 3 Tier 3 skipped (--gap-fill-only without "
+                        "--include-tier3). Quarterly gap-fills run free stages only."
+                    )
+                    elapsed = time.monotonic() - stage_start
+                    logger.info("--- %s skipped (%.1fs) ---", label, elapsed)
+                    continue
                 if args.tier3_cost_preview:
                     targets = stage3_tier3_places.get_pending_hospitals(
                         bq_client, args.project, run_id, dataset=args.dataset,
@@ -265,6 +291,17 @@ def main(argv: list[str] | None = None) -> int:
                     max_places_cost=args.tier3_max_cost,
                     dataset=args.dataset, dry_run=args.dry_run,
                 )
+            elif key == "stage4_mrf_urls":
+                # Stage 4 doesn't have a dry-run mode of its own — when the
+                # orchestrator is in --dry-run, skip Stage 4 entirely (it
+                # would otherwise hit thousands of real hospital websites).
+                if args.dry_run:
+                    logger.info("Stage 4 skipped under --dry-run.")
+                else:
+                    stage4_extract_mrf_urls.run(
+                        bq=bq_client, project=args.project, run_id=run_id,
+                        dataset=args.dataset,
+                    )
         except Exception as exc:
             logger.exception("Stage %s FAILED: %s", key, exc)
             logger.error(
