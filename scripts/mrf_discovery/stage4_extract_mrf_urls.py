@@ -691,7 +691,7 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
 # ---------------------------------------------------------------------------
 
 
-def _persist_results(
+def _persist_results(  # noqa: C901
     bq: bigquery.Client,
     project: str,
     dataset: str,
@@ -700,6 +700,10 @@ def _persist_results(
     run_id: str,
 ) -> None:
     """Update mrf_discovery_checkpoint and MERGE into hospital_directory.
+
+    Round 2 hardening: every BigQuery operation logs progress markers so
+    a partial failure points at the specific step that died. Caller is
+    responsible for catching exceptions and deciding retry policy.
 
     Successful hospitals get:
       checkpoint.validated_mrf_urls = JSON array of URLs (string)
@@ -759,6 +763,15 @@ def _persist_results(
     # Use a load job + MERGE for streaming-buffer safety (same approach as
     # Phase 4 archive_index).
     if rows_to_update:
+        logger.info(
+            "_persist_results: starting checkpoint update (%d rows)",
+            len(rows_to_update),
+        )
+        # Run-id sanitization: BigQuery table names allow [a-zA-Z0-9_], so
+        # strip everything else (e.g. the `T` separator in the ISO timestamp
+        # is fine but the leading underscore for `_stage4_*` is reserved
+        # only for system tables — our prefix is `_stage4_` which IS allowed
+        # for application tables).
         staging_table = f"{project}.{dataset}._stage4_staging_{run_id.replace('-', '_')}"
         load_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
@@ -801,14 +814,15 @@ def _persist_results(
         ).result()
         bq.delete_table(staging_table, not_found_ok=True)
         logger.info(
-            "Updated %d checkpoint rows (success=%d, failed=%d)",
+            "_persist_results: checkpoint MERGE done (rows=%d success=%d failed=%d)",
             len(rows_to_update), len(by_ccn), len(failed_ccns),
         )
 
     # ---- 2. MERGE discovered URLs into hospital_directory ----
     if not discovered:
-        logger.info("No discovered URLs — skipping hospital_directory merge.")
+        logger.info("_persist_results: no discovered URLs — skipping hospital_directory merge")
         return
+    logger.info("_persist_results: starting hospital_directory MERGE (%d URLs)", len(discovered))
 
     directory_rows = [
         {
@@ -906,8 +920,22 @@ def run(
     dataset: str = bq_checkpoint.DEFAULT_DATASET,
     max_hospitals: int | None = None,
     workers: int = MAX_WORKERS,
+    flush_every: int = 1000,
 ) -> dict[str, int]:
-    """Run Stage 4 across all pending hospitals. Returns a stats dict."""
+    """Run Stage 4 across all pending hospitals. Returns a stats dict.
+
+    2026-04-30 round 2 hardening: the crawler flushes partial results to
+    BigQuery every `flush_every` hospitals so a mid-run crash only loses
+    the last batch. The previous "all-or-nothing" persistence pattern lost
+    5,700 hospitals' worth of crawl work when the container died during
+    the final _persist_results call (execution w6wmc). Periodic flushes
+    convert that failure mode into a survivable resume.
+
+    Tracebacks from _persist_results are now caught and logged via
+    logger.exception so Cloud Logging captures them — the previous failure
+    showed only an empty `{}` ERROR entry because the unhandled exception
+    went to stderr which Cloud Run didn't ship before container shutdown.
+    """
     pending = _query_pending(bq, project, dataset, run_id)
     if max_hospitals is not None:
         pending = pending[:max_hospitals]
@@ -915,10 +943,44 @@ def run(
         logger.info("Stage 4: no pending hospitals — nothing to do.")
         return {"pending": 0, "discovered": 0, "failed": 0}
 
-    logger.info("Stage 4: crawling %d hospitals with %d workers", len(pending), workers)
+    logger.info(
+        "Stage 4: crawling %d hospitals with %d workers (flushing every %d)",
+        len(pending), workers, flush_every,
+    )
 
     discovered_all: list[DiscoveredMrf] = []
     failed_ccns: list[str] = []
+    flush_buffer_discovered: list[DiscoveredMrf] = []
+    flush_buffer_failed: list[str] = []
+    total_flushed = 0
+
+    def _flush_batch(reason: str) -> None:
+        """Persist whatever's in the flush buffers, then clear them."""
+        nonlocal total_flushed
+        if not flush_buffer_discovered and not flush_buffer_failed:
+            return
+        try:
+            _persist_results(
+                bq, project, dataset,
+                flush_buffer_discovered, flush_buffer_failed, run_id,
+            )
+            total_flushed += len(flush_buffer_discovered) + len(flush_buffer_failed)
+            logger.info(
+                "Flushed batch (%s): %d discovered + %d failed = %d total persisted so far",
+                reason, len(flush_buffer_discovered), len(flush_buffer_failed),
+                total_flushed,
+            )
+            flush_buffer_discovered.clear()
+            flush_buffer_failed.clear()
+        except Exception:
+            # Don't let a transient BQ error kill the whole crawl. Log the
+            # full traceback to stdout (Cloud Run captures it) and keep
+            # the buffer for retry on the next flush.
+            logger.exception(
+                "Persist flush FAILED (%s) — keeping buffer for retry. "
+                "buffer sizes: discovered=%d failed=%d",
+                reason, len(flush_buffer_discovered), len(flush_buffer_failed),
+            )
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(_crawl_hospital, h): h for h in pending}
@@ -933,14 +995,18 @@ def run(
                 result = []
             if result:
                 discovered_all.extend(result)
+                flush_buffer_discovered.extend(result)
             else:
                 failed_ccns.append(ccn)
+                flush_buffer_failed.append(ccn)
             completed += 1
             if completed % 500 == 0:
                 logger.info(
                     "Stage 4 progress: %d/%d (%d discovered URLs so far)",
                     completed, len(pending), len(discovered_all),
                 )
+            if completed % flush_every == 0:
+                _flush_batch(reason=f"every-{flush_every} at completed={completed}")
 
     logger.info(
         "Stage 4 crawl done: %d hospitals → %d MRF URLs (%d hospitals had ≥1 URL)",
@@ -949,12 +1015,15 @@ def run(
         len({d.ccn for d in discovered_all}),
     )
 
-    _persist_results(bq, project, dataset, discovered_all, failed_ccns, run_id)
+    # Final flush — anything still in the buffers from the last partial batch.
+    _flush_batch(reason="final")
+
     return {
         "pending": len(pending),
         "discovered": len(discovered_all),
         "failed": len(failed_ccns),
         "hospitals_with_urls": len({d.ccn for d in discovered_all}),
+        "total_flushed": total_flushed,
     }
 
 
