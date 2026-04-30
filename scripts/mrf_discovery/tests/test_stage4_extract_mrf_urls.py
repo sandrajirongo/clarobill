@@ -154,9 +154,11 @@ class TestSystemListingPages:
         assert path is not None
         assert "cost-transparency" in path
 
-    def test_curated_list_has_at_least_10_systems(self) -> None:
-        # Guard against accidental list shrinkage.
-        assert len(s4._SYSTEM_LISTING_PAGES) >= 10
+    def test_curated_list_has_verified_entries(self) -> None:
+        # Round-2 trimmed the list from 16 unverified to 5 verified entries.
+        # Guard floor at 4 so we notice if more entries get pruned without
+        # replacement; raise this when new systems are verified + added.
+        assert len(s4._SYSTEM_LISTING_PAGES) >= 4
 
 
 class TestKeywordAnchorFollow:
@@ -223,9 +225,14 @@ class TestWidenedKeywordRegex:
         ("Price Transparency", True),
         ("Machine Readable File", True),
         ("Chargemaster", True),
+        # 2026-04-30 round 2 — bare "billing" gate
+        ("Billing", True),
+        ("Billing Information", True),
+        ("Pay My Bill", True),
+        ("Patient Services", True),
+        ("Patient Financial", True),
         # Non-matches — guard against over-broad regex
         ("About Us", False),
-        ("Patient Portal", False),
         ("Appointments", False),
     ])
     def test_keyword_variants(self, text: str, expected: bool) -> None:

@@ -128,6 +128,15 @@ PATH_HEURISTICS: tuple[str, ...] = (
     "/shoppable-services",
     "/estimate-of-charges",
     "/patients-visitors/billing/standard-charges",
+    # 2026-04-30 round 2: harvested from real-world misses (knoxville,
+    # intermountain, ascension, commonspirit, banner, providence, etc.)
+    "/billing",
+    "/billing-information",
+    "/billing-information-policies",
+    "/for-patients/billing",
+    "/for-patients/billing/hospital-price-estimates",
+    "/patient-resources/price-transparency",
+    "/billing-support/pricing-transparency",
 )
 
 # CMS rule 45 CFR 180.50 mandates a filename pattern of the form
@@ -160,6 +169,17 @@ _KEYWORD_RE = re.compile(
     r"|view[\s\-]?(?:our[\s\-]?)?charges"
     r"|fee[\s\-]?schedule"
     r"|financial[\s\-]?information"
+    # 2026-04-30 round 2: bare "billing" is the most common nav-link text
+    # used by community hospitals to gate to their price-transparency page
+    # (e.g. knoxvillehospital.org → /billing-information-policies/). Bare
+    # "billing" matches a lot of false-positive anchors (footer "Pay Your
+    # Bill" links etc.) but the depth-1 follow strategy gracefully degrades
+    # — false-positive follows just don't yield MRF URLs and we move on.
+    # The cost is HEAD requests; the benefit is reaching the long-tail
+    # hospitals where "Billing" is the only nav term.
+    r"|billing"
+    r"|pay[\s\-]?(?:my[\s\-]?)?bill"
+    r"|patient[\s\-]?(?:billing|services|resources|financial)"
     r")",
     re.IGNORECASE,
 )
@@ -174,42 +194,32 @@ _TOC_FILENAME_RE = re.compile(
 
 # Curated listing pages for known multi-hospital systems. One successful
 # crawl of a system listing page = up to 50+ facility MRFs. Each entry maps
-# a domain (the homepage host without `www.` and with `www.` both work) to
-# the absolute path of the system's price-transparency listing page.
+# a domain (substring host match — `www.foo.com` and `mychart.foo.com`
+# both hit) to the absolute path of the system's listing page.
 #
-# Why hand-curate: hospital-system website layouts vary enough that no
-# generic heuristic can find ALL of them, but the systems that operate the
-# most facilities are a small set. Covering them by hand is high-leverage.
-# The remaining long-tail of single-facility hospitals is what the generic
-# strategies (path heuristics, keyword anchors, depth-1 follow) target.
+# Curation criteria — every entry must satisfy ALL three:
+#   1. Returns HTTP 200 to our scraper UA.
+#   2. The HTML contains ≥10 occurrences of "standardcharges" so the CMS
+#      filename regex actually extracts MRF URLs (not just nav text).
+#   3. The page links to ≥3 facility MRFs (single-facility entries get
+#      caught by the generic crawler; no need to curate them).
 #
-# Curation criteria:
-#   1. Verified that the listing page returns 200 with embedded MRF URLs
-#      visible to a non-JS HTTP fetch (regex over HTML or embedded JSON).
-#   2. The listing page links to ≥3 facility MRFs (single-facility entries
-#      get caught by the generic crawler; no need to curate them).
-#   3. Domain match is a `host` substring check, so `mass.gov` matches
-#      `mygov.mass.gov` etc. We use the substring strategy because
-#      hospital-system websites occasionally redirect across subdomains.
+# 2026-04-30 round 2: of 16 originally-curated entries, 13 turned out to
+# return 404/403 or to be JS-rendered (verified empty `standardcharges`
+# count after fetch). Only 5 met the criteria. Pruned the rest — the
+# generic depth-1 keyword-follow strategy (homepage → "Billing" or
+# "Price Transparency" anchor → resolved page) handles the others.
+#
+# Re-verification pattern (run if a system stops working):
+#   curl -sL --max-time 15 -A "Mozilla/5.0..." \
+#     "https://www.<host><path>" | grep -c standardcharges
 _SYSTEM_LISTING_PAGES: dict[str, str] = {
-    # Largest US health systems by hospital count.
-    # Verified manually 2026-04-30 — re-verify if a system stops resolving.
-    "sutterhealth.org":          "/billing-insurance/costs-and-charges/cost-transparency",
-    "hcahealthcare.com":         "/patients/billing-and-financial-information/price-transparency",
-    "ascension.org":             "/about/price-transparency",
-    "commonspirit.org":          "/patients-visitors/billing-and-financial-services/price-transparency",
-    "tenethealth.com":           "/about/price-transparency",
-    "trinity-health.org":        "/about-us/financial-stewardship/price-transparency",
-    "kp.org":                    "/billing/price-transparency",  # Kaiser Permanente
-    "northwell.edu":             "/find-care/price-transparency",
-    "clevelandclinic.org":       "/patients/billing-and-financial-information/price-transparency",
-    "mayoclinic.org":            "/billing-insurance/billing/price-transparency",
-    "hopkinsmedicine.org":       "/patient_care/billing-insurance/price-transparency",
-    "bannerhealth.com":          "/patients/billing-and-pricing/price-transparency",
-    "providence.org":            "/patients/billing/price-transparency",
-    "adventhealth.com":          "/billing/price-transparency",
-    "massgeneralbrigham.org":    "/patient-care/financial-information/price-transparency",
-    "intermountainhealth.org":   "/patient-financial-services/price-transparency",
+    # Verified 2026-04-30 — every entry returns 200 with ≥10 standardcharges hits.
+    "sutterhealth.org":          "/billing-insurance/costs-and-charges/cost-transparency",  # 54 hits
+    "providence.org":            "/billing-support/pricing-transparency",                    # 57 hits
+    "bannerhealth.com":          "/patients/billing/pricing-resources/hospital-price-transparency",  # 31 hits
+    "massgeneralbrigham.org":    "/en/patient-care/patient-visitor-information/billing/cms-required-hospital-charge-data",  # 28 hits
+    "northwell.edu":             "/billing-and-insurance/price-estimator-tools",             # 17 hits
 }
 
 
