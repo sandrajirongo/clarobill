@@ -128,7 +128,7 @@ _create_or_update_schedule() {
     --http-method POST \
     --oauth-service-account-email "${SCHEDULER_SA}" \
     --description "${description}" \
-    --update-message-body "${body}" \
+    --message-body "${body}" \
     --project "${PROJECT}"
 }
 
