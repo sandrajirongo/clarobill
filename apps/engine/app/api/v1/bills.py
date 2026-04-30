@@ -116,13 +116,16 @@ async def _run_analysis_pipeline(
         # location and stored in a different format (full CMS state name).
         hospital_npi = parser.extract_npi(raw_text)
         hospital_name = parser.extract_hospital_name(raw_text)
-        _, hospital_state, hospital_zip = parser.extract_hospital_address(raw_text)
+        # Capture the city too — needed for the dispute-letter recipient block.
+        # Pre-2026-04-30 this discarded the city via `_, state, zip`; the letter
+        # ended up with a `[PROVIDER NAME AND ADDRESS]` placeholder.
+        hospital_city, hospital_state, hospital_zip = parser.extract_hospital_address(raw_text)
         if hospital_npi:
             logger.info("Extracted NPI %s from bill %s", hospital_npi, bill_id)
         if hospital_name:
             logger.info(
-                "Extracted hospital '%s' (state=%s zip=%s) from bill %s",
-                hospital_name, hospital_state, hospital_zip, bill_id,
+                "Extracted hospital '%s' (city=%s state=%s zip=%s) from bill %s",
+                hospital_name, hospital_city, hospital_state, hospital_zip, bill_id,
             )
         # Persist all confirmed identity fields — hospital from OCR, payer/plan from user
         identity_update: dict[str, str] = {}
@@ -130,6 +133,12 @@ async def _run_analysis_pipeline(
             identity_update["hospital_npi"] = hospital_npi
         if hospital_name:
             identity_update["hospital_name"] = hospital_name
+        if hospital_city:
+            identity_update["hospital_city"] = hospital_city
+        if hospital_state:
+            identity_update["hospital_state"] = hospital_state
+        if hospital_zip:
+            identity_update["hospital_zip"] = hospital_zip
         if payer_name:
             identity_update["payer_name"] = payer_name
         if plan_name:
@@ -1498,7 +1507,8 @@ async def generate_report(
     regenerates rather than returning a broken download.
     """
     bill_row = supabase.table("bills").select(
-        "id,file_name,file_path,user_id,hospital_name,payer_name,plan_name,profile_member_id"
+        "id,file_name,file_path,user_id,hospital_name,hospital_city,hospital_state,hospital_zip,"
+        "payer_name,plan_name,profile_member_id"
     ).eq("id", bill_id).single().execute()
     if not bill_row.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found.")
@@ -1565,6 +1575,9 @@ async def _do_generate_report(
         file_name: str = bill_data["file_name"]
         user_id: str = bill_data["user_id"]
         hospital_name: str | None = bill_data.get("hospital_name")
+        hospital_city: str | None = bill_data.get("hospital_city")
+        hospital_state: str | None = bill_data.get("hospital_state")
+        hospital_zip: str | None = bill_data.get("hospital_zip")
         payer_name: str | None = bill_data.get("payer_name")
         plan_name: str | None = bill_data.get("plan_name")
         profile_member_id: str | None = bill_data.get("profile_member_id")
@@ -1642,7 +1655,11 @@ async def _do_generate_report(
         dispute_letter_text, report_pdf = await asyncio.gather(
             ai_service.generate_dispute_letter(
                 billing_errors, line_items, file_name,
-                hospital_name=hospital_name, payer_name=payer_name,
+                hospital_name=hospital_name,
+                hospital_city=hospital_city,
+                hospital_state=hospital_state,
+                hospital_zip=hospital_zip,
+                payer_name=payer_name,
                 patient_name=patient_name, patient_dob=patient_dob,
                 member_id=member_id,
             ),

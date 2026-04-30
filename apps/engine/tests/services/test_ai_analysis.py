@@ -134,6 +134,100 @@ class TestGenerateDisputeLetter:
         assert expected_date in letter
         assert "[DATE]" not in letter
 
+    async def test_accepts_facility_address_kwargs_without_error(
+        self, service: AiAnalysisService,
+    ) -> None:
+        """The 2026-04-30 fix added hospital_city/state/zip — verify the
+        signature accepts them without breaking existing fixture tests."""
+        errors = [make_error("DUPLICATE_CHARGE", "Duplicate charge", 100.00)]
+        letter = await service.generate_dispute_letter(
+            errors, [], "bill.pdf",
+            hospital_name="Saint Michaels Medical Center",
+            hospital_city="Newark",
+            hospital_state="NJ",
+            hospital_zip="07102",
+        )
+        # Fixture letter doesn't render the recipient block — these tests
+        # just confirm the kwargs are accepted. The recipient-block
+        # formatting itself is covered by TestBuildRecipientBlock below.
+        assert isinstance(letter, str) and letter
+
+
+class TestBuildRecipientBlock:
+    """Unit tests for the dispute-letter recipient-block builder.
+
+    The block goes into the AI prompt (test_mode=False) so the model
+    renders a complete, USPS-shaped provider address. Pre-2026-04-30 the
+    builder only used hospital_name; address was extracted but discarded
+    and the letter ended up with a `[PROVIDER NAME AND ADDRESS]` placeholder.
+    """
+
+    def test_full_address_block(self) -> None:
+        from app.services.ai_analysis import _build_recipient_block
+        block = _build_recipient_block(
+            hospital_name="Saint Michaels Medical Center",
+            hospital_city="Newark",
+            hospital_state="NJ",
+            hospital_zip="07102",
+        )
+        assert block == (
+            "Saint Michaels Medical Center\n"
+            "Billing Department\n"
+            "Newark, NJ  07102"
+        )
+
+    def test_missing_name_uses_clear_placeholder(self) -> None:
+        from app.services.ai_analysis import _build_recipient_block
+        block = _build_recipient_block(
+            hospital_name=None,
+            hospital_city="Newark",
+            hospital_state="NJ",
+            hospital_zip="07102",
+        )
+        assert "[PROVIDER NAME]" in block
+        # The address still renders even without the name.
+        assert "Newark, NJ  07102" in block
+
+    def test_missing_zip_falls_back_to_city_state(self) -> None:
+        from app.services.ai_analysis import _build_recipient_block
+        block = _build_recipient_block(
+            hospital_name="Mercy Hospital",
+            hospital_city="St. Louis",
+            hospital_state="MO",
+            hospital_zip=None,
+        )
+        assert block.endswith("St. Louis, MO")
+
+    def test_missing_city_keeps_state_zip(self) -> None:
+        from app.services.ai_analysis import _build_recipient_block
+        block = _build_recipient_block(
+            hospital_name="Mercy Hospital",
+            hospital_city=None,
+            hospital_state="MO",
+            hospital_zip="63101",
+        )
+        # No city, but state + ZIP still renders on its own line.
+        assert "MO  63101" in block
+
+    def test_only_name_no_address_fields(self) -> None:
+        """When OCR couldn't extract any address, the letter still has
+        hospital_name + 'Billing Department' but no broken empty line."""
+        from app.services.ai_analysis import _build_recipient_block
+        block = _build_recipient_block(
+            hospital_name="Mercy Hospital",
+            hospital_city=None,
+            hospital_state=None,
+            hospital_zip=None,
+        )
+        assert block == "Mercy Hospital\nBilling Department"
+
+    def test_all_fields_missing_falls_back_safely(self) -> None:
+        """Worst case: nothing extracted. Letter still parses; the user
+        edits the DOCX before sending."""
+        from app.services.ai_analysis import _build_recipient_block
+        block = _build_recipient_block(None, None, None, None)
+        assert block == "[PROVIDER NAME]\nBilling Department"
+
 
 class TestGeminiPrimaryPath:
     """Tests that Gemini is called first and its response is returned."""

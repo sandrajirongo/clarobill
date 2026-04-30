@@ -35,6 +35,61 @@ logger = logging.getLogger(__name__)
 _GEMINI_MODEL = "gemini-2.0-flash-001"
 
 
+def _build_recipient_block(
+    hospital_name: str | None,
+    hospital_city: str | None,
+    hospital_state: str | None,
+    hospital_zip: str | None,
+) -> str:
+    """Build the recipient address block for a dispute letter.
+
+    Combines whatever provider info we have into a USPS-shaped block:
+
+        {hospital_name}
+        Billing Department
+        {city}, {state}  {zip}
+
+    Each line is omitted gracefully when its source field is missing.
+    When hospital_name is missing we fall back to a clear placeholder
+    rather than a silent empty string — the patient can see what's
+    expected and edit the DOCX before sending.
+
+    Pre-2026-04-30 this was inlined and only used hospital_name; address
+    fields were extracted from the bill but discarded. Sandra reported
+    the resulting letters had a `[PROVIDER NAME AND ADDRESS]` placeholder
+    even when the address was clearly visible in the bill OCR.
+    """
+    lines: list[str] = []
+    if hospital_name:
+        lines.append(hospital_name)
+    else:
+        lines.append("[PROVIDER NAME]")
+    lines.append("Billing Department")
+
+    # City/state/ZIP go on a single USPS-style line. Build it from whatever
+    # subset we have rather than emitting an empty line — a bill that lists
+    # only the state still produces a usable, partially-populated address.
+    address_parts: list[str] = []
+    if hospital_city:
+        address_parts.append(hospital_city)
+    if hospital_state:
+        if address_parts:
+            address_parts[-1] = f"{address_parts[-1]}, {hospital_state}"
+        else:
+            address_parts.append(hospital_state)
+    if hospital_zip:
+        address_parts.append(hospital_zip)
+    if address_parts:
+        # Two spaces between state and ZIP per USPS convention; otherwise
+        # comma-separated.
+        if hospital_state and hospital_zip and len(address_parts) >= 2:
+            tail = address_parts.pop()  # ZIP
+            lines.append(f"{address_parts[0]}  {tail}")
+        else:
+            lines.append(", ".join(address_parts))
+    return "\n".join(lines)
+
+
 class AiAnalysisService:
     """Generates patient-facing content from billing error analysis.
 
@@ -133,6 +188,9 @@ class AiAnalysisService:
         line_items: list[ParsedLineItem],
         bill_file_name: str,
         hospital_name: str | None = None,
+        hospital_city: str | None = None,
+        hospital_state: str | None = None,
+        hospital_zip: str | None = None,
         payer_name: str | None = None,
         patient_name: str | None = None,
         patient_dob: str | None = None,
@@ -144,7 +202,10 @@ class AiAnalysisService:
             errors: Detected billing errors from the rules engine.
             line_items: Parsed line items from the bill.
             bill_file_name: Original file name — used to identify the bill in the letter.
-            hospital_name: Provider name extracted from the bill or user input, if available.
+            hospital_name: Provider name extracted from the bill, if available.
+            hospital_city: Provider city extracted from the bill, if available.
+            hospital_state: Provider state (2-letter) extracted from the bill, if available.
+            hospital_zip: Provider ZIP extracted from the bill, if available.
             payer_name: Insurer name from user verification, if available.
             patient_name: Patient full name from profile_members, if available.
             patient_dob: Patient date of birth (ISO yyyy-mm-dd) from profile_members, if available.
@@ -175,9 +236,11 @@ class AiAnalysisService:
             for item in line_items[:20]
         )
 
-        recipient_line = (
-            f"{hospital_name}\nBilling Department" if hospital_name
-            else "Billing Department\n[PROVIDER NAME AND ADDRESS]"
+        recipient_line = _build_recipient_block(
+            hospital_name=hospital_name,
+            hospital_city=hospital_city,
+            hospital_state=hospital_state,
+            hospital_zip=hospital_zip,
         )
         insurer_line = (
             f"Insurance: {payer_name}" if payer_name else ""
@@ -216,9 +279,17 @@ class AiAnalysisService:
             f"Line items on the bill:\n{line_item_summary}"
         )
 
+        # max_tokens=2500 (was 800 pre-2026-04-30): a multi-error letter
+        # has provider address + opening + ~150-tok per dispute paragraph +
+        # closing + signature block. A 4-error letter runs ~1500-1800
+        # tokens; a 10-error letter runs ~2200. 2500 buys headroom for
+        # any realistic case without burning context unnecessarily.
+        # Sandra reported truncation pre-fix; 800 was the cause.
+        _LETTER_MAX_TOKENS = 2500
+
         # Primary: Gemini
         try:
-            text = await self._call_gemini(prompt, max_tokens=800)
+            text = await self._call_gemini(prompt, max_tokens=_LETTER_MAX_TOKENS)
             logger.info("Generated dispute letter via Gemini (%d chars)", len(text))
             return text
         except Exception as exc:
@@ -230,7 +301,7 @@ class AiAnalysisService:
         # Fallback: Claude — propagates on failure so the caller can mark the bill FAILED
         message = await self._client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=800,
+            max_tokens=_LETTER_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         # Claude returns list[TextBlock | ToolUseBlock]. We never request tool use,
