@@ -76,6 +76,15 @@ gcloud builds submit \
 # hours including the ~30-minute Tier 3 paid sweep; 8h gives headroom for
 # slow hospitals, retries, and Year-2+ growth without auto-aborting.
 echo "==> Creating/updating Cloud Run Job ${JOB_NAME}..."
+# Why split --command and --args:
+#   The Dockerfile's CMD bakes in everything as args. When a user passes
+#   --args at execute time, Cloud Run REPLACES the args portion entirely.
+#   If the script path is part of args, that override accidentally drops
+#   the script — the container runs `python --start-stage=...` and crashes
+#   with no Python output (this happened in execution g66ns on 2026-04-30).
+#   Putting the script path in --command keeps it stable across overrides;
+#   the orchestrator's argparse handles --project's default itself so an
+#   override that drops --project is safe.
 gcloud run jobs create "${JOB_NAME}" \
   --image "${IMAGE}" \
   --region "${REGION}" \
@@ -84,6 +93,8 @@ gcloud run jobs create "${JOB_NAME}" \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
+  --command "python,/app/scripts/discover_mrf_pipeline.py" \
+  --args "--project,${PROJECT}" \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}" \
   2>/dev/null || \
@@ -95,6 +106,8 @@ gcloud run jobs update "${JOB_NAME}" \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
+  --command "python,/app/scripts/discover_mrf_pipeline.py" \
+  --args "--project,${PROJECT}" \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}"
 
