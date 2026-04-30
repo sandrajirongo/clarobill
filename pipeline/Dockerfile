@@ -22,8 +22,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy pipeline source files.
-COPY hospital_mrf_utils.py scrape_hospital_mrfs.py parse_hospital_mrfs.py ./
+# Copy pipeline source files. Phase 4 added effective_year.py + archive_writer.py
+# as sibling modules imported by scrape_hospital_mrfs.py and parse_hospital_mrfs.py.
+# Every container run on 2026-04-30 was failing with `ModuleNotFoundError:
+# No module named 'effective_year'` because this COPY line was hardcoded to the
+# original 3 files. Glob means future sibling modules ship without re-edit.
+# Tests live in pipeline/tests/ and are excluded by .dockerignore.
+COPY *.py ./
 
 ENV LOG_LEVEL=INFO
 
