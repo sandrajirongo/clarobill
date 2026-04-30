@@ -509,10 +509,15 @@ def insert_archive_index_rows(
     bq: bigquery.Client,
     archive_metas: list[dict[str, Any]],
 ) -> None:
-    """Insert one row per archived MRF into mrf_archive_index.
+    """Append archived-MRF rows to mrf_archive_index via a LOAD JOB.
 
-    Each row's parse_status='pending' so the parser picks it up. The parser
-    later updates parse_status to 'parsed' / 'failed' / 'skipped'.
+    Why a load job instead of streaming insert: streaming-inserted rows sit
+    in BigQuery's streaming buffer for ~30 minutes before they become
+    UPDATEable. The parser job runs immediately after the scraper and needs
+    to UPDATE parse_status, which fails against streamed-but-not-yet-merged
+    rows ("UPDATE or DELETE statement over table ... would affect rows in
+    the streaming buffer"). Load jobs land directly in storage and become
+    DML-eligible immediately.
 
     Drops the internal `_year_source` field (log-only) before insert.
     """
@@ -528,14 +533,20 @@ def insert_archive_index_rows(
     if not rows:
         return
 
-    BATCH = 500
-    for i in range(0, len(rows), BATCH):
-        chunk = rows[i : i + BATCH]
-        errors = bq.insert_rows_json(table_id, chunk)
-        if errors:
-            logger.error("mrf_archive_index insert errors: %s", errors[:3])
-            raise RuntimeError(f"BigQuery insert failed: {errors[:3]}")
-    logger.info("Inserted %d rows into mrf_archive_index", len(rows))
+    ndjson = "\n".join(json.dumps(r) for r in rows)
+    load_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        ignore_unknown_values=True,
+    )
+    job = bq.load_table_from_file(
+        io.StringIO(ndjson), table_id, job_config=load_config,
+    )
+    job.result()
+    logger.info(
+        "Loaded %d rows into mrf_archive_index (load job, not streaming)",
+        len(rows),
+    )
 
 
 def main() -> None:

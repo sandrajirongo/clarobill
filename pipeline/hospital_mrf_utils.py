@@ -14,11 +14,69 @@ Normalisation flattens this into rows, one per
   code × setting × payer_or_null combination.
 """
 
+import io
 import logging
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Generator
 
 import ijson
+
+_UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def _strip_bom(file_obj: BinaryIO) -> BinaryIO:
+    """Sniff the first 3 bytes for a UTF-8 BOM and return a stream that skips it.
+
+    Some hospital MRFs are exported from Windows tools that prepend a UTF-8
+    BOM (EF BB BF). ijson silently emits zero items when it sees a BOM at the
+    start of the stream — losing the entire hospital's pricing data.
+
+    This wrapper reads the first 3 bytes; if they match the BOM, those bytes
+    are dropped and only the post-BOM content is exposed to downstream code.
+    Otherwise the original stream is returned at position 0.
+
+    Implementation: we always return a fresh BufferedReader chained behind a
+    pre-buffered prefix so ijson sees a clean, seekable stream regardless of
+    the input's seek capability.
+    """
+    head = file_obj.read(len(_UTF8_BOM))
+    if head == _UTF8_BOM:
+        # BOM consumed — wrap the rest of the original stream so downstream
+        # ijson can keep reading from where we left off.
+        return io.BufferedReader(file_obj)  # type: ignore[arg-type]
+    # No BOM — concatenate the bytes we already read back onto the stream.
+    return io.BufferedReader(_PrefixedStream(head, file_obj))  # type: ignore[arg-type]
+
+
+class _PrefixedStream(io.RawIOBase):
+    """Tiny shim that prepends `prefix` bytes to an existing binary stream.
+
+    Used by _strip_bom when no BOM was found — restores the bytes we sniffed
+    so ijson can read the full file from the start.
+    """
+
+    def __init__(self, prefix: bytes, stream: BinaryIO) -> None:
+        self._prefix = prefix
+        self._stream = stream
+        self._prefix_consumed = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b):  # type: ignore[no-untyped-def]
+        n = len(b)
+        offset = 0
+        if self._prefix_consumed < len(self._prefix):
+            remaining = self._prefix[self._prefix_consumed:]
+            take = min(len(remaining), n)
+            b[:take] = remaining[:take]
+            self._prefix_consumed += take
+            offset += take
+            if offset == n:
+                return n
+        chunk = self._stream.read(n - offset)
+        b[offset:offset + len(chunk)] = chunk
+        return offset + len(chunk)
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +95,13 @@ _METHODOLOGY_KEYS = ("methodology", "standard_charge_type")
 
 @dataclass(frozen=True)
 class ChargeRow:
-    """One normalised charge row ready for BigQuery insertion."""
+    """One normalised charge row ready for BigQuery insertion.
 
-    # Phase 4: partition key. Every row carries the year of the MRF it came
-    # from so the rules engine can join 2026 bills to 2026 charges (and a
-    # fallback to 2025 if no 2026 data exists for that hospital). Resolved
-    # by pipeline.effective_year.resolve_year() at parse time.
+    Phase 4 schema: day-level effective_date is gone — pricing_effective_year
+    is the date dimension. source_mrf_url + source_gcs_uri provide row-level
+    provenance back to the immutable archive blob in mrf-archive-clarobill-prd.
+    """
+
     pricing_effective_year: int
     hospital_npi: str
     code_type: str
@@ -57,8 +116,9 @@ class ChargeRow:
     negotiated_charge: float | None
     negotiated_type: str | None
     setting: str
-    effective_date: str  # ISO date string (YYYY-MM-DD)
-    scraped_at: str      # ISO datetime string (UTC)
+    source_mrf_url: str | None
+    source_gcs_uri: str | None
+    scraped_at: str  # ISO datetime string (UTC)
 
     def to_bq_row(self) -> dict[str, Any]:
         """Serialise to a BigQuery-compatible dict."""
@@ -77,7 +137,8 @@ class ChargeRow:
             "negotiated_charge": self.negotiated_charge,
             "negotiated_type": self.negotiated_type,
             "setting": self.setting,
-            "effective_date": self.effective_date,
+            "source_mrf_url": self.source_mrf_url,
+            "source_gcs_uri": self.source_gcs_uri,
             "scraped_at": self.scraped_at,
         }
 
@@ -163,8 +224,9 @@ def stream_charges_v2(
     file_obj: BinaryIO,
     hospital_npi: str,
     pricing_effective_year: int,
-    effective_date: str,
     scraped_at: str,
+    source_mrf_url: str | None = None,
+    source_gcs_uri: str | None = None,
 ) -> Generator[ChargeRow, None, None]:
     """Stream ChargeRow objects from a v2.0.0 MRF file without loading it entirely.
 
@@ -194,6 +256,12 @@ def stream_charges_v2(
     Yields:
         ChargeRow instances ready for BigQuery insertion.
     """
+    # Many hospital MRFs are exported from Windows tools that prepend a UTF-8
+    # BOM (EF BB BF). ijson chokes silently on the BOM and emits zero items,
+    # which would lose the entire hospital. Sniff and strip the BOM once at
+    # the start of the stream before handing it to ijson.
+    file_obj = _strip_bom(file_obj)
+
     # Try both key variants; ijson.items raises IncompleteJSONError for wrong paths,
     # so we probe the file with the first key and fall back to the second.
     for root_key in _CHARGE_INFO_KEYS:
@@ -210,7 +278,7 @@ def stream_charges_v2(
                 try:
                     yield from _expand_charge_item(
                         item, hospital_npi, pricing_effective_year,
-                        effective_date, scraped_at,
+                        scraped_at, source_mrf_url, source_gcs_uri,
                     )
                     row_count += 1
                 except Exception as exc:  # noqa: BLE001 — see comment above
@@ -257,8 +325,9 @@ def _expand_charge_item(
     item: dict[str, Any],
     hospital_npi: str,
     pricing_effective_year: int,
-    effective_date: str,
     scraped_at: str,
+    source_mrf_url: str | None,
+    source_gcs_uri: str | None,
 ) -> Generator[ChargeRow, None, None]:
     """Expand one standard_charge_information item into ChargeRow objects.
 
@@ -304,7 +373,8 @@ def _expand_charge_item(
                         negotiated_charge=_parse_float(_first(payer, _NEGOTIATED_DOLLAR_KEYS)),
                         negotiated_type=str(_first(payer, _METHODOLOGY_KEYS) or "").strip() or None,
                         setting=setting,
-                        effective_date=effective_date,
+                        source_mrf_url=source_mrf_url,
+                        source_gcs_uri=source_gcs_uri,
                         scraped_at=scraped_at,
                     )
             else:
@@ -325,6 +395,7 @@ def _expand_charge_item(
                     negotiated_charge=None,
                     negotiated_type=None,
                     setting=setting,
-                    effective_date=effective_date,
+                    source_mrf_url=source_mrf_url,
+                    source_gcs_uri=source_gcs_uri,
                     scraped_at=scraped_at,
                 )

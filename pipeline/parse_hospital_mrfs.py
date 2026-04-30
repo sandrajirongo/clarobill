@@ -68,7 +68,10 @@ STAGING_PREFIX = "staging/"  # temp NDJSON files during BigQuery load
 # joins bills to charges on this column. NEVER allow NULL here; the
 # effective_year module guarantees a value via a 3-source fallback.
 HOSPITAL_CHARGES_SCHEMA = [
-    bigquery.SchemaField("pricing_effective_year", "INT64", mode="REQUIRED"),
+    # Order matches the deployed BQ schema (clarobill-prd.hospital_prices.hospital_charges).
+    # Day-level effective_date was dropped in Phase 4 — pricing_effective_year is the
+    # date dimension, and source_mrf_url + source_gcs_uri carry forward MRF provenance
+    # so any row can be traced back to the immutable archive blob it came from.
     bigquery.SchemaField("hospital_npi", "STRING"),  # NULLABLE — extracted from MRF content
     bigquery.SchemaField("code_type", "STRING"),
     bigquery.SchemaField("code", "STRING"),
@@ -82,7 +85,9 @@ HOSPITAL_CHARGES_SCHEMA = [
     bigquery.SchemaField("negotiated_charge", "FLOAT64"),
     bigquery.SchemaField("negotiated_type", "STRING"),
     bigquery.SchemaField("setting", "STRING"),
-    bigquery.SchemaField("effective_date", "DATE"),
+    bigquery.SchemaField("pricing_effective_year", "INT64", mode="REQUIRED"),
+    bigquery.SchemaField("source_mrf_url", "STRING"),
+    bigquery.SchemaField("source_gcs_uri", "STRING"),
     bigquery.SchemaField("scraped_at", "TIMESTAMP"),
 ]
 
@@ -352,9 +357,15 @@ def process_blob(
         label, pricing_effective_year, year_source,
     )
 
-    # effective_date column on each charge row — preserves the day-level
-    # precision when available, otherwise stamps today (still bounded by year).
-    effective_date = json_last_updated or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Provenance: every charge row carries the original MRF URL it came from
+    # plus (when available) the gs:// URI of the immutable archive blob.
+    # Lets us trace any anomalous row back to its source file.
+    source_mrf_url = mrf_url
+    # The staging blob has gs://mrf-staging/raw/... — the parser doesn't have
+    # the archive URI handy unless we pass it through blob metadata. For now
+    # we record None and rely on mrf_archive_index.source_mrf_url join to
+    # recover the archive blob if needed.
+    source_gcs_uri: str | None = None
 
     # Extract NPI from MRF JSON root — the most reliable source.
     # Fall back to the value the scraper stored in blob metadata (may be empty).
@@ -371,7 +382,8 @@ def process_blob(
     try:
         with _open_mrf_blob(blob) as f:
             rows = stream_charges_v2(
-                f, hospital_npi, pricing_effective_year, effective_date, scraped_at,
+                f, hospital_npi, pricing_effective_year, scraped_at,
+                source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
             )
             row_count = _write_ndjson_to_gcs(rows, bucket, staging_blob_name)
 
