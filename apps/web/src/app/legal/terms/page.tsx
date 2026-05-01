@@ -12,8 +12,8 @@ export default function TermsOfServicePage(): JSX.Element {
       <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026 &mdash; Last updated: April 7, 2026</p>
 
       <p className="text-gray-700 mb-6">
-        These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Clarobill (&ldquo;Service&rdquo;),
-        operated by Flow Financial Group (&ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;). By creating an account or
+        These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of ClaroBill (&ldquo;Service,&rdquo;
+        &ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;). By creating an account or
         using the Service, you agree to be bound by these Terms. If you do not agree, do not use the Service.
       </p>
 
@@ -98,7 +98,7 @@ export default function TermsOfServicePage(): JSX.Element {
 
       <Section title="7. Intellectual Property">
         <p>
-          The Service, including its software, design, and analysis methodology, is owned by Flow Financial Group and protected
+          The Service, including its software, design, and analysis methodology, is owned by ClaroBill and protected
           by intellectual property laws. These Terms do not grant you any rights to our trademarks, logos, or
           proprietary technology.
         </p>

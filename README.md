@@ -291,4 +291,4 @@ GA flips `NEXT_PUBLIC_BETA_MODE` to `false` in Vercel and activates Stripe. Full
 
 ## License
 
-Proprietary. © Flow Financial Group. All rights reserved.
+Proprietary. © ClaroBill. All rights reserved.

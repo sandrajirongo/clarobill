@@ -12,9 +12,9 @@ export default function PrivacyPolicyPage(): JSX.Element {
       <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026 &mdash; Last updated: April 7, 2026</p>
 
       <p className="text-gray-700 mb-6">
-        Clarobill, operated by Flow Financial Group (&ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;), is committed to protecting your privacy.
-        This policy explains what data we collect when you use Clarobill, how we use it, and your rights regarding
-        that data. Because Clarobill processes medical bills, we treat all uploaded content as sensitive and apply
+        ClaroBill (&ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;) is committed to protecting your privacy.
+        This policy explains what data we collect when you use ClaroBill, how we use it, and your rights regarding
+        that data. Because ClaroBill processes medical bills, we treat all uploaded content as sensitive and apply
         strict handling controls throughout our systems.
       </p>
 

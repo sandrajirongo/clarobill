@@ -60,6 +60,10 @@ export const SOCIAL_LINKS = {
     handle: '@clarobillai',
     url: 'https://x.com/clarobillai',
   },
+  linkedin: {
+    handle: 'ClaroBill',
+    url: 'https://www.linkedin.com/company/clarobill/',
+  },
   email: {
     handle: 'support@clarobill.com',
     url: 'mailto:support@clarobill.com',
