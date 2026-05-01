@@ -40,7 +40,7 @@ gcloud run jobs create clarobill-mrf-scraper \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 14400 \
   --max-retries 0 \
-  --memory 4Gi \
+  --memory 8Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}" \
@@ -51,7 +51,7 @@ gcloud run jobs update clarobill-mrf-scraper \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 14400 \
   --max-retries 0 \
-  --memory 4Gi \
+  --memory 8Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}"
@@ -64,7 +64,7 @@ gcloud run jobs create clarobill-mrf-parser \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 14400 \
   --max-retries 0 \
-  --memory 4Gi \
+  --memory 8Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}" \
@@ -76,7 +76,7 @@ gcloud run jobs update clarobill-mrf-parser \
   --service-account "${PIPELINE_SA}" \
   --task-timeout 14400 \
   --max-retries 0 \
-  --memory 4Gi \
+  --memory 8Gi \
   --cpu 2 \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
   --project "${PROJECT}"

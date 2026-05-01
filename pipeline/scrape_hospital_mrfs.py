@@ -62,11 +62,24 @@ GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 # parser revision reads from archive. Set as env var so tests can override.
 GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive-clarobill-prd")
 
-# Concurrent download workers. Sandra's call (Phase 4 Q4): bumped from 20 -> 60
-# because the hospital list has grown ~4x (from ~3,100 to ~13,833) and each
-# worker hits a different domain (no per-server contention). 60 × 16MB GCS
-# chunks ≈ 1GB peak upload buffer, within the 4Gi container limit.
-MAX_WORKERS = 60
+# Concurrent download workers. Sandra's Phase 4 Q4 call was 60, but the
+# 2026-04-30 first-fleet run OOM-killed all 6 tasks because the dual-write
+# path buffers the entire MRF in memory twice (once in
+# legacy_blob.download_as_bytes, once inside archive_writer to compute the
+# SHA256 needed for the object name). At 60 workers × 2 × ~111 MB
+# (largest observed Sutter MRF) = ~13 GB needed vs 4 Gi container.
+#
+# Mitigation:
+#   1. Cut MAX_WORKERS 60 -> 20 (still 6x the legacy pre-Phase-4 throughput,
+#      since legacy was 20 workers WITHOUT dual-write).
+#   2. Switched legacy_blob.download_as_bytes() to legacy_blob.open("rb")
+#      to stream the first half of the round trip.
+#   3. Bumped container memory 4Gi -> 8Gi in pipeline/deploy.sh for headroom.
+#
+# A future refactor can collapse the dual-write into a single tee-stream
+# from the hospital server to BOTH GCS buckets, eliminating the round trip
+# entirely. For now: 20 workers × ~150 MB peak = ~3 GB, fits in 8Gi.
+MAX_WORKERS = 20
 
 # GCS resumable upload chunk size (bytes). 16MB is a good balance — large
 # enough for throughput, small enough to keep per-worker memory bounded.
@@ -378,10 +391,14 @@ def _archive_from_legacy_blob(
     # original download path).
     ext = _legacy_blob_to_extension(legacy_blob_name)
 
-    # Stream legacy bytes through the archive writer. download_as_bytes is
-    # OK at MRF scale (median ~5 MB, max ~500 MB).
-    body = legacy_blob.download_as_bytes()
-    body_stream = io.BytesIO(body)
+    # Stream the legacy bytes through the archive writer rather than loading
+    # the whole blob into memory. 2026-04-30 OOM postmortem: a 111MB Sutter
+    # MRF × 20+ concurrent workers × 2x buffering (download_as_bytes +
+    # archive_writer's internal buffer) hit Cloud Run's memory ceiling.
+    # legacy_blob.open("rb") streams; archive_writer still buffers internally
+    # because it needs the SHA256 to construct the object name, but at least
+    # we cut the per-worker peak in half.
+    body_stream = legacy_blob.open("rb")
 
     result = archive_writer.write_archive(
         storage_client=archive_bucket.client,
