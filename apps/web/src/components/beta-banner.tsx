@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { isBetaMode, BETA_COPY } from '@/lib/beta';
+import { isBetaMode, BETA_COPY, buildTweetIntentUrl } from '@/lib/beta';
 import s from './beta-banner.module.css';
 
 const DISMISS_KEY = 'cb_beta_banner_dismissed';
@@ -34,36 +34,45 @@ export function BetaBanner({ showCta = true }: BetaBannerProps): JSX.Element | n
 
   async function handleShare(): Promise<void> {
     const url = window.location.origin;
+
+    // Web Share API path — opens the OS share sheet on iOS/Android. We use
+    // the @clarobillai-prefixed text so when the user picks X/Twitter from
+    // the OS sheet, the post tags us. Other targets (iMessage, email) get
+    // the same string; the leading @ handle is harmless context there.
     const sharePayload = {
       title: BETA_COPY.share.title,
-      text: BETA_COPY.share.text,
+      text: BETA_COPY.share.tweetText,
       url,
     };
 
-    // Web Share API — opens the OS share sheet on iOS/Android. Aborts (throws
-    // AbortError) if the user dismisses; we swallow that quietly. Any other
-    // error falls through to the clipboard path below so the user always gets
-    // a working share, even on restrictive browsers.
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share(sharePayload);
         return;
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
-        // fall through to clipboard
+        // fall through to desktop fallback below
       }
     }
 
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(url);
-        setShareFeedback('copied');
-        setTimeout(() => setShareFeedback(null), 2000);
-      } catch {
-        // Clipboard blocked (insecure context, permission denied) — surface a
-        // brief inline notice so the user knows the action ran but couldn't copy.
-        setShareFeedback('copied');
-        setTimeout(() => setShareFeedback(null), 2000);
+    // Desktop fallback — open X's tweet-intent compose window in a new tab
+    // with the @clarobillai-tagged text and the URL pre-populated. This is
+    // the same UX every other consumer product uses (Stripe Atlas, Linear,
+    // Vercel) when navigator.share isn't available. The user lands on a
+    // pre-filled tweet draft and just hits Post.
+    const intentUrl = buildTweetIntentUrl(BETA_COPY.share.tweetText, url);
+    if (typeof window !== 'undefined') {
+      window.open(intentUrl, '_blank', 'noopener,noreferrer');
+      // Also drop the URL onto the clipboard as a belt-and-suspenders so
+      // users on browsers that block the popup still have the URL ready.
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(url);
+          setShareFeedback('copied');
+          setTimeout(() => setShareFeedback(null), 2000);
+        } catch {
+          /* clipboard blocked — popup is the primary path, this is just backup */
+        }
       }
     }
   }

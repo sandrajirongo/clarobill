@@ -44,12 +44,29 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     return () => { cancelled = true; clearInterval(interval); };
   }, [analysis, bill.id, router]);
 
-  // After payment, poll the analysis API directly every 5s for up to 120s.
-  // We do NOT call router.refresh() on every tick — router from useRouter() is not
-  // a stable reference in Next.js App Router, so putting it in deps causes the effect
-  // to re-run on every refresh and reset the counter to zero (infinite loop).
-  // Instead: poll the API directly, call router.refresh() exactly once when the URL appears.
+  // After payment, poll the analysis API directly every 5s for up to 7 min.
+  // The report-generation pipeline (PDF + DOCX + email + storage upload)
+  // takes ~3 min on average and occasionally up to ~5 min on Cloud Run cold
+  // starts or large bills. The previous 120s ceiling was firing the
+  // timeout state mid-generation while the email was still being sent
+  // successfully — confusing users and offering them a "try again" button
+  // that re-triggered Stripe checkout (catastrophically wrong since they
+  // had already paid).
+  //
+  // 7 minutes (84 × 5s) gives comfortable headroom for the slowest legit
+  // generation. The user does NOT need to stay on this page — the email
+  // is the authoritative delivery; the in-page download is a convenience.
+  // We tell them that explicitly in the progressive copy below.
+  //
+  // We don't call router.refresh() on every tick — router from useRouter()
+  // is not a stable reference in Next.js App Router, so putting it in deps
+  // causes the effect to re-run on every refresh and reset the counter
+  // (infinite loop). Instead: poll the API directly, call router.refresh()
+  // exactly once when the URL appears.
+  const POLL_INTERVAL_MS = 5_000;
+  const POLL_MAX_TICKS = 84; // 84 × 5 s = 420 s = 7 minutes
   const reportAlreadyReady = !!(analysis?.reportUrl || analysis?.disputeLetterUrl);
+  const [pendingElapsedMs, setPendingElapsedMs] = useState(0);
   useEffect(() => {
     if (!hasPaid || !analysis || reportAlreadyReady) return;
 
@@ -58,7 +75,8 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
 
     const interval = setInterval(async () => {
       count++;
-      if (count >= 24) {
+      setPendingElapsedMs(count * POLL_INTERVAL_MS);
+      if (count >= POLL_MAX_TICKS) {
         clearInterval(interval);
         setReportTimedOut(true);
         return;
@@ -72,13 +90,48 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
           router.refresh();
         }
       } catch { /* network blip — keep polling */ }
-    }, 5000);
+    }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   // router is captured in closure but not in deps — it's not a stable reference.
   // hasPaid and reportAlreadyReady are stable booleans that only change meaningfully.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPaid, reportAlreadyReady]);
+
+  // Progressive status copy — surfaces what the system is doing so the wait
+  // doesn't feel broken. Tied to elapsed-time buckets, not real backend
+  // signals (we don't have step-level progress events from the engine yet).
+  function progressiveCopy(elapsedMs: number): { title: string; sub: string } {
+    const seconds = Math.floor(elapsedMs / 1000);
+    if (seconds < 30) {
+      return {
+        title: 'Generating your report…',
+        sub: 'Building your PDF and dispute letter. This page updates automatically when they’re ready, and we’ll also email them — no need to stay here.',
+      };
+    }
+    if (seconds < 90) {
+      return {
+        title: 'Still working — most reports take about 3 minutes.',
+        sub: 'Cross-checking your bill against Medicare rates, your hospital’s published prices, and your insurer’s contracted rates.',
+      };
+    }
+    if (seconds < 180) {
+      return {
+        title: 'Almost there — finalizing your dispute letter…',
+        sub: 'Pre-populating the recipient address and signature block. The downloads will appear here automatically.',
+      };
+    }
+    if (seconds < 300) {
+      return {
+        title: 'Wrapping up. We’ve also emailed it to you.',
+        sub: 'Generation occasionally takes up to 5 minutes for larger bills. The email is the authoritative copy — feel free to close this page.',
+      };
+    }
+    return {
+      title: 'Taking a little longer than usual.',
+      sub: 'Your report and dispute letter have been emailed (or will be shortly). They’ll also appear here when generation completes — refresh this page in a minute or two.',
+    };
+  }
 
   // Loading state — engine still processing
   if (analysis === null) {
@@ -224,14 +277,23 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
           <div className={s.card}>
             <p className={s.cardLabel}>Your Documents</p>
             {reportTimedOut ? (
+              // Polling exhausted (7 min). Critically: do NOT offer a button
+              // that retriggers Stripe checkout — the user has already paid.
+              // The email is the authoritative delivery; this surface just
+              // lets them refresh to pull the in-page download once Cloud
+              // Run finishes the upload.
               <div className={s.reportPendingWrap}>
                 <div>
-                  <p className={s.reportPendingTitle}>Check your email</p>
+                  <p className={s.reportPendingTitle}>Your report has been emailed.</p>
                   <p className={s.reportPendingSub}>
-                    Your report should have been sent to your inbox. If you don&apos;t see it, check your spam folder or try generating again below.
+                    Check your inbox (and the spam folder) for your full PDF report and editable dispute letter. They’ll also appear here for direct download once the upload completes.
                   </p>
-                  <button onClick={handleGetFullReport} disabled={isStartingCheckout} className={s.retryBtn}>
-                    {isStartingCheckout ? 'Please wait…' : 'Try again'}
+                  <button
+                    onClick={() => router.refresh()}
+                    className={s.retryBtn}
+                    aria-label="Refresh page to check for downloads"
+                  >
+                    Refresh page
                   </button>
                 </div>
               </div>
@@ -239,10 +301,15 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
               <div className={s.reportPendingWrap}>
                 <div className={s.reportPendingSpinner} />
                 <div>
-                  <p className={s.reportPendingTitle}>Generating your report…</p>
-                  <p className={s.reportPendingSub}>
-                    This takes about 3 minutes. We&apos;ll email your report and dispute letter to you — no need to stay on this page.
-                  </p>
+                  {(() => {
+                    const copy = progressiveCopy(pendingElapsedMs);
+                    return (
+                      <>
+                        <p className={s.reportPendingTitle}>{copy.title}</p>
+                        <p className={s.reportPendingSub}>{copy.sub}</p>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}

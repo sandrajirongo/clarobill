@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import s from '@/app/dashboard/dashboard.module.css';
+import { SocialsRow } from '@/components/socials-row';
 
 export async function DashboardFooter(): Promise<JSX.Element> {
   const t = await getTranslations('dashboard.footer');
@@ -12,6 +13,7 @@ export async function DashboardFooter(): Promise<JSX.Element> {
           <a href="/legal/terms" className={s.footerLink}>{t('terms')}</a>
           <span className={s.footerLink}>© {new Date().getFullYear()} Claro<em style={{ fontStyle: 'italic' }}>Bill</em></span>
         </div>
+        <SocialsRow align="left" />
       </div>
     </footer>
   );

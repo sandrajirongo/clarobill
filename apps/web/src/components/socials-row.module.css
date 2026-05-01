@@ -1,0 +1,36 @@
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.rowLeft {
+  justify-content: flex-start;
+}
+
+.iconLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--txt2, #5b6b66);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--txt2, #5b6b66) 24%, transparent);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  text-decoration: none;
+}
+
+.iconLink:hover,
+.iconLink:focus-visible {
+  color: var(--sage, #2d4a2a);
+  border-color: var(--sage, #2d4a2a);
+  background: color-mix(in srgb, var(--sage, #2d4a2a) 6%, transparent);
+  outline: none;
+}
+
+.iconLink:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sage, #2d4a2a) 35%, transparent);
+}

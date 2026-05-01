@@ -5,6 +5,7 @@ import { Reveal } from '@/components/landing/reveal';
 import { FaqAccordion } from '@/components/landing/faq';
 import { ReportIcon, LetterIcon, SpeedIcon } from '@/components/icons';
 import { MarketingNav } from '@/components/marketing-nav';
+import { SocialsRow } from '@/components/socials-row';
 
 export const metadata: Metadata = {
   title: 'ClaroBill — Find Errors in Your Medical Bill',
@@ -198,6 +199,7 @@ export default function LandingPage(): JSX.Element {
           <a href="/legal/terms">Terms</a>
           <a href="mailto:support@clarobill.com">Contact</a>
         </div>
+        <SocialsRow />
         <span className={s.fco}>© 2026 ClaroBill</span>
       </footer>
     </>

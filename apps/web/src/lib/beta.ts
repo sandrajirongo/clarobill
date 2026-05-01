@@ -20,11 +20,18 @@ export const BETA_COPY = {
     headline: 'ClaroBill is free during public beta',
     cta: 'Share',
   },
-  // Used by the Share button — Web Share API on mobile, clipboard on desktop.
-  // Tone is informational and trust-forward, not promotional.
+  // Used by the Share button — Web Share API on mobile, clipboard or
+  // X/Twitter intent URL on desktop. Tone is informational, trust-forward,
+  // not promotional.
+  //
+  // `tweetText` is the same content with our X handle (@clarobillai) prefixed
+  // so when a user shares to X via the OS share sheet OR the desktop fallback
+  // intent URL, the post tags us. We keep `text` un-prefixed for non-X
+  // surfaces (iMessage, email, etc.) where a leading @ handle reads weirdly.
   share: {
     title: 'ClaroBill — medical bill review',
     text: 'ClaroBill reviews medical bills for errors and overcharges, and generates dispute letters. Currently free during their public beta.',
+    tweetText: 'Just used @clarobillai to review my medical bill for errors and overcharges. Free during their public beta.',
   },
   pricingCallout: {
     eyebrow: 'Beta access',
@@ -40,3 +47,29 @@ export const BETA_COPY = {
   },
   signInBenefit: 'Currently free during public beta — no credit card required',
 } as const;
+
+// ─── Social media presence ─────────────────────────────────────────────────
+// Single source of truth so headers, footers, share dialogs, and email
+// templates all link to the right handles. Update in one place.
+export const SOCIAL_LINKS = {
+  instagram: {
+    handle: '@clarobill',
+    url: 'https://www.instagram.com/clarobill/',
+  },
+  x: {
+    handle: '@clarobillai',
+    url: 'https://x.com/clarobillai',
+  },
+  email: {
+    handle: 'support@clarobill.com',
+    url: 'mailto:support@clarobill.com',
+  },
+} as const;
+
+// X/Twitter "share intent" URL — opens a pre-populated compose window in
+// the browser. Used as the desktop fallback when the OS Web Share API
+// isn't available. Includes our @handle so the post is tagged.
+export function buildTweetIntentUrl(text: string, url: string): string {
+  const params = new URLSearchParams({ text, url });
+  return `https://twitter.com/intent/tweet?${params.toString()}`;
+}
