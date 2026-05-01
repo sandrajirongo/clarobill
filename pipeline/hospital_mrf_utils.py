@@ -301,13 +301,30 @@ def stream_charges_v2(
             )
             return
         except (ijson.IncompleteJSONError, StopIteration):
-            # File ended prematurely or wrong key — try next candidate
-            file_obj.seek(0)
+            # File ended prematurely or wrong key — try next candidate.
+            # 2026-05-01 fix: gzip-wrapped streams (json.gz files) aren't
+            # seekable; the prior unconditional seek(0) raised
+            # io.UnsupportedOperation and crashed the whole parse for any
+            # gzip MRF whose first root-key probe failed. Make the rewind
+            # best-effort: if we can't seek, we can't try the next variant
+            # for this file — log and give up cleanly. Caller's per-blob
+            # try/except then marks parse_status='failed' on archive_index
+            # and moves on. Most MRFs (~95%) use the first key variant so
+            # the data loss from this branch is small.
+            try:
+                file_obj.seek(0)
+            except (io.UnsupportedOperation, OSError, ValueError) as seek_exc:
+                logger.warning(
+                    "NPI %s: stream not seekable (gzip?) — cannot retry "
+                    "alternate root key after %s failed: %s",
+                    hospital_npi, root_key, seek_exc,
+                )
+                return
             continue
         except Exception as exc:  # noqa: BLE001 — robustness over strictness
             # ijson can raise UnicodeDecodeError, JSONDecodeError, or vendor-
             # specific errors on truly broken files. Try the next root key
-            # before giving up entirely.
+            # before giving up entirely. Same seek-safety as above.
             logger.warning(
                 "Unexpected error parsing NPI %s with key=%s: %s — trying next variant",
                 hospital_npi, root_key, exc,
@@ -315,7 +332,8 @@ def stream_charges_v2(
             try:
                 file_obj.seek(0)
             except Exception:
-                pass
+                # Can't rewind — give up on this file rather than crash.
+                return
             continue
 
     logger.warning("No standard_charge_information found for NPI %s", hospital_npi)

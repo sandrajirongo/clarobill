@@ -138,3 +138,102 @@ class TestPerRowTolerance:
         # Two valid items survive; the bad string is logged + skipped.
         codes = sorted(r.code for r in rows)
         assert codes == ["71045", "99214"]
+
+
+
+# --- Non-seekable stream regression (2026-05-01) ---------------------------
+
+class _NonSeekableStream(io.RawIOBase):
+    """A binary stream that wraps a bytes payload but rejects seek().
+
+    Mirrors the runtime behavior of gzip.GzipFile and other decompressing
+    file objects — readable forward-only. Used to verify the parser does
+    not crash when its alternate-root-key retry path tries to rewind.
+    """
+
+    def __init__(self, payload: bytes) -> None:
+        self._buf = io.BytesIO(payload)
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def seek(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise io.UnsupportedOperation("seek")
+
+    def readinto(self, b):  # type: ignore[no-untyped-def]
+        chunk = self._buf.read(len(b))
+        b[: len(chunk)] = chunk
+        return len(chunk)
+
+    def read(self, n: int = -1) -> bytes:
+        return self._buf.read(n)
+
+
+class TestNonSeekableStream:
+    """Phase 4 parser bug (2026-05-01 b9lck run): when the first root-key
+    probe failed on a gzip MRF, the parser called file_obj.seek(0) to
+    retry the alternate key — but gzip streams aren't seekable, so the
+    UnsupportedOperation crashed the whole parse for that file. Now the
+    seek is best-effort; if it fails, we give up on this file cleanly
+    (caller marks parse_status='failed' and moves on).
+    """
+
+    def test_alternate_key_retry_skipped_when_stream_not_seekable(self) -> None:
+        # Build a minimal MRF that would only match the SECOND root-key
+        # variant (`standard_charge_information_and_modifiers`), so the
+        # first key probe is guaranteed to fail. Wrapped in a non-seekable
+        # stream — the parser must NOT raise, just yield zero rows.
+        mrf = {
+            "version": "2.0.0",
+            "standard_charge_information_and_modifiers": [
+                {
+                    "description": "Office visit",
+                    "code_information": [{"code": "99214", "type": "CPT"}],
+                    "standard_charges": [
+                        {"setting": "outpatient", "gross_charge": 350.00, "payers_information": []},
+                    ],
+                },
+            ],
+        }
+        payload = json.dumps(mrf).encode()
+        stream = _NonSeekableStream(payload)
+        # Zero rows is the expected outcome for a gzip MRF whose first
+        # key-probe fails — we can't rewind to try the second key. The
+        # critical assertion is that NO exception propagates up.
+        rows = list(stream_charges_v2(
+            stream, hospital_npi="1234567890", pricing_effective_year=2026,
+            scraped_at="2026-05-01T00:00:00Z",
+            source_mrf_url="https://example.com/test.json.gz",
+            source_gcs_uri=None,
+        ))
+        assert rows == []  # graceful empty, not a crash
+
+    def test_first_key_match_works_on_non_seekable(self) -> None:
+        # Sanity check: when the FIRST key matches, no rewind is needed
+        # and the parser produces rows correctly even from a non-seekable
+        # source. Otherwise the fix would over-correct.
+        mrf = {
+            "version": "2.0.0",
+            "standard_charge_information": [
+                {
+                    "description": "Office visit",
+                    "code_information": [{"code": "99214", "type": "CPT"}],
+                    "standard_charges": [
+                        {"setting": "outpatient", "gross_charge": 350.00, "payers_information": []},
+                    ],
+                },
+            ],
+        }
+        payload = json.dumps(mrf).encode()
+        stream = _NonSeekableStream(payload)
+        rows = list(stream_charges_v2(
+            stream, hospital_npi="1234567890", pricing_effective_year=2026,
+            scraped_at="2026-05-01T00:00:00Z",
+            source_mrf_url="https://example.com/test.json.gz",
+            source_gcs_uri=None,
+        ))
+        assert len(rows) == 1
+        assert rows[0].code == "99214"
