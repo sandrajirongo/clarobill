@@ -257,8 +257,15 @@ def _download_to_gcs(
     if "gzip" in content_encoding and not ext.endswith(".gz"):
         ext += ".gz"
 
+    # 2026-05-01 fix: include the hospital's archive key (NPI or CCN) in
+    # the staging path so multi-facility hospital systems whose names
+    # truncate to identical 60-char slugs don't collide. Saw this on the
+    # 6xvh9 run with multiple Baylor Scott & White facilities all
+    # uploading to the same `raw/baylor-scott-white-emergency-medical-
+    # center-at-c/...` blob name and racing each other's generations.
     slug = _name_slug(name) if name else "unknown"
-    blob_name = f"raw/{slug}/{scraped_at}{ext}"
+    key_suffix = _archive_key(hospital) or "nokey"
+    blob_name = f"raw/{slug}-{key_suffix}/{scraped_at}{ext}"
 
     try:
         blob = bucket.blob(blob_name, chunk_size=GCS_UPLOAD_CHUNK_SIZE)
