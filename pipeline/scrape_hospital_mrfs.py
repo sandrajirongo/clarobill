@@ -593,8 +593,48 @@ def main() -> None:
         )
 
     scraped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    updates: list[dict[str, Any]] = []
-    archive_metas: list[dict[str, Any]] = []
+
+    # 2026-05-01 hardening: incremental flush every FLUSH_EVERY hospitals.
+    # The 6xvh9 run (4h timeout) made it through 9,242 hospitals but lost
+    # ALL the last_modified updates and ~half the archive_index rows because
+    # the prior all-or-nothing write at end-of-run never executed before
+    # SIGTERM. Mirror Stage 4's pattern (commit c8e6791) so a partial scrape
+    # converges instead of restarting from scratch.
+    FLUSH_EVERY = 500
+    updates_buffer: list[dict[str, Any]] = []
+    archive_metas_buffer: list[dict[str, Any]] = []
+    total_downloaded = 0
+    total_archived = 0
+    total_lm_flushed = 0
+    total_archive_flushed = 0
+
+    def _flush_batch(reason: str) -> None:
+        """Persist whatever is in the flush buffers, then clear them."""
+        nonlocal total_lm_flushed, total_archive_flushed
+        try:
+            if updates_buffer:
+                update_last_modified(bq, updates_buffer, task_index=task_index)
+                total_lm_flushed += len(updates_buffer)
+            if archive_metas_buffer:
+                insert_archive_index_rows(bq, archive_metas_buffer)
+                total_archive_flushed += len(archive_metas_buffer)
+            logger.info(
+                "Flushed batch (%s): +%d last_modified rows, +%d archive_index rows. "
+                "Cumulative persisted so far: lm=%d, archive=%d",
+                reason, len(updates_buffer), len(archive_metas_buffer),
+                total_lm_flushed, total_archive_flushed,
+            )
+            updates_buffer.clear()
+            archive_metas_buffer.clear()
+        except Exception:
+            # Never let a transient BQ error abort the scrape. Log full
+            # traceback to stdout (Cloud Run captures reliably) and keep
+            # the buffer for retry on the next flush.
+            logger.exception(
+                "Persist flush FAILED (%s) — keeping buffers for retry. "
+                "buffer sizes: updates=%d archive_metas=%d",
+                reason, len(updates_buffer), len(archive_metas_buffer),
+            )
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {
@@ -603,23 +643,30 @@ def main() -> None:
             )
             for h in hospitals
         }
+        completed = 0
         for future in as_completed(futures):
             label = futures[future]
             try:
                 result = future.result()
                 if result:
-                    updates.append({k: v for k, v in result.items() if k != "archive_meta"})
+                    updates_buffer.append({k: v for k, v in result.items() if k != "archive_meta"})
+                    total_downloaded += 1
                     if result.get("archive_meta"):
-                        archive_metas.append(result["archive_meta"])
+                        archive_metas_buffer.append(result["archive_meta"])
+                        total_archived += 1
             except Exception as exc:
                 logger.error("[%s] Unexpected error: %s", label, exc)
+            completed += 1
+            if completed % FLUSH_EVERY == 0:
+                _flush_batch(reason=f"every-{FLUSH_EVERY} at completed={completed}")
+
+    # Final flush — anything still in the buffers from the last partial batch.
+    _flush_batch(reason="final")
 
     logger.info(
         "Scrape complete: %d/%d files downloaded, %d archived to %s",
-        len(updates), len(hospitals), len(archive_metas), GCS_ARCHIVE_BUCKET,
+        total_downloaded, len(hospitals), total_archived, GCS_ARCHIVE_BUCKET,
     )
-    update_last_modified(bq, updates, task_index=task_index)
-    insert_archive_index_rows(bq, archive_metas)
 
 
 if __name__ == "__main__":

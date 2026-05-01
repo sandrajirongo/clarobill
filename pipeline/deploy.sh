@@ -38,7 +38,7 @@ gcloud run jobs create clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 28800 \
+  --task-timeout 129600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -49,7 +49,7 @@ gcloud run jobs update clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 28800 \
+  --task-timeout 129600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -62,7 +62,7 @@ gcloud run jobs create clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 28800 \
+  --task-timeout 129600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -74,7 +74,7 @@ gcloud run jobs update clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 28800 \
+  --task-timeout 129600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
