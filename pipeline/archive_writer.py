@@ -44,11 +44,30 @@ from typing import BinaryIO
 
 from google.cloud import storage
 
-# Reuse the path-construction module from scripts/mrf_discovery/. Import via
-# sys.path manipulation since pipeline/ and scripts/mrf_discovery/ are
-# different deployment units that ship the same archive_layout helper.
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+# Reuse the path-construction module from scripts/mrf_discovery/. Two
+# environments to support — different file layouts:
+#   Dev (run from repo root):
+#     pipeline/archive_writer.py -> ../scripts/mrf_discovery/archive_layout.py
+#     i.e. parent.parent / "scripts"
+#   Container (pipeline/Dockerfile):
+#     /app/archive_writer.py -> /app/scripts/mrf_discovery/archive_layout.py
+#     i.e. parent / "scripts"
+# Add whichever candidate path actually contains mrf_discovery/ to sys.path
+# so the same import line works in both. The next environment variant just
+# adds another candidate to the tuple.
+_THIS = Path(__file__).resolve()
+for _candidate in (
+    _THIS.parent / "scripts",         # container layout (/app/scripts/)
+    _THIS.parent.parent / "scripts",  # dev layout (<repo>/scripts/)
+):
+    if (_candidate / "mrf_discovery" / "archive_layout.py").exists():
+        sys.path.insert(0, str(_candidate))
+        break
+else:
+    raise ImportError(
+        "Could not locate scripts/mrf_discovery/archive_layout.py from "
+        f"{_THIS} — checked {[str(p) for p in (_THIS.parent / 'scripts', _THIS.parent.parent / 'scripts')]}"
+    )
 from mrf_discovery import archive_layout  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
