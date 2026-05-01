@@ -101,14 +101,29 @@ def write_archive(
 ) -> ArchiveResult:
     """Stream `byte_stream` to GCS, computing SHA256 inline.
 
-    The two-step write (compute hash from full content, then upload to a
-    deterministic path) requires reading the stream twice OR buffering once
-    in memory. We buffer in memory because:
-      - MRF files average ~5 MB, max ~500 MB
-      - The scraper already has 4 GiB memory at 60 workers × ~16 MB streaming
-        buffer = ~1 GB peak, leaving plenty of headroom for ~500 MB outliers
-      - The alternative (download to a temp file, hash, then upload) does
-        the same work but with extra disk I/O
+    Memory contract (2026-05-01 rewrite):
+      Per-worker peak memory is bounded by UPLOAD_CHUNK_SIZE (16 MiB)
+      regardless of MRF size. We do this with a tee-write pattern:
+
+        byte_stream  →  GCS resumable upload at a tmp path (streaming)
+                     →  SHA256 hasher (incremental update)
+
+      Then a server-side copy renames the tmp blob to the final
+      sha-based name, and the tmp is deleted. No GCS-side data transfer
+      twice; copy is metadata-only.
+
+    Why this matters: a 321 MiB Baylor Scott & White MRF × 20 concurrent
+    workers × 2x prior buffering (download_as_bytes + io.BytesIO) blew an
+    8 GiB Cloud Run container at the first big-file convergence. The
+    earlier inline-buffer comment "MRF files average ~5 MB, max ~500 MB"
+    was wrong on the upper bound — Baylor's MRF is 321 MiB; some hospital
+    systems publish 1+ GiB JSON. Stream-write is the only architecture
+    that survives without an explicit per-file size check.
+
+    Idempotency: after we know the SHA, we check whether the final blob
+    already exists. If yes, skip the rename and delete the tmp blob —
+    we already have this exact content archived. This handles re-scrapes
+    of unchanged MRFs and worker-shard overlap.
 
     Args:
         storage_client: shared GCS client (one per process is fine).
@@ -126,20 +141,36 @@ def write_archive(
     Returns:
         ArchiveResult with sha256, sizes, and the gs:// URIs.
     """
-    # Buffer the stream into memory while computing SHA256 inline.
-    buf = io.BytesIO()
+    import uuid
+
+    bucket = storage_client.bucket(bucket_name)
+
+    # Step 1: stream `byte_stream` to a temp blob, hashing in flight.
+    # The temp prefix `_tmp/` is outside the pricing-year=YYYY/ namespace
+    # so the structured-search queries downstream never see it.
+    tmp_object_name = f"_tmp/{uuid.uuid4()}.{extension}"
+    tmp_blob = bucket.blob(tmp_object_name, chunk_size=UPLOAD_CHUNK_SIZE)
+
     hasher = hashlib.sha256()
     total_bytes = 0
-    while True:
-        chunk = byte_stream.read(UPLOAD_CHUNK_SIZE)
-        if not chunk:
-            break
-        hasher.update(chunk)
-        buf.write(chunk)
-        total_bytes += len(chunk)
+
+    # blob.open("wb") returns a writer that streams chunks to GCS via a
+    # single resumable upload session. Each write is buffered up to
+    # chunk_size, then sent and the buffer reset. Per-worker peak memory:
+    # ~chunk_size (the writer's internal buffer) + chunk_size (our read
+    # buffer) = ~32 MiB, bounded.
+    content_type_or_default = content_type or "application/octet-stream"
+    with tmp_blob.open("wb", content_type=content_type_or_default) as gcs_writer:
+        while True:
+            chunk = byte_stream.read(UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            hasher.update(chunk)
+            gcs_writer.write(chunk)
+            total_bytes += len(chunk)
     sha256 = hasher.hexdigest()
 
-    # Build object names from the layout helper (single source of truth).
+    # Step 2: now that we know the sha, build the final object name.
     object_name = archive_layout.build_object_name(
         pricing_effective_year, key, sha256, extension,
     )
@@ -149,35 +180,37 @@ def write_archive(
     gcs_uri = f"gs://{bucket_name}/{object_name}"
     meta_uri = f"gs://{bucket_name}/{meta_object_name}"
 
-    bucket = storage_client.bucket(bucket_name)
     data_blob = bucket.blob(object_name)
     meta_blob = bucket.blob(meta_object_name)
 
-    # Idempotency check: if the same content (same sha) already exists at
-    # the same path for the same year, no re-upload needed. This protects
-    # against:
-    #   - Weekly re-scrapes of unchanged MRFs (Last-Modified should catch
-    #     these earlier, but defensive belt-and-suspenders)
-    #   - Two scraper tasks both writing the same hospital (can happen
-    #     during sharded runs if hospitals[i::N] partition has overlap;
-    #     should never happen with current sharding logic, but cheap check)
+    # Step 3: idempotency check. If the final blob exists already, this
+    # exact content was archived previously — skip the rename, delete the
+    # tmp upload, and return. Saves the server-side copy cost and keeps
+    # the bucket free of redundant tmp objects.
     if data_blob.exists():
         logger.info(
-            "Archive object exists, skipping upload: %s (%d bytes)",
+            "Archive object exists, skipping rename: %s (%d bytes)",
             gcs_uri, total_bytes,
         )
+        try:
+            tmp_blob.delete()
+        except Exception as exc:
+            logger.warning("Failed to delete tmp blob %s: %s", tmp_object_name, exc)
         return ArchiveResult(
             gcs_uri=gcs_uri, meta_uri=meta_uri, sha256=sha256,
             file_size_bytes=total_bytes, skipped_existing=True,
         )
 
-    # Upload data
-    buf.seek(0)
-    data_blob.chunk_size = UPLOAD_CHUNK_SIZE
-    data_blob.upload_from_file(
-        buf, content_type=content_type or "application/octet-stream",
-        size=total_bytes, rewind=False,
-    )
+    # Step 4: server-side copy tmp → final (metadata-only operation, no
+    # data transfer), then delete the tmp blob.
+    bucket.copy_blob(tmp_blob, bucket, new_name=object_name)
+    try:
+        tmp_blob.delete()
+    except Exception as exc:
+        # Failure to delete the tmp doesn't break the archive — the data
+        # is correctly at the final path. A bucket lifecycle rule on
+        # _tmp/* (age >= 1 day) catches stragglers.
+        logger.warning("Failed to delete tmp blob %s after copy: %s", tmp_object_name, exc)
 
     # Build + upload sibling meta.json (small, single put)
     meta = archive_layout.ArchiveMeta(

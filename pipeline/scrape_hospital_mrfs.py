@@ -62,24 +62,23 @@ GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 # parser revision reads from archive. Set as env var so tests can override.
 GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive-clarobill-prd")
 
-# Concurrent download workers. Sandra's Phase 4 Q4 call was 60, but the
-# 2026-04-30 first-fleet run OOM-killed all 6 tasks because the dual-write
-# path buffers the entire MRF in memory twice (once in
-# legacy_blob.download_as_bytes, once inside archive_writer to compute the
-# SHA256 needed for the object name). At 60 workers × 2 × ~111 MB
-# (largest observed Sutter MRF) = ~13 GB needed vs 4 Gi container.
+# Concurrent download workers. Two prior calibrations:
+#   2026-04-30 first run: 60 workers OOM'd at 4 GiB.
+#   2026-04-30 retry: 20 workers OOM'd at 8 GiB on a 321 MiB Baylor MRF.
+# Root cause of both: archive_writer.write_archive() buffered the full MRF
+# in io.BytesIO before knowing the sha-based object name. A 321 MiB CSV
+# × N workers grew unbounded with file size.
 #
-# Mitigation:
-#   1. Cut MAX_WORKERS 60 -> 20 (still 6x the legacy pre-Phase-4 throughput,
-#      since legacy was 20 workers WITHOUT dual-write).
-#   2. Switched legacy_blob.download_as_bytes() to legacy_blob.open("rb")
-#      to stream the first half of the round trip.
-#   3. Bumped container memory 4Gi -> 8Gi in pipeline/deploy.sh for headroom.
+# 2026-05-01 architectural fix: archive_writer now stream-writes to a tmp
+# GCS blob via blob.open("wb"), hashes in flight, then server-side renames
+# to the final sha-based path. Per-worker peak memory = chunk_size × 2
+# (~32 MiB) regardless of file size.
 #
-# A future refactor can collapse the dual-write into a single tee-stream
-# from the hospital server to BOTH GCS buckets, eliminating the round trip
-# entirely. For now: 20 workers × ~150 MB peak = ~3 GB, fits in 8Gi.
-MAX_WORKERS = 20
+# With that fix, MAX_WORKERS=40 fits comfortably in 8 GiB:
+#   40 workers × 32 MiB = ~1.3 GiB, leaves ~6 GiB for Python overhead +
+#   ThreadPoolExecutor state + concurrent BigQuery clients.
+# Throughput vs 20: 2x scrape rate, fleet completes in ~half the time.
+MAX_WORKERS = 40
 
 # GCS resumable upload chunk size (bytes). 16MB is a good balance — large
 # enough for throughput, small enough to keep per-worker memory bounded.
