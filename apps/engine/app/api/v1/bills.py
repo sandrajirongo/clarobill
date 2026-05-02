@@ -1717,14 +1717,26 @@ async def _do_generate_report(
 
         report_path = f"{user_id}/{bill_id}/report.pdf"
         dispute_path = f"{user_id}/{bill_id}/dispute-letter.docx"
-        supabase.storage.from_("reports").upload(
-            report_path, report_pdf,
-            {"content-type": "application/pdf", "upsert": "true"},
-        )
         docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        supabase.storage.from_("reports").upload(
-            dispute_path, dispute_docx,
-            {"content-type": docx_mime, "upsert": "true"},
+        # Parallel uploads — supabase-py is sync, so each upload would otherwise
+        # block ~1-2s on Supabase round-trip. Running both in threads cuts ~1s
+        # off the path between "PDF/DOCX bytes ready" and "URLs visible to the
+        # dashboard."
+        await asyncio.gather(
+            loop.run_in_executor(
+                None,
+                lambda: supabase.storage.from_("reports").upload(
+                    report_path, report_pdf,
+                    {"content-type": "application/pdf", "upsert": "true"},
+                ),
+            ),
+            loop.run_in_executor(
+                None,
+                lambda: supabase.storage.from_("reports").upload(
+                    dispute_path, dispute_docx,
+                    {"content-type": docx_mime, "upsert": "true"},
+                ),
+            ),
         )
 
         supabase.table("analysis_results").update({

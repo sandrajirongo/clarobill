@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { DownloadButton } from '@/components/download-button';
+import { ReportsAutoRefresh } from '@/components/reports-auto-refresh';
 import s from '../dashboard.module.css';
 
 export default async function ReportsPage(): Promise<JSX.Element> {
@@ -32,8 +33,18 @@ export default async function ReportsPage(): Promise<JSX.Element> {
 
   const allResults = results ?? [];
 
+  // A row is in the "pending" state when there are findings (savings > 0) but
+  // the report and dispute letter files have not been written to storage yet.
+  // Generation is async on the engine; the UI used to mis-render this as
+  // "no errors found" because both URLs were null. Now the auto-refresh
+  // component picks up the row a few seconds after the engine writes the URLs.
+  const anyPending = allResults.some(
+    (r) => Number(r.total_potential_savings) > 0 && (!r.report_url || !r.dispute_letter_url)
+  );
+
   return (
     <main className={s.page}>
+      {anyPending && <ReportsAutoRefresh />}
       <div>
         <h1 className={s.pageTitle}>{t('title')}</h1>
         <p className={s.pageSub}>{t('subtitle')}</p>
@@ -65,7 +76,13 @@ export default async function ReportsPage(): Promise<JSX.Element> {
             const generatedDate = new Date(result.created_at).toLocaleDateString(locale, {
               month: 'short', day: 'numeric', year: 'numeric',
             });
-            const isClean = !result.report_url && !result.dispute_letter_url;
+
+            const savings = Number(result.total_potential_savings);
+            const hasFindings = savings > 0;
+            const hasReport = Boolean(result.report_url);
+            const hasDispute = Boolean(result.dispute_letter_url);
+            const isGenerating = hasFindings && (!hasReport || !hasDispute);
+            const isClean = !hasFindings && !hasReport && !hasDispute;
 
             return (
               <li key={result.id} className={s.reportItem}>
@@ -75,23 +92,26 @@ export default async function ReportsPage(): Promise<JSX.Element> {
                       {fileName}
                     </Link>
                     <p className={s.reportMeta}>{generatedDate} · {amountPaid}</p>
-                    {Number(result.total_potential_savings) > 0 && (
+                    {hasFindings && (
                       <p className={s.reportSavings}>
-                        {t('potentialSavings', { amount: `$${Number(result.total_potential_savings).toFixed(2)}` })}
+                        {t('potentialSavings', { amount: `$${savings.toFixed(2)}` })}
                       </p>
+                    )}
+                    {isGenerating && (
+                      <p className={s.reportSavings} style={{ opacity: .7 }}>{t('generating')}</p>
                     )}
                     {isClean && (
                       <p className={s.reportSavings}>{t('cleanBill')}</p>
                     )}
                   </div>
                   <div className={s.reportBtns}>
-                    {result.report_url && (
+                    {hasReport && (
                       <DownloadButton billId={result.bill_id} type="report" label={`↓ ${t('report')}`} className={s.dlBtn} />
                     )}
-                    {result.dispute_letter_url && (
+                    {hasDispute && (
                       <DownloadButton billId={result.bill_id} type="dispute-letter" label={`↓ ${t('disputeLetter')}`} className={s.dlBtn} />
                     )}
-                    {isClean && (
+                    {(isClean || isGenerating) && (
                       <Link href={`/dashboard/bills/${result.bill_id}`} className={s.dlBtn}>
                         {t('viewResults')}
                       </Link>
@@ -106,4 +126,3 @@ export default async function ReportsPage(): Promise<JSX.Element> {
     </main>
   );
 }
-
