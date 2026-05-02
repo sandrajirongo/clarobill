@@ -101,6 +101,7 @@
       "dropLabel": "Kéo thả hóa đơn vào đây, hoặc",
       "chooseFile": "Chọn tệp",
       "hint": "PDF, JPEG hoặc PNG — tối đa 20MB",
+      "itemizedTip": "Để có kết quả phân tích chính xác nhất, hãy tải lên hóa đơn chi tiết (itemized bill). Bệnh viện bắt buộc phải cung cấp miễn phí — chỉ cần gọi hoặc nhắn cho bộ phận thanh toán và họ thường sẽ gửi qua email trong vài ngày.",
       "checking": "Đang kiểm tra tệp…",
       "nameBill": "Đặt tên cho hóa đơn này",
       "namePlaceholder": "vd. Khám cấp cứu tháng 1",

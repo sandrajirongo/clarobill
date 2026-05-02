@@ -101,6 +101,7 @@
       "dropLabel": "I-drop ang iyong bill dito, o",
       "chooseFile": "Pumili ng file",
       "hint": "PDF, JPEG, o PNG — max 20MB",
+      "itemizedTip": "Para sa pinakatumpak na pagsusuri, mag-upload ng itemized bill. Kailangang ibigay ito ng ospital nang libre — tumawag o mag-message sa billing department at karaniwang ie-email nila ito sa loob ng ilang araw.",
       "checking": "Sinusuri ang file…",
       "nameBill": "Pangalanan ang bill na ito",
       "namePlaceholder": "hal. Enero na Pagbisita sa ER",

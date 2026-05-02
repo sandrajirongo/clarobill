@@ -101,6 +101,7 @@
       "dropLabel": "Drop your bill here, or",
       "chooseFile": "Choose file",
       "hint": "PDF, JPEG, or PNG — max 20MB",
+      "itemizedTip": "For the sharpest analysis, upload an itemized bill. Hospitals are required to provide one at no cost — call or message your billing department and they'll typically email it within a few days.",
       "checking": "Checking file…",
       "nameBill": "Name this bill",
       "namePlaceholder": "e.g. January ER Visit",

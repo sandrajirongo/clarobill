@@ -78,6 +78,7 @@ export function BillUploader(): JSX.Element {
             {t('chooseFile')}
           </button>
           <p className={s.uploadHint}>{t('hint')}</p>
+          <p className={s.uploadItemizedTip}>{t('itemizedTip')}</p>
         </>
       )}
 

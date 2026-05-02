@@ -101,6 +101,7 @@
       "dropLabel": "将账单拖放到此处，或",
       "chooseFile": "选择文件",
       "hint": "PDF、JPEG 或 PNG — 最大 20MB",
+      "itemizedTip": "为获得最精准的分析，请上传明细账单 (itemized bill)。医院依法必须免费提供 — 致电或留言给账单部门，通常几天内就会通过电子邮件发送给您。",
       "checking": "正在检查文件…",
       "nameBill": "为此账单命名",
       "namePlaceholder": "如：一月急诊就诊",

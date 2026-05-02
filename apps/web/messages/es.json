@@ -101,6 +101,7 @@
       "dropLabel": "Suelta tu factura aquí, o",
       "chooseFile": "Elegir archivo",
       "hint": "PDF, JPEG o PNG — máx 20 MB",
+      "itemizedTip": "Para un análisis más preciso, sube una factura detallada (itemized bill). Los hospitales están obligados a entregarla sin costo — llama o envía un mensaje al departamento de facturación y normalmente la enviarán por correo en pocos días.",
       "checking": "Verificando archivo…",
       "nameBill": "Nombra esta factura",
       "namePlaceholder": "ej. Visita de urgencias enero",
