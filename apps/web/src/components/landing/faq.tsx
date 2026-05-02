@@ -19,7 +19,7 @@ const FAQS = [
   },
   {
     q: 'Do you support my insurance plan?',
-    a: 'Yes. We work across most major US health insurers including BlueCross BlueShield, Aetna, Cigna, UnitedHealth, Humana, Oscar, and Medicare/Medicaid. We also review bills for uninsured patients.',
+    a: 'Yes. We work across every major US health insurer — including BlueCross BlueShield, Aetna, Cigna, UnitedHealthcare, Humana, Kaiser Permanente, Anthem, Oscar, Molina, Centene, and WellCare — as well as Medicare, Medicaid, and TRICARE. We also review bills for self-pay and uninsured patients. The analysis engine inspects each line item against published hospital rates and CMS benchmarks, so it works regardless of who your insurer is.',
   },
   {
     q: 'What does it cost?',

@@ -13,9 +13,11 @@ export const metadata: Metadata = {
 };
 
 const LOGOS = [
-  'BlueCross BlueShield', 'MyChart', 'Oscar Health', 'Aetna',
-  'Cigna', 'UnitedHealthcare', 'Humana', 'Kaiser Permanente',
-  'Anthem', 'Molina Healthcare', 'Centene', 'WellCare',
+  'BlueCross BlueShield', 'Aetna', 'Cigna', 'UnitedHealthcare',
+  'Humana', 'Kaiser Permanente', 'Anthem', 'Oscar Health',
+  'Molina Healthcare', 'Centene', 'WellCare',
+  'Medicare', 'Medicaid', 'TRICARE',
+  'Self-Pay / Uninsured',
 ];
 
 const TESTIMONIALS = [
@@ -68,6 +70,9 @@ export default function LandingPage(): JSX.Element {
             HIPAA-aligned
           </span>
         </div>
+        <p className={s.partnersSub}>
+          Every major US insurance plan — plus Medicare, Medicaid, TRICARE, and self-pay / uninsured patients.
+        </p>
         <div className={s.carouselTrackWrap}>
           <div
             className={s.carouselTrack}
