@@ -1204,9 +1204,23 @@ def _resolve_npi_by_name(
             return npi
 
         if len(rows) > 1:
+            # Multiple directory candidates. Filter by which NPIs actually have
+            # rows in hospital_charges. Stale directory entries (e.g. an old
+            # NPI for a facility that re-incorporated, or a sibling clinic
+            # under the same name) won't have any pricing data — those are not
+            # the right answer. If exactly one survives the filter, return it.
+            candidate_npis = [str(r["hospital_npi"]) for r in rows]
+            active_npis = _filter_npis_with_charges(bq, dataset, candidate_npis)
+            if len(active_npis) == 1:
+                npi = active_npis[0]
+                logger.info(
+                    "Hospital '%s' %s: %d directory candidates, 1 with charge data → NPI %s",
+                    hospital_name, label, len(rows), npi,
+                )
+                return npi
             logger.debug(
-                "Hospital '%s' %s: %d candidates, narrowing to next pass",
-                hospital_name, label, len(rows),
+                "Hospital '%s' %s: %d candidates (%d with charge data), narrowing to next pass",
+                hospital_name, label, len(rows), len(active_npis),
             )
 
     logger.info(
@@ -1214,6 +1228,34 @@ def _resolve_npi_by_name(
         hospital_name, hospital_state, hospital_zip,
     )
     return None
+
+
+def _filter_npis_with_charges(
+    bq: bigquery.Client,
+    dataset: str,
+    candidate_npis: list[str],
+) -> list[str]:
+    """Return the subset of candidate NPIs that have at least one row in
+    hospital_charges. Used by `_resolve_npi_by_name` to disambiguate when the
+    directory has stale duplicates (e.g. Saint Michael's Medical Center NJ
+    appears twice in `hospital_directory` — only NPI 1568825545 has pricing).
+    """
+    if not candidate_npis:
+        return []
+    query = f"""
+        SELECT DISTINCT hospital_npi
+        FROM `{dataset}.hospital_charges`
+        WHERE hospital_npi IN UNNEST(@npis)
+    """  # noqa: S608
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ArrayQueryParameter("npis", "STRING", candidate_npis),
+    ])
+    try:
+        rows = list(bq.query(query, job_config=job_config).result())
+    except Exception as exc:
+        logger.warning("hospital_charges presence check failed for %d NPIs: %s", len(candidate_npis), exc)
+        return []
+    return [str(r["hospital_npi"]) for r in rows]
 
 
 def _resolve_payer_aliases(
