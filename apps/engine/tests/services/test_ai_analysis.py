@@ -255,6 +255,46 @@ class TestGeminiPrimaryPath:
         assert result == ""
 
 
+class TestGeminiFinishReasonGuard:
+    """The internal `_call_gemini` raises when Gemini stops with a non-STOP
+    finish_reason so the Claude fallback path activates instead of shipping
+    a truncated response. Sandra hit this with a dispute letter that cut off
+    mid-sentence in Dispute 4.
+    """
+
+    def _build_response(self, text: str, finish_reason: int) -> MagicMock:
+        candidate = MagicMock()
+        candidate.finish_reason = finish_reason
+        response = MagicMock()
+        response.candidates = [candidate]
+        response.text = text
+        return response
+
+    async def test_finish_reason_stop_returns_text(self, live_service: AiAnalysisService) -> None:
+        """STOP (1) is the only clean termination — text is returned as-is."""
+        response = self._build_response("Full clean output.", finish_reason=1)
+        with patch("app.services.ai_analysis.GenerativeModel") as mock_model:
+            mock_model.return_value.generate_content.return_value = response
+            result = await live_service._call_gemini("prompt", max_tokens=100)
+        assert result == "Full clean output."
+
+    async def test_finish_reason_max_tokens_raises(self, live_service: AiAnalysisService) -> None:
+        """MAX_TOKENS (2) means output is truncated — raise so caller falls back."""
+        response = self._build_response("Truncated output that ends mid-sen", finish_reason=2)
+        with patch("app.services.ai_analysis.GenerativeModel") as mock_model:
+            mock_model.return_value.generate_content.return_value = response
+            with pytest.raises(RuntimeError, match="finish_reason"):
+                await live_service._call_gemini("prompt", max_tokens=100)
+
+    async def test_finish_reason_safety_raises(self, live_service: AiAnalysisService) -> None:
+        """SAFETY (3) means output was cut by the safety filter — raise to fall back."""
+        response = self._build_response("Partial output before filter trip", finish_reason=3)
+        with patch("app.services.ai_analysis.GenerativeModel") as mock_model:
+            mock_model.return_value.generate_content.return_value = response
+            with pytest.raises(RuntimeError, match="finish_reason"):
+                await live_service._call_gemini("prompt", max_tokens=100)
+
+
 class TestClaudeFallbackPath:
     """Tests that Claude is used when Gemini fails, and that its response is returned."""
 

@@ -110,6 +110,12 @@ class AiAnalysisService:
 
         The Vertex AI generative model SDK is synchronous; the call is wrapped in
         asyncio.to_thread so it does not block the event loop.
+
+        Raises if the candidate did not finish cleanly (MAX_TOKENS, SAFETY,
+        RECITATION, etc.) so the caller's fallback path activates instead of
+        delivering a truncated mid-sentence response. Sandra hit this once with
+        a dispute letter that cut off in Dispute 4 because Gemini stopped
+        mid-stream and `response.text` returned the partial output silently.
         """
         def _sync() -> str:
             model = GenerativeModel(_GEMINI_MODEL)
@@ -120,6 +126,16 @@ class AiAnalysisService:
                     temperature=0.3,
                 ),
             )
+            candidate = response.candidates[0] if response.candidates else None
+            finish_reason = getattr(candidate, "finish_reason", None)
+            # finish_reason 1 == STOP (the only clean termination). Anything
+            # else (MAX_TOKENS=2, SAFETY=3, RECITATION=4, OTHER=5) means the
+            # output is truncated or otherwise unsafe to ship as-is.
+            if finish_reason is not None and int(finish_reason) != 1:
+                raise RuntimeError(
+                    f"Gemini stopped with finish_reason={finish_reason} "
+                    f"(not STOP); output likely truncated"
+                )
             return str(response.text)
 
         return await asyncio.to_thread(_sync)
@@ -279,13 +295,17 @@ class AiAnalysisService:
             f"Line items on the bill:\n{line_item_summary}"
         )
 
-        # max_tokens=2500 (was 800 pre-2026-04-30): a multi-error letter
-        # has provider address + opening + ~150-tok per dispute paragraph +
-        # closing + signature block. A 4-error letter runs ~1500-1800
-        # tokens; a 10-error letter runs ~2200. 2500 buys headroom for
-        # any realistic case without burning context unnecessarily.
-        # Sandra reported truncation pre-fix; 800 was the cause.
-        _LETTER_MAX_TOKENS = 2500
+        # max_tokens=4096: gives the model generous headroom for a 10-error
+        # letter with full provider/patient blocks, a real opening, ~250 tok
+        # per dispute paragraph, closing, and signature. Gemini 2.0 Flash
+        # supports up to 8192 output tokens, so 4096 is safe.
+        # 2500 was the prior value but Sandra hit a mid-Dispute-4 cutoff on a
+        # 4-error letter (~700 tokens of actual output) — the issue was not
+        # the cap but Gemini stopping early without setting finish_reason=STOP.
+        # `_call_gemini` now raises on non-STOP finishes so the Claude
+        # fallback handles those cases; this ceiling is the guaranteed-budget
+        # for clean Gemini runs.
+        _LETTER_MAX_TOKENS = 4096
 
         # Primary: Gemini
         try:
