@@ -169,7 +169,7 @@ export default function PricingPage(): JSX.Element {
           </div>
           <div className={s.heroCtaRow}>
             <Link className={s.btnSage} href="/auth/sign-in">
-              Upload my bill. It&apos;s free.
+              Upload your bill. It&apos;s free.
             </Link>
             <span className={s.heroMicro}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -262,7 +262,7 @@ export default function PricingPage(): JSX.Element {
                     className={s.tierBtn}
                     href="/auth/sign-in"
                   >
-                    Upload my bill
+                    Upload your bill
                   </Link>
                 </div>
               );
@@ -335,7 +335,7 @@ export default function PricingPage(): JSX.Element {
         <h2 className={s.ctaH2}>Your bill deserves a second opinion</h2>
         <p className={s.ctaP}>Free to analyze. You only pay when we save you money.</p>
         <Link className={s.btnCtaLime} href="/auth/sign-in">
-          Upload my bill. It&apos;s free.
+          Upload your bill. It&apos;s free.
         </Link>
         <p className={s.ctaNote}>HIPAA-aligned &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card to start</p>
       </section>
