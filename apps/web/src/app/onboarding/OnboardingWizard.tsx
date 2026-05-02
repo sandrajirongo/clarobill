@@ -101,7 +101,7 @@ const T: Record<Locale, Messages> = {
     primer: {
       title: "You're all set", subtitle: 'Here\'s how ClaroBill works',
       step1: { title: 'Upload your bill', body: 'Drop in a PDF or photo of your medical bill, EOB, or superbill' },
-      step2: { title: 'We find the errors', body: 'Every charge is benchmarked against Medicare rates and checked for duplicates and coding errors' },
+      step2: { title: 'We find the errors', body: 'Every charge runs through our full billing-error audit' },
       step3: { title: 'Get your report', body: 'Download a full analysis report and a ready-to-send dispute letter' },
       nav: { reports: 'Your reports live in Reports', billing: 'Payment receipts are in Billing' },
       cta: 'Upload my first bill', back: 'Back',

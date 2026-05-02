@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
 import { OnboardingWizard } from './OnboardingWizard';
 
-export const metadata = { title: 'Welcome — ClaroBill' };
+export const metadata = { title: 'Welcome to ClaroBill' };
 
 export default async function OnboardingPage(): Promise<JSX.Element> {
   const user = await getAuthenticatedUser();

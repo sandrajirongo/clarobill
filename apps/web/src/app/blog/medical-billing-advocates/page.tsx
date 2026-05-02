@@ -3,8 +3,8 @@ import Link from 'next/link';
 import s from '../blog.module.css';
 
 export const metadata: Metadata = {
-  title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One — Clarobill',
-  description: 'Medical billing advocates can recover thousands from hospital errors — but they typically charge 25–35% of what they save you. Here is when they make sense and when they do not.',
+  title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One: Clarobill',
+  description: 'Medical billing advocates can recover thousands from hospital errors. But they typically charge 25–35% of what they save you. Here is when they make sense and when they do not.',
 };
 
 export default function Article(): JSX.Element {
@@ -23,7 +23,7 @@ export default function Article(): JSX.Element {
       </h1>
 
       <p className={s.articleLead}>
-        Medical billing advocates can recover real money from billing errors — but they typically
+        Medical billing advocates can recover real money from billing errors. But they typically
         take 25 to 35 percent of whatever they save you. On a $20,000 hospital bill, that is a
         meaningful fee. Here is how to decide if hiring one is worth it.
       </p>
@@ -31,8 +31,8 @@ export default function Article(): JSX.Element {
       <div className={s.articleBody}>
 
         <p>
-          Medical billing advocates are professionals — often former hospital coders, nurses, or
-          insurance claims processors — who review your medical bills, identify errors, and negotiate
+          Medical billing advocates are professionals (often former hospital coders, nurses, or
+          insurance claims processors) who review your medical bills, identify errors, and negotiate
           with providers and insurers on your behalf. They know the billing system from the inside,
           and that expertise has real value.
         </p>
@@ -61,8 +61,8 @@ export default function Article(): JSX.Element {
         </ul>
 
         <p>
-          For a complex inpatient stay — a surgery, a multi-day hospitalization, a procedure with
-          multiple specialists — this process can take 20 to 40 hours and may require going back and
+          For a complex inpatient stay (a surgery, a multi-day hospitalization, a procedure with
+          multiple specialists) this process can take 20 to 40 hours and may require going back and
           forth with the hospital several times. That is real work, and it is worth paying for
           in the right circumstances.
         </p>
@@ -83,21 +83,21 @@ export default function Article(): JSX.Element {
           <p className={s.glossaryTerm}>Contingency example</p>
           <p className={s.glossaryDef}>
             Hospital bill: $18,000. Advocate identifies $6,000 in errors. At 30% contingency,
-            the advocate keeps $1,800. You pay $16,200 instead of $18,000 — saving $4,200 net.
+            the advocate keeps $1,800. You pay $16,200 instead of $18,000, saving $4,200 net.
             That is a meaningful outcome, but the advocate earned more from this bill than most
             people would spend on professional tax preparation for a decade.
           </p>
         </div>
 
         <p>
-          For large bills — a major surgery, a prolonged ICU stay, a complex multi-specialty
-          encounter — the contingency model works well for patients. The advocate has strong incentive
+          For large bills (a major surgery, a prolonged ICU stay, a complex multi-specialty
+          encounter) the contingency model works well for patients. The advocate has strong incentive
           to find every error, and the percentage is justified by the complexity of the work.
         </p>
 
         <p>
-          For smaller bills — a single outpatient procedure, a routine emergency visit, a short
-          inpatient stay — the economics are less clear. A 30% contingency on $2,000 in recoverable
+          For smaller bills (a single outpatient procedure, a routine emergency visit, a short
+          inpatient stay) the economics are less clear. A 30% contingency on $2,000 in recoverable
           errors is $600 for the advocate. The same $600 flat fee would have been a reasonable
           charge for a few hours of review.
         </p>
@@ -116,7 +116,7 @@ export default function Article(): JSX.Element {
           </li>
           <li>
             <strong>Denied insurance claims</strong> that require formal appeals, peer-to-peer
-            reviews, or independent dispute resolution — processes that benefit from someone
+            reviews, or independent dispute resolution. Processes that benefit from someone
             who knows the system.
           </li>
           <li>
@@ -124,7 +124,7 @@ export default function Article(): JSX.Element {
             a service was necessary. These require medical knowledge to argue effectively.
           </li>
           <li>
-            <strong>Billing fraud</strong> — if you believe charges are fabricated rather than
+            <strong>Billing fraud.</strong> If you believe charges are fabricated rather than
             mistaken, an advocate can help build a documented case.
           </li>
         </ul>
@@ -132,8 +132,8 @@ export default function Article(): JSX.Element {
         <h2>When you probably do not need one</h2>
 
         <p>
-          For the most common billing errors — duplicate charges, unbundled CPT codes, price outliers,
-          non-payable codes — the rules are published and the disputes follow a predictable template.
+          For the most common billing errors (duplicate charges, unbundled CPT codes, price outliers,
+          non-payable codes) the rules are published and the disputes follow a predictable template.
           You do not need expert negotiation for these. You need the right reference data and a
           well-formatted dispute letter. <Link href="/blog/common-medical-billing-errors">Our billing errors guide</Link>{' '}
           covers each error type with the exact dispute language to use.
@@ -146,7 +146,7 @@ export default function Article(): JSX.Element {
         </p>
 
         <p>
-          What makes these disputes hard is not the expertise required — it is the time required to
+          What makes these disputes hard is not the expertise required. It is the time required to
           look up the codes, cross-reference the fee schedule, check the NCCI edit table, and write
           a properly cited letter. That is a data problem more than a judgment problem.
         </p>
@@ -168,12 +168,12 @@ export default function Article(): JSX.Element {
           <li>
             <strong>$5,000–$20,000:</strong> Review the bill yourself or use automated analysis
             first. If you find significant errors but the hospital pushes back, consider bringing
-            in an advocate at that point — after you have established the dispute in writing.
+            in an advocate at that point, after you have established the dispute in writing.
           </li>
           <li>
             <strong>Over $20,000 or denied claims:</strong> A human advocate's expertise and
             persistence may be worth the contingency fee. Get two or three quotes and confirm
-            what the percentage applies to — savings, not total bill amount.
+            what the percentage applies to (savings, not total bill amount).
           </li>
         </ul>
 
@@ -199,10 +199,10 @@ export default function Article(): JSX.Element {
       </div>
 
       <Citations sources={[
-        { label: 'Alliance of Claims Assistance Professionals — Advocate Directory', url: 'https://www.claims.org' },
-        { label: 'Patient Advocate Foundation — Free Case Management Services', url: 'https://www.patientadvocate.org' },
-        { label: 'Medical Billing Advocates of America — About', url: 'https://www.billadvocates.com' },
-        { label: 'CMS — Medicare Physician Fee Schedule Public Data', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
+        { label: 'Alliance of Claims Assistance Professionals: Advocate Directory', url: 'https://www.claims.org' },
+        { label: 'Patient Advocate Foundation: Free Case Management Services', url: 'https://www.patientadvocate.org' },
+        { label: 'Medical Billing Advocates of America: About', url: 'https://www.billadvocates.com' },
+        { label: 'CMS: Medicare Physician Fee Schedule Public Data', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
       ]} />
 
       <Cta />
@@ -217,11 +217,11 @@ function Cta(): JSX.Element {
     <div className={s.ctaBox}>
       <p className={s.ctaTitle}>Audit your bill before hiring anyone</p>
       <p className={s.ctaNote}>
-        ClaroBill identifies duplicate charges, unbundled codes, and price outliers in minutes —
-        free. See what your bill contains before deciding whether you need a human advocate.
+        ClaroBill runs a deep audit and flags every error in minutes. Free.
+        See what your bill contains before deciding whether you need a human advocate.
       </p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>
-        Analyze my bill — it's free
+        Analyze my bill. It's free
       </Link>
     </div>
   );

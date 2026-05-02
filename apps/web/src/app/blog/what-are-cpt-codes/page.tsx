@@ -3,7 +3,7 @@ import Link from 'next/link';
 import s from '../blog.module.css';
 
 export const metadata: Metadata = {
-  title: "What Are CPT Codes? A Patient's Guide — Clarobill",
+  title: "What Are CPT Codes? A Patient's Guide: Clarobill",
   description: 'CPT codes are the five-digit numbers that determine what your medical care costs. Here is how they work, how they get abused, and how to check whether yours are right.',
 };
 
@@ -29,7 +29,7 @@ export default function Article(): JSX.Element {
 
         <p>
           Somewhere on your medical bill, there are five-digit numbers that most patients ignore. They look
-          like serial codes — 99213, 93000, 80053 — and they are easy to skip past when you are trying to
+          like serial codes (99213, 93000, 80053) and they are easy to skip past when you are trying to
           make sense of a bill that already feels overwhelming. If you are still working through what all
           the columns mean, <Link href="/blog/how-to-read-an-itemized-medical-bill">our itemized bill guide</Link>{' '}
           covers the full layout before you get to the codes.
@@ -37,7 +37,7 @@ export default function Article(): JSX.Element {
 
         <p>
           Those numbers are CPT codes, and they are arguably the most important field on the entire document.
-          Every CPT code maps to a specific dollar amount. Get the code wrong — intentionally or not — and
+          Every CPT code maps to a specific dollar amount. Get the code wrong, intentionally or not, and
           the charge attached to it changes.
         </p>
 
@@ -89,13 +89,13 @@ export default function Article(): JSX.Element {
             <p className={s.glossaryTerm}>85025 · Complete Blood Count (CBC)</p>
             <p className={s.glossaryDef}>
               One of the most ordered lab tests. It should appear once per blood draw, not multiple times.
-              Medicare pays around $12 for this test — hospital charges can run far higher.
+              Medicare pays around $12 for this test. Hospital charges can run far higher.
             </p>
           </div>
           <div style={{ marginTop: '1rem' }}>
             <p className={s.glossaryTerm}>80053 · Comprehensive Metabolic Panel (CMP)</p>
             <p className={s.glossaryDef}>
-              A panel of 14 blood chemistry tests. Should be billed as a single panel code — not as 14
+              A panel of 14 blood chemistry tests. Should be billed as a single panel code, not as 14
               individual test codes.
             </p>
           </div>
@@ -132,23 +132,23 @@ export default function Article(): JSX.Element {
 
         <p>
           Medicare's published fee schedule is the most useful benchmark for patients. When a provider's charge
-          is two, three, or five times the Medicare rate, that is not automatically wrong — but it is worth noting.
+          is two, three, or five times the Medicare rate, that is not automatically wrong. But it is worth noting.
         </p>
 
         <h2>Modifiers: the asterisks of medical billing</h2>
 
         <p>
           CPT codes sometimes appear with two-digit suffixes called modifiers that change the meaning of the
-          base code — indicating a procedure was performed on the left vs. right side, or that two distinct
+          base code, indicating a procedure was performed on the left vs. right side, or that two distinct
           procedures were performed in the same session (modifier 59).
         </p>
 
         <p>
           Modifier 59 deserves special attention. It is used to override National Correct Coding Initiative
-          (NCCI) edits — the rules that prevent certain code combinations from being billed together. Used
+          (NCCI) edits, the rules that prevent certain code combinations from being billed together. Used
           legitimately, it documents that two procedures really were separate and distinct. Used improperly,
           it is a tool for billing code pairs that should not be billed separately. Unbundling is one of the{' '}
-          <Link href="/blog/common-medical-billing-errors">most common billing errors</Link> — with a specific
+          <Link href="/blog/common-medical-billing-errors">most common billing errors</Link>, with a specific
           dispute template you can use when you spot it. When you see modifier 59 with no clear justification,
           that is where to look first.
         </p>
@@ -157,13 +157,13 @@ export default function Article(): JSX.Element {
 
         <p>
           Patients rarely ask about CPT codes because the system is not designed to be legible. Billing
-          departments are not trained to explain codes to patients — they are trained to collect balances.
+          departments are not trained to explain codes to patients. They are trained to collect balances.
         </p>
 
         <p>
           None of that changes the fact that you are entitled to know exactly what you are being charged for
-          and why. If a code on your bill does not match your experience of the visit — if the complexity
-          level seems wrong, if a procedure appears for something you do not recall — ask. Request the
+          and why. If a code on your bill does not match your experience of the visit, if the complexity
+          level seems wrong, if a procedure appears for something you do not recall, ask. Request the
           documentation. The codes are not obscure by necessity. They are just not typically explained to
           the person who pays the bill. When you are ready to act on what you find,{' '}
           <Link href="/blog/how-to-dispute-a-hospital-bill">our dispute guide walks through every step</Link>{' '}
@@ -173,11 +173,11 @@ export default function Article(): JSX.Element {
       </div>
 
       <Citations sources={[
-        { label: 'CMS — 2026 Medicare Physician Fee Schedule Final Rule', url: 'https://www.cms.gov/newsroom/fact-sheets/calendar-year-cy-2026-medicare-physician-fee-schedule-final-rule-cms-1832-f' },
-        { label: 'CMS — Physician Fee Schedule Lookup Tool', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
-        { label: 'CMS — Clinical Laboratory Fee Schedule', url: 'https://www.cms.gov/medicare/payment/fee-schedules/clinical-laboratory-fee-schedule-clfs' },
-        { label: 'AMA — CPT Code Overview', url: 'https://www.ama-assn.org/practice-management/cpt/cpt-overview-and-code-approval' },
-        { label: 'CMS — National Correct Coding Initiative (NCCI) Edits', url: 'https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits' },
+        { label: 'CMS: 2026 Medicare Physician Fee Schedule Final Rule', url: 'https://www.cms.gov/newsroom/fact-sheets/calendar-year-cy-2026-medicare-physician-fee-schedule-final-rule-cms-1832-f' },
+        { label: 'CMS: Physician Fee Schedule Lookup Tool', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
+        { label: 'CMS: Clinical Laboratory Fee Schedule', url: 'https://www.cms.gov/medicare/payment/fee-schedules/clinical-laboratory-fee-schedule-clfs' },
+        { label: 'AMA: CPT Code Overview', url: 'https://www.ama-assn.org/practice-management/cpt/cpt-overview-and-code-approval' },
+        { label: 'CMS: National Correct Coding Initiative (NCCI) Edits', url: 'https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits' },
       ]} />
 
       <Cta />
@@ -192,11 +192,11 @@ function Cta(): JSX.Element {
     <div className={s.ctaBox}>
       <p className={s.ctaTitle}>We check every CPT code for you</p>
       <p className={s.ctaNote}>
-        ClaroBill compares each code on your bill against Medicare rates, flags upcoding and
-        unbundled procedures, and writes your dispute letter automatically.
+        ClaroBill runs a deep audit across every line item, flagging upcoding, unbundled
+        procedures, and other errors. Then it writes your dispute letter automatically.
       </p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>
-        Analyze my bill — it's free
+        Analyze my bill. It's free
       </Link>
     </div>
   );

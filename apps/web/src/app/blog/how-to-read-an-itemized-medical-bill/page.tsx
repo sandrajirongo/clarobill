@@ -3,8 +3,8 @@ import Link from 'next/link';
 import s from '../blog.module.css';
 
 export const metadata: Metadata = {
-  title: 'How to Read an Itemized Medical Bill — Clarobill',
-  description: 'What the columns, codes, and dollar amounts on your itemized medical bill actually mean — and how to find the errors hiding in plain sight.',
+  title: 'How to Read an Itemized Medical Bill: Clarobill',
+  description: 'What the columns, codes, and dollar amounts on your itemized medical bill actually mean. Plus how to find the errors hiding in plain sight.',
 };
 
 export default function Article(): JSX.Element {
@@ -21,7 +21,7 @@ export default function Article(): JSX.Element {
       <h1 className={s.articleH1}>How to Read an Itemized Medical Bill</h1>
 
       <p className={s.articleLead}>
-        What the columns, codes, and dollar amounts actually mean — and how to spot the line items that should not be there.
+        What the columns, codes, and dollar amounts actually mean. Plus how to spot the line items that should not be there.
       </p>
 
       <div className={s.articleBody}>
@@ -34,7 +34,7 @@ export default function Article(): JSX.Element {
 
         <p>
           That experience is nearly universal. Hospitals are not legally required to send you an itemized bill
-          unless you ask for one — and most patients never do, which is exactly how billing departments prefer it.
+          unless you ask for one. And most patients never do, which is exactly how billing departments prefer it.
           The summary statement that arrives automatically just shows a total. The itemized version shows you
           everything, line by line, and that is where the errors live.
         </p>
@@ -43,10 +43,10 @@ export default function Article(): JSX.Element {
 
         <p>
           There are three documents most patients confuse. An <strong>Explanation of Benefits (EOB)</strong> comes
-          from your insurance company — it shows what was billed, what they agreed to pay, and what you owe after
+          from your insurance company. It shows what was billed, what they agreed to pay, and what you owe after
           their negotiated discount. A <strong>summary bill</strong> comes from the hospital or provider and
-          shows a single total. An <strong>itemized bill</strong> — sometimes called an itemized statement or
-          UB-04 form — lists every charge individually with the specific procedure codes attached.
+          shows a single total. An <strong>itemized bill</strong> (sometimes called an itemized statement or
+          UB-04 form) lists every charge individually with the specific procedure codes attached.
         </p>
 
         <p>
@@ -63,8 +63,8 @@ export default function Article(): JSX.Element {
           <div>
             <p className={s.glossaryTerm}>Date of service</p>
             <p className={s.glossaryDef}>
-              The date the service was performed. Check this carefully if you had a multi-day hospital stay —
-              being charged for a day you were discharged is one of the most common errors on inpatient bills.
+              The date the service was performed. Check this carefully if you had a multi-day hospital stay.
+              Being charged for a day you were discharged is one of the most common errors on inpatient bills.
             </p>
           </div>
           <div style={{ marginTop: '1rem' }}>
@@ -79,7 +79,7 @@ export default function Article(): JSX.Element {
             <p className={s.glossaryDef}>
               A five-digit code describing the exact procedure or service. This is the most important field
               on the bill. CPT 99214 means "established patient office visit, moderate-to-high complexity."
-              CPT 93000 is an EKG. These codes directly determine what insurance pays — and what you owe.{' '}
+              CPT 93000 is an EKG. These codes directly determine what insurance pays, and what you owe.{' '}
               <Link href="/blog/what-are-cpt-codes">Our CPT code guide</Link> walks through the codes patients see most often and what they mean.
             </p>
           </div>
@@ -102,20 +102,20 @@ export default function Article(): JSX.Element {
             <p className={s.glossaryTerm}>Billed amount</p>
             <p className={s.glossaryDef}>
               What the provider charged before any discounts or insurance adjustments. This number is almost
-              always higher than what anyone actually pays — it is the starting point for negotiation.
+              always higher than what anyone actually pays. It is the starting point for negotiation.
             </p>
           </div>
           <div style={{ marginTop: '1rem' }}>
             <p className={s.glossaryTerm}>Allowed amount / adjusted amount</p>
             <p className={s.glossaryDef}>
               The negotiated rate between the provider and your insurer. The difference between the billed
-              amount and the allowed amount is written off — you are not responsible for it.
+              amount and the allowed amount is written off. You are not responsible for it.
             </p>
           </div>
           <div style={{ marginTop: '1rem' }}>
             <p className={s.glossaryTerm}>Patient responsibility</p>
             <p className={s.glossaryDef}>
-              What you actually owe after insurance. Reconcile this with your EOB — if the two documents show
+              What you actually owe after insurance. Reconcile this with your EOB. If the two documents show
               different amounts for the same service, one of them is wrong.
             </p>
           </div>
@@ -140,7 +140,7 @@ export default function Article(): JSX.Element {
 
         <p>
           <strong>3. The description does not match what happened.</strong> If you had a 15-minute follow-up
-          but the bill shows CPT 99215 (requiring at least 40 minutes of total time), that is upcoding — the
+          but the bill shows CPT 99215 (requiring at least 40 minutes of total time), that is upcoding. The
           difference between a 99213 ($90) and a 99215 ($182) visit under the 2026 Medicare fee schedule.
           Upcoding is one of several{' '}
           <Link href="/blog/common-medical-billing-errors">common billing errors with specific dispute strategies</Link>.
@@ -155,10 +155,10 @@ export default function Article(): JSX.Element {
         <h2>When to push back</h2>
 
         <p>
-          Billing departments are not adversaries, but they do make mistakes — and they are not going to audit
+          Billing departments are not adversaries, but they do make mistakes. And they are not going to audit
           their own work for your benefit. If something looks wrong, ask for it in writing. If a charge is
           removed verbally but does not disappear from the next statement, follow up with a reference number.
-          For the exact steps — from writing the dispute letter to escalating when the hospital pushes back —
+          For the exact steps, from writing the dispute letter to escalating when the hospital pushes back,
           see <Link href="/blog/how-to-dispute-a-hospital-bill">our step-by-step hospital bill dispute guide</Link>.
         </p>
 
@@ -169,16 +169,16 @@ export default function Article(): JSX.Element {
 
         <p>
           Billing errors are not rare edge cases. Studies consistently find errors in the majority of hospital
-          bills. The patients who catch them are not smarter — they just looked.
+          bills. The patients who catch them are not smarter. They just looked.
         </p>
 
       </div>
 
       <Citations sources={[
-        { label: 'CMS — 2026 Medicare Physician Fee Schedule Final Rule', url: 'https://www.cms.gov/newsroom/fact-sheets/calendar-year-cy-2026-medicare-physician-fee-schedule-final-rule-cms-1832-f' },
-        { label: 'CMS — Physician Fee Schedule Lookup Tool', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
-        { label: "Medical Billing Advocates of America — Billing Error Statistics (via Becker's Hospital Review)", url: 'https://www.beckershospitalreview.com/finance/medical-billing-errors-growing-says-medical-billing-advocates-of-america.html' },
-        { label: 'CMS — UB-04 Claim Form Instructions', url: 'https://www.cms.gov/medicare/billing/electronicbillingediinstances/ub04' },
+        { label: 'CMS: 2026 Medicare Physician Fee Schedule Final Rule', url: 'https://www.cms.gov/newsroom/fact-sheets/calendar-year-cy-2026-medicare-physician-fee-schedule-final-rule-cms-1832-f' },
+        { label: 'CMS: Physician Fee Schedule Lookup Tool', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
+        { label: "Medical Billing Advocates of America: Billing Error Statistics (via Becker's Hospital Review)", url: 'https://www.beckershospitalreview.com/finance/medical-billing-errors-growing-says-medical-billing-advocates-of-america.html' },
+        { label: 'CMS: UB-04 Claim Form Instructions', url: 'https://www.cms.gov/medicare/billing/electronicbillingediinstances/ub04' },
       ]} />
 
       <Cta />
@@ -193,11 +193,11 @@ function Cta(): JSX.Element {
     <div className={s.ctaBox}>
       <p className={s.ctaTitle}>Let Claro<em style={{ fontStyle: 'italic' }}>Bill</em> read it for you</p>
       <p className={s.ctaNote}>
-        Upload your bill and we'll check every CPT code against Medicare rates, flag duplicates,
-        and generate a dispute letter — in minutes.
+        Upload your bill and we'll run a deep audit, flag every error, and generate a
+        ready-to-send dispute letter in minutes.
       </p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>
-        Analyze my bill — it's free
+        Analyze my bill. It's free
       </Link>
     </div>
   );

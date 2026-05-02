@@ -83,11 +83,11 @@ export default function SignInPage(): JSX.Element {
           )}
           <div className={s.benefitItem}>
             <span className={s.benefitIcon}><CheckIcon size={14} /></span>
-            <span>Finds billing errors — duplicate charges, unbundled codes, inflated fees</span>
+            <span>Finds billing errors: duplicate charges, unbundled codes, inflated fees</span>
           </div>
           <div className={s.benefitItem}>
             <span className={s.benefitIcon}><CheckIcon size={14} /></span>
-            <span>Compares your charges against Medicare benchmarks in a few minutes</span>
+            <span>Reviews every line item in minutes. No spreadsheets, no calls.</span>
           </div>
           <div className={s.benefitItem}>
             <span className={s.benefitIcon}><CheckIcon size={14} /></span>
@@ -124,7 +124,7 @@ function MagicLinkForm(): JSX.Element {
     } else {
       setMessage({
         type: 'success',
-        text: 'Check your email — a sign-in link is on its way. Some providers (including Proton Mail) may block these links. If it does not arrive, use the Email & password tab instead.',
+        text: 'Check your email. A sign-in link is on its way. Some providers (including Proton Mail) may block these links. If it does not arrive, use the Email & password tab instead.',
       });
     }
   }

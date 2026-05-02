@@ -83,6 +83,15 @@
   font-size: .78rem;
   color: var(--txt3);
 }
+.heroPlans {
+  text-align: center;
+  font-size: .78rem;
+  color: var(--txt3);
+  margin: 0;
+  padding: 0 clamp(.75rem, 4vw, 1.5rem);
+  line-height: 1.5;
+  max-width: 36rem;
+}
 
 /* ─── PARTNERS CAROUSEL ─────────────────────────────────────────────────── */
 .partnersStrip {
@@ -114,14 +123,6 @@
   color: rgba(255, 255, 255, .4);
   border-left: 1px solid rgba(255, 255, 255, .15);
   padding-left: .75rem;
-}
-.partnersSub {
-  text-align: center;
-  font-size: .78rem;
-  color: rgba(255, 255, 255, .65);
-  padding: 0 clamp(1rem, 4vw, 2rem);
-  margin: 0 0 .9rem;
-  line-height: 1.5;
 }
 .carouselTrackWrap {
   overflow: hidden;

@@ -8,7 +8,7 @@ import { MarketingNav } from '@/components/marketing-nav';
 import { SocialsRow } from '@/components/socials-row';
 
 export const metadata: Metadata = {
-  title: 'ClaroBill — Find Errors in Your Medical Bill',
+  title: 'ClaroBill: Find Errors in Your Medical Bill',
   description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
 };
 
@@ -41,11 +41,11 @@ export default function LandingPage(): JSX.Element {
           </h1>
           <p className={s.heroSub}>
             ClaroBill uses AI to find duplicate charges, upcoding errors, and billing
-            violations — then gives you the exact words to dispute them and save money.
+            violations. Then it gives you the exact words to dispute them and save money.
           </p>
           <div className={s.heroCtaRow}>
             <Link className={s.btnSageLg} href="/auth/sign-in">
-              Upload your bill — it&apos;s free
+              Upload your bill. It&apos;s free.
             </Link>
             <span className={s.heroMicro}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -54,6 +54,9 @@ export default function LandingPage(): JSX.Element {
               </svg>
               HIPAA-aligned · You only pay if we save you money
             </span>
+            <p className={s.heroPlans}>
+              Every major US insurance plan, plus Medicare, Medicaid, TRICARE, and self-pay or uninsured patients.
+            </p>
           </div>
         </div>
       </section>
@@ -70,9 +73,6 @@ export default function LandingPage(): JSX.Element {
             HIPAA-aligned
           </span>
         </div>
-        <p className={s.partnersSub}>
-          Every major US insurance plan — plus Medicare, Medicaid, TRICARE, and self-pay / uninsured patients.
-        </p>
         <div className={s.carouselTrackWrap}>
           <div
             className={s.carouselTrack}
@@ -135,7 +135,7 @@ export default function LandingPage(): JSX.Element {
               <div className={s.snum}>2</div>
               <div>
                 <div className={s.st}>ClaroBill AI reviews your bill</div>
-                <div className={s.sd}>Our AI cross-references every charge against Medicare fee schedules and NCCI billing rules — catching what humans miss.</div>
+                <div className={s.sd}>Our AI runs a deep audit across every line item. It catches the errors humans miss.</div>
               </div>
             </div>
             <div className={s.step}>
@@ -162,17 +162,17 @@ export default function LandingPage(): JSX.Element {
             <div className={s.wcard}>
               <div className={s.wi}><ReportIcon size={20} /></div>
               <h4 className={s.wcardH4}>A detailed error report</h4>
-              <p className={s.wcardP}>Every charge is reviewed and flagged — duplicate line items, upcoding, unbundled procedures, and charges for services not provided — explained clearly, without medical jargon.</p>
+              <p className={s.wcardP}>Every charge is reviewed and flagged. Duplicate line items, upcoding, unbundled procedures, and charges for services not provided. We explain everything clearly, without medical jargon.</p>
             </div>
             <div className={s.wcard}>
               <div className={s.wi}><LetterIcon size={20} /></div>
               <h4 className={s.wcardH4}>A ready-to-send dispute letter</h4>
-              <p className={s.wcardP}>A professional letter citing every billing violation by name with regulatory references — the same documentation that compels billing departments to act.</p>
+              <p className={s.wcardP}>A professional letter citing every billing violation by name with regulatory references. It is the same documentation that compels billing departments to act.</p>
             </div>
             <div className={`${s.wcard} ${s.wcardFull}`}>
               <div className={s.wi}><SpeedIcon size={20} /></div>
               <h4 className={s.wcardH4}>Results in minutes, not weeks</h4>
-              <p className={s.wcardP}>No waiting for a human advocate. No back-and-forth calls. Upload your bill and get your full report and dispute letter the same day — ready to send immediately.</p>
+              <p className={s.wcardP}>No waiting for a human advocate. No back-and-forth calls. Upload your bill and get your full report and dispute letter the same day, ready to send immediately.</p>
             </div>
           </div>
         </Reveal>
@@ -191,7 +191,7 @@ export default function LandingPage(): JSX.Element {
         <h2 className={s.ctaH2}>Your medical bill deserves a second opinion</h2>
         <p className={s.ctaP}>Free to start. Get your error report and dispute letter today.</p>
         <Link className={s.btnCta} href="/auth/sign-in">
-          Upload your bill — it&apos;s free
+          Upload your bill. It&apos;s free.
         </Link>
         <p className={s.ctaNote}>HIPAA-aligned &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card required</p>
       </section>

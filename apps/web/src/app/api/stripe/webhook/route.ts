@@ -165,7 +165,7 @@ async function sendReferralCreditEmail(
     body: JSON.stringify({
       personalizations: [{ to: [{ email: toEmail }] }],
       from: { email: fromEmail, name: 'ClaroBill' },
-      subject: `You earned $${dollars} — someone just used your referral link`,
+      subject: `You earned $${dollars}. Someone just used your referral link`,
       content: [{ type: 'text/html', value: referralCreditEmailHtml(dollars, totalConverted, totalEarned) }],
     }),
   });

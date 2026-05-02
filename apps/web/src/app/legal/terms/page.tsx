@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service — Clarobill',
+  title: 'Terms of Service: Clarobill',
   description: 'Clarobill Terms of Service. Read the terms governing your use of Clarobill medical bill analysis.',
 };
 
@@ -9,7 +9,7 @@ export default function TermsOfServicePage(): JSX.Element {
   return (
     <article>
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Terms of Service</h1>
-      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026 &mdash; Last updated: April 7, 2026</p>
+      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026. Last updated: April 7, 2026.</p>
 
       <p className="text-gray-700 mb-6">
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of ClaroBill (&ldquo;Service,&rdquo;
@@ -33,7 +33,7 @@ export default function TermsOfServicePage(): JSX.Element {
       <Section title="2. Eligibility">
         <p>
           You must be at least 18 years old to use the Service. By using Clarobill, you represent that you are 18 or
-          older and that you have the legal right to upload and analyze the medical bills you submit — either because
+          older and that you have the legal right to upload and analyze the medical bills you submit. Either because
           they are your own bills or because you are an authorized representative of the patient.
         </p>
       </Section>

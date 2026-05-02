@@ -40,10 +40,10 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.clarobill.com'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: 'ClaroBill — Find Errors in Your Medical Bill',
+  title: 'ClaroBill: Find Errors in Your Medical Bill',
   description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
   openGraph: {
-    title: 'ClaroBill — Find Errors in Your Medical Bill',
+    title: 'ClaroBill: Find Errors in Your Medical Bill',
     description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
     siteName: 'ClaroBill',
     type: 'website',
@@ -53,13 +53,13 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'ClaroBill — Find Errors in Your Medical Bill',
+        alt: 'ClaroBill: Find Errors in Your Medical Bill',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ClaroBill — Find Errors in Your Medical Bill',
+    title: 'ClaroBill: Find Errors in Your Medical Bill',
     description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
     images: ['/opengraph-image'],
   },

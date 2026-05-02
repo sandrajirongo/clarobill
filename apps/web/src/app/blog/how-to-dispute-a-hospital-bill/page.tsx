@@ -3,8 +3,8 @@ import Link from 'next/link';
 import s from '../blog.module.css';
 
 export const metadata: Metadata = {
-  title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide — Clarobill',
-  description: 'A practical guide to disputing hospital billing errors — from requesting your itemized bill to writing a dispute letter that gets results.',
+  title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide: Clarobill',
+  description: 'A practical guide to disputing hospital billing errors. From requesting your itemized bill to writing a dispute letter that gets results.',
 };
 
 export default function Article(): JSX.Element {
@@ -23,7 +23,7 @@ export default function Article(): JSX.Element {
       </h1>
 
       <p className={s.articleLead}>
-        Disputing a hospital bill is not complicated — but it does require a specific sequence of steps.
+        Disputing a hospital bill is not complicated. But it does require a specific sequence of steps.
         Most disputes that succeed follow the same pattern. Most that fail skip one of these steps.
       </p>
 
@@ -32,13 +32,13 @@ export default function Article(): JSX.Element {
         <p>
           The first thing to understand is that disputes work. Hospitals negotiate. Billing departments
           correct errors. Insurers reprocess claims. The reason most people overpay is not that the system
-          is impenetrable — it is that most people do not know what to ask for, or do not ask at all.
+          is impenetrable. It is that most people do not know what to ask for, or do not ask at all.
         </p>
 
         <p>
           The second thing to understand is that you are not disputing out of nowhere. You are disputing
           against a published set of rules. The Medicare fee schedule, the National Correct Coding Initiative
-          edits, your insurer's explanation of benefits — these are all public documents. When a charge
+          edits, your insurer's explanation of benefits. These are all public documents. When a charge
           violates them, you have a factual basis for your dispute, not just a complaint.
         </p>
 
@@ -48,7 +48,7 @@ export default function Article(): JSX.Element {
 
         <p>
           You are legally entitled to an itemized bill. Call the hospital billing department and ask for one.
-          Do not accept the summary bill — the one that shows "hospital services: $14,200" as a single line.
+          Do not accept the summary bill. That is the one that shows "hospital services: $14,200" as a single line.
           You need every charge broken out individually, with the CPT or HCPCS code, the date of service,
           the quantity, and the dollar amount. If you have not done this before,{' '}
           <Link href="/blog/how-to-read-an-itemized-medical-bill">our guide to reading an itemized bill</Link>{' '}
@@ -58,8 +58,8 @@ export default function Article(): JSX.Element {
         <p>
           In most states this must be provided free of charge. Some hospitals will try to charge a small
           fee. Decline it and ask for a supervisor if necessary. Federal billing transparency requirements
-          that took effect in 2021 require hospitals to provide a machine-readable list of their standard
-          charges — your itemized bill falls under the same general transparency mandate.
+          that took effect in 2021 give patients the right to see hospital pricing information. Your
+          itemized bill falls under the same general transparency mandate.
         </p>
 
         <p>
@@ -72,7 +72,7 @@ export default function Article(): JSX.Element {
 
         <p>
           Your insurer's Explanation of Benefits (EOB) shows what your insurer was billed, what they agreed
-          to pay, and what they say you owe. This is a separate document from the hospital bill — and the
+          to pay, and what they say you owe. This is a separate document from the hospital bill. And the
           two do not always match.
         </p>
 
@@ -84,15 +84,15 @@ export default function Article(): JSX.Element {
         </p>
 
         <p>
-          If you see a service on your hospital bill that does not appear on your EOB, that is a red flag —
-          the insurer may not have been billed for it, or it was submitted under a different code.
+          If you see a service on your hospital bill that does not appear on your EOB, that is a red flag.
+          The insurer may not have been billed for it, or it was submitted under a different code.
         </p>
 
         <h2>Step 3: Identify the errors</h2>
 
         <p>
-          With your itemized bill in hand, look for these patterns. We cover each of these in depth —
-          with real CPT code examples and exact dispute language — in{' '}
+          With your itemized bill in hand, look for these patterns. We cover each of these in depth,
+          with real CPT code examples and exact dispute language, in{' '}
           <Link href="/blog/common-medical-billing-errors">our guide to common billing errors</Link>.
         </p>
 
@@ -104,12 +104,12 @@ export default function Article(): JSX.Element {
           <li>
             <strong>Unbundled codes:</strong> Procedures that should be included in a larger code
             but were billed separately. A colonoscopy (45378) should include the biopsy (45380)
-            when performed in the same session — they cannot be billed as two separate items
+            when performed in the same session. They cannot be billed as two separate items
             without a valid modifier.
           </li>
           <li>
             <strong>Price outliers:</strong> Charges that are two or more times the Medicare rate
-            for the same service. The Medicare Physician Fee Schedule is public — you can look
+            for the same service. The Medicare Physician Fee Schedule is public. You can look
             up the published rate for any CPT code.
           </li>
           <li>
@@ -126,7 +126,7 @@ export default function Article(): JSX.Element {
         <h2>Step 4: Calculate what you should have been charged</h2>
 
         <p>
-          For each error you identify, you need a specific number — not just "this seems high."
+          For each error you identify, you need a specific number. Not just "this seems high."
           Dispute letters that succeed cite exact amounts and exact rules.
         </p>
 
@@ -137,7 +137,7 @@ export default function Article(): JSX.Element {
         </p>
 
         <p>
-          For unbundled codes, the reference is the CMS NCCI edit table — a public list of code pairs
+          For unbundled codes, the reference is the CMS NCCI edit table, a public list of code pairs
           that cannot be billed together. If two codes on your bill appear in the NCCI edit table without
           a valid modifier, that is a specific, documented rule violation.
         </p>
@@ -186,7 +186,7 @@ export default function Article(): JSX.Element {
           Send the letter by certified mail or email with a read receipt. Keep a copy. Note the date sent.
         </p>
 
-        <h2>Step 6: Follow up — and escalate if necessary</h2>
+        <h2>Step 6: Follow up and escalate if necessary</h2>
 
         <p>
           Most billing departments have a 30-day review window. If you do not hear back, call and reference
@@ -222,7 +222,7 @@ export default function Article(): JSX.Element {
         </p>
 
         <p>
-          That is why most people do not do it. The friction is real, and it is intentional — a system
+          That is why most people do not do it. The friction is real, and it is intentional. A system
           that is confusing enough to deter disputes is a system that collects more revenue. If the bill
           is large or complex enough that professional help seems worth it,{' '}
           <Link href="/blog/medical-billing-advocates">our guide to medical billing advocates</Link>{' '}
@@ -237,10 +237,10 @@ export default function Article(): JSX.Element {
       </div>
 
       <Citations sources={[
-        { label: 'CMS — Medicare Physician Fee Schedule (PFS) Public Files', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
-        { label: 'CMS — National Correct Coding Initiative (NCCI) Edits', url: 'https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits' },
-        { label: 'CMS — Hospital Price Transparency Final Rule (2021)', url: 'https://www.cms.gov/hospital-price-transparency' },
-        { label: 'CMS — No Surprises Act Overview', url: 'https://www.cms.gov/nosurprises' },
+        { label: 'CMS: Medicare Physician Fee Schedule (PFS) Public Files', url: 'https://www.cms.gov/medicare/physician-fee-schedule/search' },
+        { label: 'CMS: National Correct Coding Initiative (NCCI) Edits', url: 'https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits' },
+        { label: 'CMS: Hospital Price Transparency Final Rule (2021)', url: 'https://www.cms.gov/hospital-price-transparency' },
+        { label: 'CMS: No Surprises Act Overview', url: 'https://www.cms.gov/nosurprises' },
       ]} />
 
       <Cta />
@@ -253,13 +253,13 @@ export default function Article(): JSX.Element {
 function Cta(): JSX.Element {
   return (
     <div className={s.ctaBox}>
-      <p className={s.ctaTitle}>Skip steps 3–5 — we do them for you</p>
+      <p className={s.ctaTitle}>Skip steps 3–5. We do them for you</p>
       <p className={s.ctaNote}>
-        ClaroBill reads your bill, identifies every error against the Medicare fee schedule and
-        NCCI edit rules, and writes the dispute letter for you. Free analysis, no percentage cut.
+        ClaroBill reads your bill, runs a deep audit, identifies every error, and writes the
+        dispute letter for you. Free analysis, no percentage cut.
       </p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>
-        Analyze my bill — it's free
+        Analyze my bill. It's free
       </Link>
     </div>
   );

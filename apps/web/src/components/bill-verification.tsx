@@ -282,8 +282,8 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   const ANALYSIS_STEPS = [
     'Reading your bill',
     'Extracting charge codes',
-    'Comparing against Medicare benchmarks',
-    'Checking your insurer\'s contracted rates',
+    'Running pricing checks',
+    'Running coding checks',
     'Scanning for duplicate charges',
     'Finalizing your report',
   ];
@@ -326,8 +326,8 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
           <Link href="/dashboard" className={s.backLink}>← My Bills</Link>
           <h1 className={s.pageTitle}>Before we analyze your bill</h1>
           <p className={s.pageSub}>
-            We compare every charge against Medicare benchmarks and your insurer&apos;s
-            contracted rates. This takes a few minutes — just tell us who this bill is for.
+            We run every line through our billing-error checks. This takes a few minutes. Just
+            tell us who this bill is for.
           </p>
           <p className={s.fileName}>{fileName}</p>
         </div>
@@ -520,7 +520,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                           <p className={s.scanError}>{scanState.message}</p>
                         )}
                         {scanState.status === 'done' && !scanState.result.confident && (
-                          <p className={s.scanWarn}>Some fields may be uncertain — please review before saving.</p>
+                          <p className={s.scanWarn}>Some fields may be uncertain. Please review before saving.</p>
                         )}
                         {scanState.status === 'done' && scanState.result.note && (
                           <p className={s.scanNote}>{scanState.result.note}</p>
@@ -620,7 +620,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                                 className={s.formInput}
                                 list="mco-suggestions"
                                 placeholder={selectedMember?.state
-                                  ? `Plans in ${selectedMember.state} — start typing…`
+                                  ? `Plans in ${selectedMember.state}. Start typing…`
                                   : 'Start typing your plan name…'}
                                 value={newMedicaidMCO}
                                 onChange={(e) => setNewMedicaidMCO(e.target.value)}
@@ -705,8 +705,8 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
 
                         {newPlanType === 'commercial' && (
                           <p className={s.planHint}>
-                            Use the plan name as it appears on your insurance card — it&apos;s used to
-                            look up your insurer&apos;s contracted rate in hospital price transparency data.
+                            Use the plan name as it appears on your insurance card. It helps us
+                            tailor the audit to your coverage.
                           </p>
                         )}
 

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — Clarobill',
+  title: 'Privacy Policy: Clarobill',
   description: 'Clarobill Privacy Policy. Learn how we collect, use, and protect your data, including medical bill information.',
 };
 
@@ -9,7 +9,7 @@ export default function PrivacyPolicyPage(): JSX.Element {
   return (
     <article>
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Privacy Policy</h1>
-      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026 &mdash; Last updated: April 7, 2026</p>
+      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026. Last updated: April 7, 2026.</p>
 
       <p className="text-gray-700 mb-6">
         ClaroBill (&ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;) is committed to protecting your privacy.
@@ -29,8 +29,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
           as described in Section 3.
         </Subsection>
         <Subsection title="Extracted bill data">
-          Text and line items extracted from your bill during OCR processing — including procedure codes, charge
-          amounts, and dates of service — are stored in our database and used to generate your report. We do not
+          Text and line items extracted from your bill during OCR processing (such as procedure codes, charge
+          amounts, and dates of service) are stored in our database and used to generate your report. We do not
           store patient names or date-of-birth beyond what you include in the uploaded file itself.
         </Subsection>
         <Subsection title="Payment data">
@@ -60,7 +60,7 @@ export default function PrivacyPolicyPage(): JSX.Element {
           <li>To understand aggregate usage patterns and improve the product (PostHog)</li>
         </ul>
         <p className="mt-3">
-          We do not use your medical bill data to train AI models — neither our own nor those of our AI
+          We do not use your medical bill data to train AI models. That includes our own models and those of our AI
           providers. Per Google&rsquo;s Vertex AI terms, content submitted via the API is not used for model
           training by default. Our Anthropic API usage is governed by the same constraint.
         </p>
@@ -71,8 +71,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
         <div className="mt-4 space-y-3">
           <Processor name="Supabase" purpose="Database and encrypted file storage" location="United States" />
           <Processor name="Google Cloud Vision" purpose="OCR text extraction from bill images" location="United States" />
-          <Processor name="Google Cloud AI (Vertex AI)" purpose="AI-assisted bill analysis and dispute letter generation (Gemini — primary)" location="United States" />
-          <Processor name="Anthropic" purpose="AI-assisted bill analysis and dispute letter generation (Claude — fallback only)" location="United States" />
+          <Processor name="Google Cloud AI (Vertex AI)" purpose="AI-assisted bill analysis and dispute letter generation (Gemini, primary)" location="United States" />
+          <Processor name="Anthropic" purpose="AI-assisted bill analysis and dispute letter generation (Claude, fallback only)" location="United States" />
           <Processor name="Stripe" purpose="Payment processing" location="United States" />
           <Processor name="SendGrid (Twilio)" purpose="Transactional email delivery" location="United States" />
           <Processor name="Sentry" purpose="Error monitoring (redacted payloads)" location="United States" />
@@ -102,8 +102,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
         </p>
         <p className="mt-3">
           However, because your bill may contain sensitive health information, we apply strong technical and
-          organizational controls — encryption at rest and in transit, strict access controls, and data minimization
-          — consistent with the spirit of HIPAA and industry best practices.
+          organizational controls (encryption at rest and in transit, strict access controls, and data minimization)
+          consistent with the spirit of HIPAA and industry best practices.
         </p>
       </Section>
 

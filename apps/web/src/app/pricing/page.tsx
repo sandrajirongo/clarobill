@@ -12,8 +12,8 @@ const TIERS = [
     price: 'Free',
     priceSub: null,
     tag: 'Clean Bill',
-    tagline: 'Your bill is clean. Enjoy the peace of mind — no charge, ever.',
-    keepNote: 'No charge — ever',
+    tagline: 'Your bill is clean. Enjoy the peace of mind. No charge, ever.',
+    keepNote: 'No charge. Ever.',
   },
   {
     range: '$21 – $100',
@@ -28,7 +28,7 @@ const TIERS = [
     price: '$79.99',
     priceSub: 'one-time',
     tag: 'Standard Fix',
-    tagline: 'High ROI — a fraction of what a billing advocate charges for the same result.',
+    tagline: 'High ROI. A fraction of what a billing advocate charges for the same result.',
     keepNote: 'You keep ≥\u202f$21',
   },
   {
@@ -53,7 +53,7 @@ const HOW_STEPS = [
   {
     num: '1',
     title: 'We analyze your bill first',
-    body: 'Upload your medical bill or EOB. Our AI benchmarks every line item against Medicare fee schedules and NCCI billing rules. No payment required.',
+    body: 'Upload your medical bill or EOB. Our AI runs a deep audit across every line item to find errors and overcharges. No payment required.',
   },
   {
     num: '2',
@@ -70,15 +70,15 @@ const HOW_STEPS = [
 const FAQS = [
   {
     q: 'What if the analysis finds no errors?',
-    a: "If savings found are $20 or under, you pay nothing. You'll receive a confirmation that your bill looks clean — no credit card ever charged.",
+    a: "If savings found are $20 or under, you pay nothing. You'll receive a confirmation that your bill looks clean. No credit card ever charged.",
   },
   {
     q: 'How is my tier determined?',
-    a: 'Your tier is set automatically based on the total dollar value of errors found in your bill. You see the tier and fee before any payment is taken — no surprise charges.',
+    a: 'Your tier is set automatically based on the total dollar value of errors found in your bill. You see the tier and fee before any payment is taken. No surprise charges.',
   },
   {
     q: 'When am I charged?',
-    a: "After the analysis completes and savings are found, you'll see your tier and fee. You choose to pay or walk away — no hidden auto-charges.",
+    a: "After the analysis completes and savings are found, you'll see your tier and fee. You choose to pay or walk away. No hidden auto-charges.",
   },
   {
     q: 'What do I get in a paid tier?',
@@ -86,11 +86,11 @@ const FAQS = [
   },
   {
     q: 'How does this compare to a billing advocate?',
-    a: 'Medical billing advocates typically charge 25–35% of recovered savings. On a $500 correction that would cost $125–$175. We charge a flat $79.99 — same outcome, far less cost. On a $1,500 correction (advocate fee $375–$525) we charge $199.99.',
+    a: 'Medical billing advocates typically charge 25–35% of recovered savings. On a $500 correction that would cost $125–$175. We charge a flat $79.99 for the same outcome at far less cost. On a $1,500 correction (advocate fee $375–$525) we charge $199.99.',
   },
   {
     q: 'Do you use my bill to train AI models?',
-    a: "No. We do not use your bill, your personal information, or any data you upload to train AI models — ours or anyone else's. We do not sell, license, or share your data with advertisers, data brokers, or third parties for marketing. Your bill is used only to produce your audit report and dispute letter.",
+    a: "No. We do not use your bill, your personal information, or any data you upload to train AI models, ours or anyone else's. We do not sell, license, or share your data with advertisers, data brokers, or third parties for marketing. Your bill is used only to produce your audit report and dispute letter.",
   },
   {
     q: 'Is my bill data kept private?',
@@ -169,7 +169,7 @@ export default function PricingPage(): JSX.Element {
           </div>
           <div className={s.heroCtaRow}>
             <Link className={s.btnSage} href="/auth/sign-in">
-              Upload my bill — it&apos;s free
+              Upload my bill. It&apos;s free.
             </Link>
             <span className={s.heroMicro}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -335,7 +335,7 @@ export default function PricingPage(): JSX.Element {
         <h2 className={s.ctaH2}>Your bill deserves a second opinion</h2>
         <p className={s.ctaP}>Free to analyze. You only pay when we save you money.</p>
         <Link className={s.btnCtaLime} href="/auth/sign-in">
-          Upload my bill — it&apos;s free
+          Upload my bill. It&apos;s free.
         </Link>
         <p className={s.ctaNote}>HIPAA-aligned &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card to start</p>
       </section>

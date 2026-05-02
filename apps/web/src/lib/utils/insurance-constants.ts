@@ -38,10 +38,10 @@ export function getMedicaidBrandName(state: string | null | undefined): string {
  * fee schedule; Managed Care uses MCO-negotiated rates.
  */
 export const MEDICAID_PLAN_TYPES: { value: string; label: string }[] = [
-  { value: 'Fee-for-Service Medicaid',            label: 'Fee-for-Service — state pays providers directly'        },
-  { value: 'Medicaid Managed Care',               label: 'Managed Care — private MCO manages your coverage'      },
-  { value: 'CHIP',                                label: 'CHIP — Children\'s Health Insurance Program'            },
-  { value: 'Dual Eligible (Medicare + Medicaid)', label: 'Dual Eligible — both Medicare and Medicaid cover you'  },
+  { value: 'Fee-for-Service Medicaid',            label: 'Fee-for-Service: state pays providers directly'        },
+  { value: 'Medicaid Managed Care',               label: 'Managed Care: private MCO manages your coverage'      },
+  { value: 'CHIP',                                label: 'CHIP: Children\'s Health Insurance Program'            },
+  { value: 'Dual Eligible (Medicare + Medicaid)', label: 'Dual Eligible: both Medicare and Medicaid cover you'  },
   { value: 'Long-Term Services and Supports',     label: 'Long-Term Care / LTSS waiver'                          },
   { value: 'Medicaid Home & Community Waiver',    label: 'Home & Community-Based Services waiver'                },
 ];
@@ -87,11 +87,11 @@ export const MEDICAID_MCOS_NATIONAL: string[] = [
  * with insurer-negotiated rates — requires the insurer name for rate lookup.
  */
 export const MEDICARE_PLAN_TYPES: { value: string; label: string }[] = [
-  { value: 'Original Medicare (Parts A + B)',     label: 'Original Medicare (Parts A + B) — government pays providers directly'  },
-  { value: 'Medicare Advantage (Part C)',          label: 'Medicare Advantage (Part C) — private HMO or PPO plan'                },
-  { value: 'Medicare + Medigap Supplement',        label: 'Medicare + Medigap Supplement — Original Medicare with gap coverage'  },
-  { value: 'Dual Eligible (Medicare + Medicaid)',  label: 'Dual Eligible — both Medicare and Medicaid cover you'                 },
-  { value: 'Medicare Part A Only',                 label: 'Part A Only — inpatient/hospital, no outpatient Part B'               },
+  { value: 'Original Medicare (Parts A + B)',     label: 'Original Medicare (Parts A + B): government pays providers directly'  },
+  { value: 'Medicare Advantage (Part C)',          label: 'Medicare Advantage (Part C): private HMO or PPO plan'                },
+  { value: 'Medicare + Medigap Supplement',        label: 'Medicare + Medigap Supplement: Original Medicare with gap coverage'  },
+  { value: 'Dual Eligible (Medicare + Medicaid)',  label: 'Dual Eligible: both Medicare and Medicaid cover you'                 },
+  { value: 'Medicare Part A Only',                 label: 'Part A Only: inpatient/hospital, no outpatient Part B'               },
 ];
 
 // ─── TRICARE ─────────────────────────────────────────────────────────────────
@@ -101,10 +101,10 @@ export const MEDICARE_PLAN_TYPES: { value: string; label: string }[] = [
  * Select is a PPO-like direct-access plan.
  */
 export const TRICARE_PLAN_TYPES: { value: string; label: string }[] = [
-  { value: 'TRICARE Prime',          label: 'TRICARE Prime — HMO-like, must use MTF or assigned PCM'     },
-  { value: 'TRICARE Select',         label: 'TRICARE Select — PPO-like, direct access to providers'      },
-  { value: 'TRICARE For Life',       label: 'TRICARE For Life — Medicare supplement for retired military' },
-  { value: 'TRICARE Reserve Select', label: 'TRICARE Reserve Select — Guard and Reserve members'         },
+  { value: 'TRICARE Prime',          label: 'TRICARE Prime: HMO-like, must use MTF or assigned PCM'     },
+  { value: 'TRICARE Select',         label: 'TRICARE Select: PPO-like, direct access to providers'      },
+  { value: 'TRICARE For Life',       label: 'TRICARE For Life: Medicare supplement for retired military' },
+  { value: 'TRICARE Reserve Select', label: 'TRICARE Reserve Select: Guard and Reserve members'         },
   { value: 'TRICARE Overseas (TOP)', label: 'TRICARE Overseas Program'                                    },
-  { value: 'CHAMPVA',                label: 'CHAMPVA — VA coverage for veterans\' family members'         },
+  { value: 'CHAMPVA',                label: 'CHAMPVA: VA coverage for veterans\' family members'         },
 ];

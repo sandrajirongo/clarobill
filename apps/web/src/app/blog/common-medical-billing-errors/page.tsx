@@ -3,8 +3,8 @@ import Link from 'next/link';
 import s from '../blog.module.css';
 
 export const metadata: Metadata = {
-  title: 'The Most Common Medical Billing Errors (And How to Dispute Them) — Clarobill',
-  description: 'Duplicate charges, upcoded visits, unbundled procedures — here is what each billing error looks like on a real bill and exactly what to say when you dispute it.',
+  title: 'The Most Common Medical Billing Errors (And How to Dispute Them): Clarobill',
+  description: 'Duplicate charges, upcoded visits, unbundled procedures. Here is what each billing error looks like on a real bill and exactly what to say when you dispute it.',
 };
 
 export default function Article(): JSX.Element {
@@ -23,7 +23,7 @@ export default function Article(): JSX.Element {
       </h1>
 
       <p className={s.articleLead}>
-        Duplicate charges, upcoded visits, unbundled procedures — here is what each one looks like on a real
+        Duplicate charges, upcoded visits, unbundled procedures. Here is what each one looks like on a real
         bill and what to say when you dispute it.
       </p>
 
@@ -31,7 +31,7 @@ export default function Article(): JSX.Element {
 
         <p>
           According to the Medical Billing Advocates of America, errors appear in over 80% of the hospital bills
-          they review. Not occasional errors — systematic ones. The same mistakes, recurring across different
+          they review. Not occasional errors. Systematic ones. The same mistakes, recurring across different
           hospitals, different states, different patient populations.
         </p>
 
@@ -70,7 +70,7 @@ export default function Article(): JSX.Element {
         <h2>2. Upcoding</h2>
 
         <p>
-          Upcoding is when a provider bills for a more complex — and more expensive — service than what was
+          Upcoding is when a provider bills for a more complex, more expensive service than what was
           actually performed. It is most common with office visit codes (the 99200 series) and emergency
           department visits (99281–99285).
         </p>
@@ -78,7 +78,7 @@ export default function Article(): JSX.Element {
         <p>
           The dollar difference matters. A level-3 office visit (99213) reimburses at roughly $90 under the
           2026 Medicare fee schedule. A level-5 (99215) is around $182. Upcoding a routine follow-up adds
-          roughly $92 to your bill — and that happens across millions of patients.
+          roughly $92 to your bill. And that happens across millions of patients.
         </p>
 
         <p>
@@ -103,7 +103,7 @@ export default function Article(): JSX.Element {
         <p>
           A real example: CPT 29881 covers knee arthroscopy with meniscectomy. CPT 29877 covers arthroscopic
           debridement. Under NCCI rules, 29877 is included in 29881 when performed during the same surgical
-          session — they cannot be billed separately. If you are unfamiliar with how{' '}
+          session. They cannot be billed separately. If you are unfamiliar with how{' '}
           <Link href="/blog/what-are-cpt-codes">CPT codes work and how they get abused</Link>, that guide
           covers the system in plain English. But they sometimes are.
         </p>
@@ -148,8 +148,8 @@ export default function Article(): JSX.Element {
         <h2>How to write an effective dispute letter</h2>
 
         <p>
-          Phone calls get lost. A written dispute creates a paper trail. For the full process — including
-          what to put in the letter, how to cite specific rules, and what to do if the hospital pushes back —
+          Phone calls get lost. A written dispute creates a paper trail. For the full process, including
+          what to put in the letter, how to cite specific rules, and what to do if the hospital pushes back,
           see <Link href="/blog/how-to-dispute-a-hospital-bill">our complete hospital bill dispute guide</Link>.
           In short: cite the exact CPT code, the exact
           date, the exact dollar amount, and the exact reason the charge is wrong. Reference the rule being
@@ -158,22 +158,22 @@ export default function Article(): JSX.Element {
 
         <p>
           Send it certified mail or email with read receipt. Keep a copy. Note the date and name of anyone
-          you speak with by phone. Most disputes are resolved within 30 to 60 days — but only if you follow
+          you speak with by phone. Most disputes are resolved within 30 to 60 days. But only if you follow
           up when you do not hear back.
         </p>
 
         <p>
           The billing department's job is to collect. Your job is to pay what you actually owe. Those are
-          not the same number — and the difference is worth the time it takes to look.
+          not the same number. And the difference is worth the time it takes to look.
         </p>
 
       </div>
 
       <Citations sources={[
-        { label: "Medical Billing Advocates of America — Billing Error Statistics (via Becker's Hospital Review)", url: 'https://www.beckershospitalreview.com/finance/medical-billing-errors-growing-says-medical-billing-advocates-of-america.html' },
-        { label: 'CMS — 2026 Medicare Physician Fee Schedule Final Rule', url: 'https://www.cms.gov/newsroom/fact-sheets/calendar-year-cy-2026-medicare-physician-fee-schedule-final-rule-cms-1832-f' },
-        { label: 'CMS — National Correct Coding Initiative (NCCI) Edits', url: 'https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits' },
-        { label: 'CMS — No Surprises Act Overview', url: 'https://www.cms.gov/nosurprises' },
+        { label: "Medical Billing Advocates of America: Billing Error Statistics (via Becker's Hospital Review)", url: 'https://www.beckershospitalreview.com/finance/medical-billing-errors-growing-says-medical-billing-advocates-of-america.html' },
+        { label: 'CMS: 2026 Medicare Physician Fee Schedule Final Rule', url: 'https://www.cms.gov/newsroom/fact-sheets/calendar-year-cy-2026-medicare-physician-fee-schedule-final-rule-cms-1832-f' },
+        { label: 'CMS: National Correct Coding Initiative (NCCI) Edits', url: 'https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits' },
+        { label: 'CMS: No Surprises Act Overview', url: 'https://www.cms.gov/nosurprises' },
       ]} />
 
       <Cta />
@@ -188,11 +188,11 @@ function Cta(): JSX.Element {
     <div className={s.ctaBox}>
       <p className={s.ctaTitle}>Find these errors in your bill</p>
       <p className={s.ctaNote}>
-        ClaroBill checks every CPT code against NCCI edit rules, flags duplicates and price outliers,
-        and writes your dispute letter automatically.
+        ClaroBill runs a deep audit across every line item, flagging duplicates, upcoding,
+        unbundling, and overcharges. Then it writes your dispute letter automatically.
       </p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>
-        Analyze my bill — it's free
+        Analyze my bill. It's free
       </Link>
     </div>
   );

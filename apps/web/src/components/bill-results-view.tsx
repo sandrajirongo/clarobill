@@ -106,30 +106,30 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
     if (seconds < 30) {
       return {
         title: 'Generating your report…',
-        sub: 'Building your PDF and dispute letter. This page updates automatically when they’re ready, and we’ll also email them — no need to stay here.',
+        sub: 'Building your PDF and dispute letter. This page updates automatically when they’re ready, and we’ll also email them. No need to stay here.',
       };
     }
     if (seconds < 90) {
       return {
-        title: 'Still working — most reports take about 3 minutes.',
-        sub: 'Cross-checking your bill against Medicare rates, your hospital’s published prices, and your insurer’s contracted rates.',
+        title: 'Still working. Most reports take about 3 minutes.',
+        sub: 'Running our full audit across every line item on your bill.',
       };
     }
     if (seconds < 180) {
       return {
-        title: 'Almost there — finalizing your dispute letter…',
+        title: 'Almost there. Finalizing your dispute letter…',
         sub: 'Pre-populating the recipient address and signature block. The downloads will appear here automatically.',
       };
     }
     if (seconds < 300) {
       return {
         title: 'Wrapping up. We’ve also emailed it to you.',
-        sub: 'Generation occasionally takes up to 5 minutes for larger bills. The email is the authoritative copy — feel free to close this page.',
+        sub: 'Generation occasionally takes up to 5 minutes for larger bills. The email is the authoritative copy. Feel free to close this page.',
       };
     }
     return {
       title: 'Taking a little longer than usual.',
-      sub: 'Your report and dispute letter have been emailed (or will be shortly). They’ll also appear here when generation completes — refresh this page in a minute or two.',
+      sub: 'Your report and dispute letter have been emailed (or will be shortly). They’ll also appear here when generation completes. Refresh this page in a minute or two.',
     };
   }
 
@@ -145,7 +145,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
             <div style={{ width: 28, height: 28, borderRadius: '50%', border: '3px solid rgba(45,74,42,.12)', borderTopColor: 'var(--sage)', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
             <div>
               <p style={{ fontSize: '.9rem', fontWeight: 600, color: 'var(--txt)', marginBottom: '.25rem' }}>Running 10 billing checks</p>
-              <p style={{ fontSize: '.82rem', color: 'var(--txt2)' }}>Comparing charges against Medicare rates, your hospital&apos;s published prices, and your insurer&apos;s contracted rates. This takes a few minutes.</p>
+              <p style={{ fontSize: '.82rem', color: 'var(--txt2)' }}>Running a deep audit across every line item on your bill. This takes a few minutes.</p>
             </div>
           </div>
         </div>
@@ -190,7 +190,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         {paymentStatus === 'success' && (
           <div className={s.successBanner}>
             {reportPending
-              ? 'Payment confirmed — your report and dispute letter are being generated. This page updates automatically.'
+              ? 'Payment confirmed. Your report and dispute letter are being generated. This page updates automatically.'
               : 'Payment confirmed. Your documents are ready below.'}
           </div>
         )}
@@ -248,7 +248,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
                 </div>
                 <p className={s.paywallBetaBadge}>{BETA_COPY.paywall.badge}</p>
                 <p className={s.paywallOneTime}>
-                  All findings + PDF report + dispute letter — no card required
+                  All findings, PDF report, and dispute letter. No card required.
                 </p>
               </>
             ) : (

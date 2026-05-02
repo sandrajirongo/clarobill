@@ -158,7 +158,7 @@ export async function POST(
           currency: 'usd',
           unit_amount: finalAmountCents,
           product_data: {
-            name: `ClaroBill Report — ${tier.label}`,
+            name: `ClaroBill Report: ${tier.label}`,
             description: `${tier.range} in potential savings found on: ${bill.file_name}${discountLabel}`,
           },
         },

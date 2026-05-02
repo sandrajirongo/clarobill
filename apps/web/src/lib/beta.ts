@@ -29,7 +29,7 @@ export const BETA_COPY = {
   // intent URL, the post tags us. We keep `text` un-prefixed for non-X
   // surfaces (iMessage, email, etc.) where a leading @ handle reads weirdly.
   share: {
-    title: 'ClaroBill — medical bill review',
+    title: 'ClaroBill: medical bill review',
     text: 'ClaroBill reviews medical bills for errors and overcharges, and generates dispute letters. Currently free during their public beta.',
     tweetText: 'Just used @clarobillai to review my medical bill for errors and overcharges. Free during their public beta.',
   },
@@ -38,14 +38,14 @@ export const BETA_COPY = {
     title: 'Every tier is currently unlocked at no cost',
     body:
       'We are in public beta and collecting feedback before launch. ' +
-      'Pricing below shows what each tier will cost when we exit beta — for now, every report and dispute letter is free.',
+      'Pricing below shows what each tier will cost when we exit beta. For now, every report and dispute letter is free.',
   },
   paywall: {
     badge: 'Free during beta',
-    note: 'Public beta — every report is currently unlocked at no cost.',
+    note: 'Public beta. Every report is currently unlocked at no cost.',
     button: 'Get my full report',
   },
-  signInBenefit: 'Currently free during public beta — no credit card required',
+  signInBenefit: 'Currently free during public beta. No credit card required.',
 } as const;
 
 // ─── Social media presence ─────────────────────────────────────────────────

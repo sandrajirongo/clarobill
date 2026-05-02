@@ -612,16 +612,16 @@
 .uploadBtn:hover { background: var(--sage-l); transform: translateY(-1px); }
 .uploadHint { font-size: .74rem; color: var(--txt3); margin-top: .75rem; }
 .uploadItemizedTip {
-  margin-top: 1.1rem;
-  padding: .65rem .85rem;
+  margin: 1.25rem auto 0;
+  padding: .9rem 1.25rem;
   background: var(--cream2);
   border: 1px solid var(--cream3, var(--cream2));
   border-radius: var(--r-md, 8px);
-  font-size: .78rem;
-  line-height: 1.45;
+  font-size: .8rem;
+  line-height: 1.55;
   color: var(--txt2);
-  max-width: 32rem;
-  text-align: left;
+  width: 100%;
+  text-align: center;
 }
 .uploadSpinner {
   width: 32px;

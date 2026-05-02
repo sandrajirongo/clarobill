@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Medical and Legal Disclaimer — Clarobill',
+  title: 'Medical and Legal Disclaimer: Clarobill',
   description: 'Important disclaimer: Clarobill provides billing analysis only and is not a substitute for medical or legal advice.',
 };
 
@@ -9,11 +9,11 @@ export default function DisclaimerPage(): JSX.Element {
   return (
     <article>
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Medical and Legal Disclaimer</h1>
-      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026 &mdash; Last updated: April 7, 2026</p>
+      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026. Last updated: April 7, 2026.</p>
 
       {/* High-visibility summary box */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-5 mb-10">
-        <p className="font-semibold text-amber-900 mb-2">Important — please read before using Clarobill:</p>
+        <p className="font-semibold text-amber-900 mb-2">Important. Please read before using Clarobill:</p>
         <ul className="list-disc pl-5 space-y-1 text-amber-800 text-sm">
           <li>Clarobill is a billing analysis tool, not a medical or legal services provider.</li>
           <li>Nothing in your report or dispute letter constitutes medical or legal advice.</li>
@@ -25,9 +25,9 @@ export default function DisclaimerPage(): JSX.Element {
       <Section title="1. Not Medical Advice">
         <p>
           Clarobill analyzes the <strong>billing and coding</strong> aspects of your medical bill. This analysis
-          is limited to identifying potential errors in how medical services were billed — such as duplicate
+          is limited to identifying potential errors in how medical services were billed (such as duplicate
           charges, charges that exceed standard fee schedules, and procedure code combinations that may violate
-          billing rules.
+          billing rules).
         </p>
         <p className="mt-3">
           Clarobill does not evaluate the medical necessity, appropriateness, or quality of any medical treatment
@@ -43,8 +43,8 @@ export default function DisclaimerPage(): JSX.Element {
       <Section title="2. Not Legal Advice">
         <p>
           Clarobill generates dispute letter templates to help you communicate with your healthcare provider or
-          insurer about potential billing errors. These templates are starting points for your own correspondence
-          — they are not legal documents and do not constitute legal advice.
+          insurer about potential billing errors. These templates are starting points for your own correspondence.
+          They are not legal documents and do not constitute legal advice.
         </p>
         <p className="mt-3">
           Clarobill is not a law firm and is not providing legal services. No attorney-client relationship is
@@ -53,7 +53,7 @@ export default function DisclaimerPage(): JSX.Element {
         </p>
         <p className="mt-3">
           If you have a complex billing dispute, believe you have been the victim of fraud, or need advice on
-          your legal rights, consult a licensed attorney — particularly one specializing in healthcare law or
+          your legal rights, consult a licensed attorney, particularly one specializing in healthcare law or
           patient advocacy.
         </p>
       </Section>
@@ -90,7 +90,7 @@ export default function DisclaimerPage(): JSX.Element {
           healthcare provider, hospital, or insurance company.
         </p>
         <p className="mt-3">
-          Clarobill is not responsible for any actions you take — or fail to take — based on your report or
+          Clarobill is not responsible for any actions you take, or fail to take, based on your report or
           dispute letter, or for any outcome of any dispute you file.
         </p>
       </Section>
@@ -109,7 +109,7 @@ export default function DisclaimerPage(): JSX.Element {
           REPORTS, OR DISPUTE LETTERS PROVIDED THROUGH THE SERVICE.
         </p>
         <p className="mt-3">
-          This disclaimer supplements — and does not replace — the limitations of liability set forth in our{' '}
+          This disclaimer supplements, and does not replace, the limitations of liability set forth in our{' '}
           <a href="/legal/terms" className="text-blue-600 hover:underline">Terms of Service</a>.
         </p>
       </Section>
