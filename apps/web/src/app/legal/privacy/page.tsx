@@ -20,65 +20,74 @@ export default function PrivacyPolicyPage(): JSX.Element {
 
       <Section title="1. Data We Collect">
         <Subsection title="Account data">
-          When you create an account: your email address and an encrypted password (managed by Supabase Auth).
-          If you sign in with a third-party provider (e.g., Google), we receive only your email and display name.
+          When you create an account: your email address and an authentication credential. If you sign in with a
+          third-party identity provider, we receive only your email and display name from that provider.
         </Subsection>
         <Subsection title="Medical bill files">
-          Files you upload (PDFs, images) are stored encrypted at rest in private cloud storage. Only you and
-          our processing systems can access them. We do not share uploaded files with any third party other than
-          as described in Section 3.
+          Files you upload (PDFs, images) are stored encrypted at rest in private storage. Only you and our
+          processing systems can access them. We do not share uploaded files with any third party other than as
+          described in Section 3.
         </Subsection>
         <Subsection title="Extracted bill data">
-          Text and line items extracted from your bill during OCR processing (such as procedure codes, charge
-          amounts, and dates of service) are stored in our database and used to generate your report. We do not
-          store patient names or date-of-birth beyond what you include in the uploaded file itself.
+          Text and line items extracted from your bill (such as procedure codes, charge amounts, and dates of
+          service) are stored in our database and used to generate your report. We do not store patient names or
+          dates of birth beyond what you include in the uploaded file itself.
         </Subsection>
         <Subsection title="Payment data">
-          We do not store credit card numbers. Payment processing is handled by Stripe. We retain a Stripe
-          customer ID and transaction ID to support refunds and order history.
+          We do not store credit card numbers. Payment processing is handled by an external payment service. We
+          retain a customer identifier and transaction identifier from that service to support refunds and order
+          history.
         </Subsection>
         <Subsection title="Usage data">
-          Anonymized page views and feature interactions, collected via PostHog analytics. Bill IDs and other
-          identifiers are stripped from URLs before any analytics event is recorded. We do not use session
-          recording or keystroke logging.
+          Anonymized page views and feature interactions. Bill identifiers and other personal identifiers are
+          stripped before any analytics event is recorded. We do not use session recording or keystroke logging.
         </Subsection>
         <Subsection title="Error and performance data">
-          Anonymized error reports and stack traces via Sentry. Request body contents are redacted before
-          transmission to Sentry to prevent PHI leakage.
+          Anonymized error reports and stack traces. Request body contents are redacted before transmission to
+          prevent leakage of sensitive information.
         </Subsection>
       </Section>
 
       <Section title="2. How We Use Your Data">
         <ul className="list-disc pl-6 space-y-2 text-gray-700">
-          <li>To perform OCR on your uploaded bill and extract line items</li>
-          <li>To run automated billing rules checks (duplicate detection, price outliers, NCCI edits)</li>
-          <li>To generate an AI-assisted analysis report</li>
-          <li>To generate a dispute letter template personalized to your bill&rsquo;s findings</li>
-          <li>To deliver your report and dispute letter via email (SendGrid)</li>
-          <li>To process your payment and support refund requests (Stripe)</li>
-          <li>To monitor service reliability and fix errors (Sentry)</li>
-          <li>To understand aggregate usage patterns and improve the product (PostHog)</li>
+          <li>To extract text and line items from your uploaded bill</li>
+          <li>To run automated billing checks against the line items on your bill</li>
+          <li>To generate an analysis report and a personalized dispute letter draft</li>
+          <li>To deliver your report and dispute letter via email</li>
+          <li>To process your payment and support refund requests</li>
+          <li>To monitor service reliability and fix errors</li>
+          <li>To understand aggregate usage patterns and improve the product</li>
         </ul>
         <p className="mt-3">
-          We do not use your medical bill data to train AI models. That includes our own models and those of our AI
-          providers. All AI services we use are contractually prohibited from using submitted content for model
-          training.
+          We do not use your medical bill data to train AI models. That includes our own models and those of any
+          service provider we work with. Every service we use that processes your data is contractually prohibited
+          from using submitted content for model training or any purpose other than performing the service for us.
         </p>
       </Section>
 
-      <Section title="3. Third-Party Processors">
-        <p>We share your data with the following sub-processors, solely to provide the Service:</p>
+      <Section title="3. Categories of Service Providers">
+        <p>
+          To deliver the Service, we engage a small number of service providers to handle specific operational
+          functions. We do not publish the names of these providers on this page in order to limit the value of
+          the disclosure to bad actors and competitors. We share only the minimum data necessary for each provider
+          to perform its function. The categories are:
+        </p>
         <div className="mt-4 space-y-3">
-          <Processor name="Supabase" purpose="Database and encrypted file storage" location="United States" />
-          <Processor name="Cloud OCR provider" purpose="Text extraction from bill images" location="United States" />
-          <Processor name="Generative AI services" purpose="AI-assisted bill summarization and dispute letter drafting. All providers are contractually prohibited from using submitted content for model training." location="United States" />
-          <Processor name="Stripe" purpose="Payment processing" location="United States" />
-          <Processor name="SendGrid (Twilio)" purpose="Transactional email delivery" location="United States" />
-          <Processor name="Sentry" purpose="Error monitoring (redacted payloads)" location="United States" />
-          <Processor name="PostHog" purpose="Anonymized product analytics" location="United States" />
+          <Processor category="Cloud infrastructure" purpose="Database, encrypted file storage, and authentication" />
+          <Processor category="Document processing" purpose="Text extraction from uploaded bill images and PDFs" />
+          <Processor category="AI services" purpose="Bill summarization and dispute letter drafting. Contractually prohibited from using submitted content for model training." />
+          <Processor category="Payment processing" purpose="Card processing, refund support, and transaction history" />
+          <Processor category="Email delivery" purpose="Delivery of transactional emails (account, reports, receipts)" />
+          <Processor category="Operational telemetry" purpose="Anonymized error reporting and aggregate usage analytics, with personal identifiers stripped before transmission" />
         </div>
         <p className="mt-4">
-          We do not sell your data to advertisers, data brokers, or any other third party.
+          All service providers operate in the United States. A current list of named sub-processors is available
+          to enterprise customers and regulators on written request to{' '}
+          <a href="mailto:privacy@clarobill.com" className="text-blue-600 hover:underline">privacy@clarobill.com</a>.
+        </p>
+        <p className="mt-3">
+          We do not sell your data to advertisers, data brokers, or any other third party. We do not share your
+          data for advertising or marketing purposes.
         </p>
       </Section>
 
@@ -101,8 +110,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
         </p>
         <p className="mt-3">
           However, because your bill may contain sensitive health information, we apply strong technical and
-          organizational controls (encryption at rest and in transit, strict access controls, and data minimization)
-          consistent with the spirit of HIPAA and industry best practices.
+          organizational controls (encryption at rest and in transit, strict access controls, and data
+          minimization) consistent with the spirit of HIPAA and industry best practices.
         </p>
       </Section>
 
@@ -112,7 +121,7 @@ export default function PrivacyPolicyPage(): JSX.Element {
           <li><strong>Access</strong> the data we hold about you</li>
           <li><strong>Correct</strong> inaccurate data</li>
           <li><strong>Delete</strong> your account and associated data (within 30 days of request)</li>
-          <li><strong>Export</strong> your data in a machine-readable format</li>
+          <li><strong>Export</strong> your data in a portable format</li>
           <li><strong>Opt out</strong> of analytics by using a browser with tracking protection enabled</li>
         </ul>
         <p className="mt-3">
@@ -124,20 +133,20 @@ export default function PrivacyPolicyPage(): JSX.Element {
 
       <Section title="7. Cookies and Tracking">
         <p>
-          We use localStorage (not cookies) to store your PostHog analytics session identifier. This identifier
-          is randomly generated and not linked to your account or personal information. We do not use
-          third-party advertising cookies.
+          We store a randomly generated analytics session identifier in your browser. This identifier is not
+          linked to your account or personal information. We do not use third-party advertising cookies and we do
+          not allow advertising networks to track you through our Service.
         </p>
         <p className="mt-3">
-          Your Supabase authentication session is stored in a secure, httpOnly cookie.
+          Your authentication session is stored in a secure, httpOnly cookie.
         </p>
       </Section>
 
       <Section title="8. Security">
         <p>
-          All data is encrypted in transit (TLS 1.2+) and at rest (AES-256). Uploaded files are stored in
-          private cloud storage buckets with no public access. Access to production systems is restricted to
-          authorized personnel via multi-factor authentication.
+          All data is encrypted in transit (TLS 1.2+) and at rest (AES-256). Uploaded files are stored in private
+          storage with no public access. Access to production systems is restricted to authorized personnel via
+          multi-factor authentication.
         </p>
         <p className="mt-3">
           If you discover a security vulnerability, please report it responsibly to{' '}
@@ -189,12 +198,11 @@ function Subsection({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-function Processor({ name, purpose, location }: { name: string; purpose: string; location: string }): JSX.Element {
+function Processor({ category, purpose }: { category: string; purpose: string }): JSX.Element {
   return (
     <div className="flex flex-col sm:flex-row sm:gap-4 text-sm border-l-2 border-gray-200 pl-3">
-      <span className="font-medium text-gray-900 sm:w-36 shrink-0">{name}</span>
+      <span className="font-medium text-gray-900 sm:w-44 shrink-0">{category}</span>
       <span className="text-gray-600 flex-1">{purpose}</span>
-      <span className="text-gray-400 sm:w-32 shrink-0">{location}</span>
     </div>
   );
 }
