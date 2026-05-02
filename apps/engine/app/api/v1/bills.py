@@ -164,6 +164,13 @@ async def _run_analysis_pipeline(
             }
             for item in parsed_items
         ]
+        # Clear any prior line_items for this bill before inserting fresh rows.
+        # An out-of-band re-analyze (operator script, manual retry) would
+        # otherwise duplicate every line — total_charges would be 2-3× the real
+        # bill, and the report's "Line Items" table would list each CPT twice.
+        # The production happy path inserts once and never re-runs analyze, so
+        # this delete is a no-op on first analysis.
+        supabase.table("line_items").delete().eq("bill_id", bill_id).execute()
         if line_item_rows:
             supabase.table("line_items").insert(line_item_rows).execute()
 
@@ -287,9 +294,28 @@ async def _run_analysis_pipeline(
         ai_service = get_ai_analysis_service()
         ai_summary = await ai_service.generate_bill_summary(billing_errors, parsed_items)
 
-        # 6. Persist analysis results
+        # 6. Persist analysis results.
+        #
+        # `total_potential_savings` is the realistic recoverable headline, not a
+        # sum of every rule firing. Multiple rules often fire on the same line
+        # item from different angles (PRICE_OUTLIER vs commercial benchmark,
+        # HOSPITAL_CHARGE_OUTLIER vs the hospital's own gross, and
+        # NEGOTIATED_CEILING_EXCEEDED vs the hospital's max negotiated rate).
+        # All three are the SAME billed dollar — a patient can't recover three
+        # times. We group findings by the tuple of line items they affect and
+        # take the MAX overcharge per group, then sum across groups. The full
+        # list of individual findings is still persisted on `errors` for the
+        # report and dispute letter to render.
         total_charges = sum(Decimal(str(item.total_charge)) for item in parsed_items)
-        total_savings = sum(e.estimated_overcharge for e in billing_errors)
+        savings_groups: dict[tuple[str, ...], Decimal] = {}
+        for idx, e in enumerate(billing_errors):
+            # Bill-wide findings (no affected line items) get a unique key so
+            # they aren't collapsed with each other.
+            key = tuple(sorted(e.affected_line_item_ids)) if e.affected_line_item_ids else (f"__bill__{idx}",)
+            current = savings_groups.get(key, Decimal("0"))
+            if e.estimated_overcharge > current:
+                savings_groups[key] = e.estimated_overcharge
+        total_savings = sum(savings_groups.values(), Decimal("0"))
         estimated_fair = total_charges - total_savings
 
         supabase.table("analysis_results").insert({

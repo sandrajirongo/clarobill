@@ -137,12 +137,20 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
 
   const hasPaid = payment_record !== null;
 
-  // Sort by estimated overcharge descending so the teaser always shows the most
-  // valuable finding. A zero-overcharge error as the first visible item kills
-  // the paywall conversion — show the biggest dollar amount first.
-  const errors = (analysis.errors as BillingError[]).sort(
-    (a, b) => b.estimatedOvercharge - a.estimatedOvercharge
-  );
+  // Sort findings on the in-app analysis page from least-to-most critical
+  // (warning → critical), so the patient sees a less-severe finding first and
+  // is incentivised to unlock the report and dispute letter to see what worse
+  // issues are flagged. Within each severity bucket, larger overcharges come
+  // first so the visible warning is the most-impactful warning, not a $5 nit.
+  // The downloaded PDF report uses the inverse order (critical first) — that
+  // is a paid deliverable where leading with the worst finding is correct.
+  const SEVERITY_ASC: Record<string, number> = { info: 0, warning: 1, critical: 2 };
+  const errors = (analysis.errors as BillingError[]).slice().sort((a, b) => {
+    const sa = SEVERITY_ASC[a.severity?.toLowerCase?.() ?? ''] ?? 9;
+    const sb = SEVERITY_ASC[b.severity?.toLowerCase?.() ?? ''] ?? 9;
+    if (sa !== sb) return sa - sb;
+    return b.estimatedOvercharge - a.estimatedOvercharge;
+  });
   const visibleErrors = hasPaid ? errors : errors.slice(0, 1);
   const hiddenErrorCount = hasPaid ? 0 : Math.max(0, errors.length - 1);
 

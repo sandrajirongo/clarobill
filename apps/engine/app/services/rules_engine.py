@@ -994,9 +994,8 @@ class RulesEngine:
                     affected_indices=(index,),
                     description=(
                         f"Your provider charged ${total:.2f}{qty_note} for CPT {item.cpt_code}"
-                        f"{label}, but this hospital's own published price list "
-                        f"(CMS price transparency file) shows a gross charge of "
-                        f"${gross_charge:.2f}/unit. You were billed "
+                        f"{label}, but this hospital's own published price list shows a "
+                        f"gross charge of ${gross_charge:.2f}/unit. You were billed "
                         f"${overcharge:.2f} more than the hospital's own listed price."
                     ),
                     estimated_overcharge=overcharge,

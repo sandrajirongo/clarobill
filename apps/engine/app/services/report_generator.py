@@ -75,9 +75,29 @@ class ReportGenerator:
         fontTools subsetting runs at output() time (~14s for Regular + Bold).
         Callers should run this in a thread pool executor to avoid blocking the
         asyncio event loop.
+
+        Findings are sorted critical → warning → info, then by overcharge
+        descending within each severity. The patient sees the worst issues
+        first when they open the report.
         """
+        # Severity order: critical first, warning next, info / anything else last.
+        # Within a severity bucket, larger overcharges come first.
+        _SEVERITY_DESC = {"critical": 0, "warning": 1, "info": 2}
+        errors = sorted(
+            errors,
+            key=lambda e: (_SEVERITY_DESC.get(e.severity.lower(), 9), -float(e.estimated_overcharge)),
+        )
         total_charges = sum(Decimal(str(item.total_charge)) for item in line_items)
-        total_savings = sum(e.estimated_overcharge for e in errors)
+        # Headline savings is the per-line MAX (computed in bills.py and stored
+        # on the analysis_results row). Recomputed here from the same logic so
+        # the PDF matches even when the generator is invoked stand-alone.
+        savings_groups: dict[tuple[str, ...], Decimal] = {}
+        for idx, e in enumerate(errors):
+            key = tuple(sorted(e.affected_line_item_ids)) if e.affected_line_item_ids else (f"__bill__{idx}",)
+            current = savings_groups.get(key, Decimal("0"))
+            if e.estimated_overcharge > current:
+                savings_groups[key] = e.estimated_overcharge
+        total_savings = sum(savings_groups.values(), Decimal("0"))
 
         pdf = FPDF(orientation="P", unit="mm", format="A4")
         pdf.set_margins(20, 20, 20)
