@@ -52,7 +52,7 @@ export default function PrivacyPolicyPage(): JSX.Element {
         <ul className="list-disc pl-6 space-y-2 text-gray-700">
           <li>To perform OCR on your uploaded bill and extract line items</li>
           <li>To run automated billing rules checks (duplicate detection, price outliers, NCCI edits)</li>
-          <li>To generate an AI-assisted analysis report using Google&rsquo;s Gemini API (Vertex AI)</li>
+          <li>To generate an AI-assisted analysis report</li>
           <li>To generate a dispute letter template personalized to your bill&rsquo;s findings</li>
           <li>To deliver your report and dispute letter via email (SendGrid)</li>
           <li>To process your payment and support refund requests (Stripe)</li>
@@ -61,8 +61,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
         </ul>
         <p className="mt-3">
           We do not use your medical bill data to train AI models. That includes our own models and those of our AI
-          providers. Per Google&rsquo;s Vertex AI terms, content submitted via the API is not used for model
-          training by default. Our Anthropic API usage is governed by the same constraint.
+          providers. All AI services we use are contractually prohibited from using submitted content for model
+          training.
         </p>
       </Section>
 
@@ -70,9 +70,8 @@ export default function PrivacyPolicyPage(): JSX.Element {
         <p>We share your data with the following sub-processors, solely to provide the Service:</p>
         <div className="mt-4 space-y-3">
           <Processor name="Supabase" purpose="Database and encrypted file storage" location="United States" />
-          <Processor name="Google Cloud Vision" purpose="OCR text extraction from bill images" location="United States" />
-          <Processor name="Google Cloud AI (Vertex AI)" purpose="AI-assisted bill analysis and dispute letter generation (Gemini, primary)" location="United States" />
-          <Processor name="Anthropic" purpose="AI-assisted bill analysis and dispute letter generation (Claude, fallback only)" location="United States" />
+          <Processor name="Cloud OCR provider" purpose="Text extraction from bill images" location="United States" />
+          <Processor name="Generative AI services" purpose="AI-assisted bill summarization and dispute letter drafting. All providers are contractually prohibited from using submitted content for model training." location="United States" />
           <Processor name="Stripe" purpose="Payment processing" location="United States" />
           <Processor name="SendGrid (Twilio)" purpose="Transactional email delivery" location="United States" />
           <Processor name="Sentry" purpose="Error monitoring (redacted payloads)" location="United States" />
