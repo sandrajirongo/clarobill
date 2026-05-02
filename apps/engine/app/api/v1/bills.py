@@ -1172,8 +1172,10 @@ def _resolve_npi_by_name(
         passes.append(("name+state", hospital_state, None))
     passes.append(("name", None, None))
 
+    # Strip apostrophes from both sides so "Saint Michael's" and "Saint Michaels"
+    # variants match. Different directory feeds use different conventions.
     base_where = (
-        "CONTAINS_SUBSTR(hospital_name, @name_substr)\n"
+        "CONTAINS_SUBSTR(REPLACE(hospital_name, \"'\", ''), REPLACE(@name_substr, \"'\", ''))\n"
         "          AND hospital_npi IS NOT NULL"
     )
 
@@ -1198,30 +1200,31 @@ def _resolve_npi_by_name(
             logger.warning("Hospital NPI lookup (%s) failed for '%s': %s", label, hospital_name, exc)
             return None
 
-        if len(rows) == 1:
-            npi = str(rows[0]["hospital_npi"])
-            logger.info("Hospital '%s' resolved via %s → NPI %s", hospital_name, label, npi)
+        if not rows:
+            continue
+
+        # Always validate against hospital_charges before returning. A
+        # directory row that points at an NPI with no pricing data is
+        # effectively the wrong match — using it produces zero hospital
+        # findings even when a real match exists under a sibling NPI.
+        # This catches: apostrophe / casing variants where the directory
+        # query picks the wrong row, stale NPIs from facility transfers,
+        # and sibling clinics that share a name with the inpatient hospital.
+        candidate_npis = [str(r["hospital_npi"]) for r in rows]
+        active_npis = _filter_npis_with_charges(bq, dataset, candidate_npis)
+
+        if len(active_npis) == 1:
+            npi = active_npis[0]
+            logger.info(
+                "Hospital '%s' resolved via %s → NPI %s (%d directory rows, 1 with charge data)",
+                hospital_name, label, npi, len(rows),
+            )
             return npi
 
-        if len(rows) > 1:
-            # Multiple directory candidates. Filter by which NPIs actually have
-            # rows in hospital_charges. Stale directory entries (e.g. an old
-            # NPI for a facility that re-incorporated, or a sibling clinic
-            # under the same name) won't have any pricing data — those are not
-            # the right answer. If exactly one survives the filter, return it.
-            candidate_npis = [str(r["hospital_npi"]) for r in rows]
-            active_npis = _filter_npis_with_charges(bq, dataset, candidate_npis)
-            if len(active_npis) == 1:
-                npi = active_npis[0]
-                logger.info(
-                    "Hospital '%s' %s: %d directory candidates, 1 with charge data → NPI %s",
-                    hospital_name, label, len(rows), npi,
-                )
-                return npi
-            logger.debug(
-                "Hospital '%s' %s: %d candidates (%d with charge data), narrowing to next pass",
-                hospital_name, label, len(rows), len(active_npis),
-            )
+        logger.debug(
+            "Hospital '%s' %s: %d directory rows, %d with charge data — narrowing to next pass",
+            hospital_name, label, len(rows), len(active_npis),
+        )
 
     logger.info(
         "Hospital '%s' (state=%s zip=%s) unresolved — 0 or >1 matches on all passes, skipping charge lookup",
