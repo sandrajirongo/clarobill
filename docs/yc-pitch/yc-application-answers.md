@@ -23,7 +23,8 @@ limits.
 9. [Competitors — and what we understand that they don't](#competitors--and-what-we-understand-that-they-dont)
 10. [Equity ownership at company formation](#equity-ownership-at-company-formation)
 11. [Why Oakland?](#why-oakland)
-12. [How do you make money? How much could you make?](#revenue-model--how-and-how-much)
+12. [How do you make money? — YC form answer (~400 words)](#how-do-or-will-you-make-money-how-much-could-you-make--yc-form-answer)
+13. [Revenue model — full long-form deep-dive](#revenue-model--how-and-how-much)
 
 ---
 
@@ -858,7 +859,8 @@ validated. The testing apparatus works.
 
 | Experiment | Method | Cost | Time | What it proves |
 |---|---|---|---|---|
-| **Coder adjudication of 50 bills** | Hire a board-certified coder; double-blind; per-finding score | $5,000 | 3 weeks | Precision/recall numbers |
+| **Coder adjudication of 50 bills** | Hire a board-certified coder; double-blind; per-finding score
+ | $5,000 | 3 weeks | Precision/recall numbers |
 | **Beta-cohort dispute outcomes** | Track 50 beta users' resolutions for 60 days | $0 | 60 days, background | Median dollars actually recovered |
 | **Sutter-style cross-validation** | Audit our rule outputs against 5 large hospitals' published pages by hand | $0 | 1 week | Data we ingested matches what hospitals published |
 | **Design-partner pre-bill QA validation** | B2B alpha customer compares our findings on N pre-bill claims against their internal scrub | $0 (their effort) | 4 weeks during alpha | B2B value proposition |
@@ -1230,6 +1232,41 @@ are sane.
 > a meaningfully lower cost basis for our first hires than San
 > Francisco — without sacrificing any of the operational advantages
 > of being in the Bay Area healthtech ecosystem."
+
+---
+
+## How do or will you make money? How much could you make? — YC form answer
+
+> Tight ~400-word version sized for the YC application's revenue text box.
+> The detailed long-form section below stays as the deep-dive backup
+> referenced when partners ask follow-ups in the interview.
+
+**Revenue model (live in beta now):** Outcome-based pricing. The patient sees how many errors we found before paying. If we find nothing worth disputing, they pay $0, ever. If we find errors, the fee is one of four tiers based on the dollar value of recoverable savings:
+
+- **Free** — savings ≤ $20 (no fee, ever)
+- **$14.99** — savings $20–150
+- **$79.99** — savings $150–750
+- **$129.99** — savings $750–1,500
+- **$199.99** — savings $1,500+
+
+For comparison, human medical billing advocates charge **25–35% of recovered savings** — on a $1,300 finding (the average overcharge on bills over $10K, per the GAO and Medical Billing Advocates of America), that's $325–$455. We deliver the same outcome for $129.99 in 3 minutes vs 4–6 weeks, with no human in the loop.
+
+**Unit economics at scale:**
+- ~$70 weighted average revenue per paid bill (most bills land in Tier 3)
+- 30–40% free-to-paid conversion expected (60% of bills are paid-eligible; ~60% of those convert because the user already has the dispute letter waiting)
+- ~2 paid bills/year per active user → **LTV ~$140**
+- SEO + organic share-driven acquisition; expected **CAC ~$25 at scale → LTV/CAC ~5.6x**
+
+**TAM:** US issues ~1.2B medical bills/year. 80% contain at least one error. The current human-advocate market is ~$5B/year; the unrecovered patient overcharges are ~$30B/year. ClaroBill targets the wedge between the two.
+
+**Best estimate, conservative:**
+- **Year 1 (post-YC):** 50–75K bills processed → $1–2M ARR
+- **Year 3:** 1M+ bills/year → $30–50M ARR consumer
+- **Year 5:** 5M+ bills/year → $200M+ ARR combined with B2B
+
+**The bigger lever (post-launch):** the data pipeline (13K+ hospitals indexed, every negotiated rate queryable in seconds) and the rules engine are licenseable as a B2B API. Hospital billing departments would pay $50–$200 per audit to QC their own outbound bills. Self-funded employers would pay per-member to audit healthcare spend. Insurance claims teams would pay per-claim. **B2B alone is a $100M+ ARR opportunity** at maturity, and the consumer product is what builds the data moat that makes it defensible.
+
+**The honest unknown:** consumer free-to-paid conversion. Beta data so far supports the 30–40% range, but we have <100 bills through. We'll know with confidence at 1,000+.
 
 ---
 
