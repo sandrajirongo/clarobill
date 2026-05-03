@@ -1,0 +1,18 @@
+# Cloud Build config for the MRF pipeline image.
+#
+# Run from repo root: `bash pipeline/deploy.sh`. The Dockerfile lives in
+# pipeline/ but COPYs from both pipeline/ and scripts/mrf_discovery/, so
+# the build context has to be the repo root. This file specifies the
+# Dockerfile path explicitly so the Dockerfile can stay co-located.
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=pipeline/Dockerfile
+      - --tag=${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+options:
+  logging: CLOUD_LOGGING_ONLY

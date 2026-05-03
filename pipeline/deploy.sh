@@ -22,10 +22,18 @@ IMAGE="${REPO}/mrf-pipeline:latest"
 PIPELINE_SA="clarobill-pipeline-sa@${PROJECT}.iam.gserviceaccount.com"
 
 echo "==> Building and pushing image..."
+# Build context is repo root (.) because the Dockerfile COPYs from
+# pipeline/* AND scripts/mrf_discovery/* — both sibling directories need
+# to be in scope. Sending only pipeline/ as context (the original deploy.sh
+# behaviour) made Docker resolve `COPY pipeline/requirements.txt` to a
+# missing path. The cloudbuild.yaml sibling specifies the Dockerfile path
+# explicitly so we can keep the Dockerfile co-located with pipeline code.
+# Run from repo root: `bash pipeline/deploy.sh`
 gcloud builds submit \
-  --tag "${IMAGE}" \
+  --config=pipeline/cloudbuild.yaml \
+  --substitutions="_IMAGE=${IMAGE}" \
   --project "${PROJECT}" \
-  pipeline/
+  .
 
 # Task timeout: 4 hours (14400s) handles ~3,100 hospitals comfortably.
 # Scaling path when hospital count grows (target ~18,000 = 6x current):
