@@ -76,6 +76,11 @@ export async function middleware(request: NextRequest) {
     // Twitter, Facebook) when a URL is shared. Auth-redirecting it returns a 307
     // which scrapers don't follow → blank preview cards. Must stay public.
     || pathname === '/opengraph-image'
+    // /demo is the unlisted product walkthrough surface used in pitch decks
+    // and investor outreach. Reachable only via direct link (not in nav,
+    // footer, or sitemap). Stays public so investors don't hit a sign-in
+    // wall when clicking the deck CTA.
+    || pathname === '/demo'
     || pathname.startsWith('/blog')
     || pathname.startsWith('/ref/');
 
