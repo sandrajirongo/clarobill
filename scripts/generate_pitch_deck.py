@@ -132,7 +132,8 @@ def big_stat(c: canvas.Canvas, number: str, label: str, x: float, y: float,
     c.drawString(x, y, number)
     fill(c, GRAY_DARK)
     c.setFont("Syne", label_size)
-    label_y = y - 16
+    # Clear the serif descender (e.g. the "$" tail in "$1,300") with proportional padding.
+    label_y = y - (num_size * 0.30 + 8)
     lines = wrap_text(label, "Syne", label_size, label_w)
     for i, line in enumerate(lines):
         c.drawString(x, label_y - i * label_size * 1.45, line)
@@ -275,14 +276,16 @@ def slide_4_why_now(c: canvas.Canvas) -> None:
     c.setLineWidth(1.4)
     c.line(60, H - 148, 180, H - 148)
 
-    # Big year stat on left
+    # Big year stat on left, with proportional descender clearance for caption.
+    num_size = 170
+    num_y = H - 350
     fill(c, SAGE)
-    c.setFont("Fraunces-Bold", 170)
-    c.drawString(60, H - 350, "2021")
+    c.setFont("Fraunces-Bold", num_size)
+    c.drawString(60, num_y, "2021")
 
     fill(c, GRAY_DARK)
     c.setFont("Syne-Medium", 12)
-    c.drawString(60, H - 380, "the year the data became public.")
+    c.drawString(60, num_y - (num_size * 0.30 + 8), "the year the data became public.")
 
     # Right side: body
     rx = 540
@@ -687,40 +690,69 @@ def slide_12_team(c: canvas.Canvas) -> None:
 
     # Right side: close panel
     panel_x = 580
-    panel_y = 130
+    panel_y = 100
     panel_w = W - panel_x - 60
-    panel_h = H - 170 - panel_y
+    panel_h = H - 140 - panel_y
     fill(c, SAGE_DARK)
     c.roundRect(panel_x, panel_y, panel_w, panel_h, 12, stroke=0, fill=1)
 
     # Wordmark inside panel
-    wordmark(c, panel_x + 30, panel_y + panel_h - 60, 40,
+    wordmark(c, panel_x + 30, panel_y + panel_h - 60, 38,
              color=CREAM, dot_color=LIME)
 
     fill(c, HexColor("#D8DBC8"))
-    c.setFont("Fraunces-Italic", 14)
-    c.drawString(panel_x + 30, panel_y + panel_h - 100,
+    c.setFont("Fraunces-Italic", 13)
+    c.drawString(panel_x + 30, panel_y + panel_h - 95,
                  "Find errors in your medical bill.")
 
     # divider
     stroke(c, HexColor("#506849"))
     c.setLineWidth(0.6)
-    c.line(panel_x + 30, panel_y + panel_h - 135,
-           panel_x + panel_w - 30, panel_y + panel_h - 135)
+    c.line(panel_x + 30, panel_y + panel_h - 125,
+           panel_x + panel_w - 30, panel_y + panel_h - 125)
 
+    # Try it
     fill(c, LIME)
     c.setFont("Syne-Medium", 10)
-    c.drawString(panel_x + 30, panel_y + 95, "TRY IT")
+    c.drawString(panel_x + 30, panel_y + panel_h - 155, "TRY IT")
     fill(c, CREAM)
-    c.setFont("Fraunces-Bold", 18)
-    c.drawString(panel_x + 30, panel_y + 70, "clarobill.com")
+    c.setFont("Fraunces-Bold", 17)
+    c.drawString(panel_x + 30, panel_y + panel_h - 178, "clarobill.com")
+    try_url = "https://www.clarobill.com"
+    c.linkURL(try_url,
+              (panel_x + 30, panel_y + panel_h - 184,
+               panel_x + 30 + 200, panel_y + panel_h - 162),
+              relative=0)
 
+    # Watch demo
     fill(c, LIME)
     c.setFont("Syne-Medium", 10)
-    c.drawString(panel_x + 30, panel_y + 45, "REACH OUT")
+    c.drawString(panel_x + 30, panel_y + panel_h - 208, "WATCH DEMO")
     fill(c, CREAM)
-    c.setFont("Fraunces-Bold", 15)
-    c.drawString(panel_x + 30, panel_y + 22, "sandra@clarobill.com")
+    c.setFont("Fraunces-Bold", 14)
+    demo_label = "clarobill.com/demo"
+    c.drawString(panel_x + 30, panel_y + panel_h - 230, demo_label)
+    fill(c, LIME)
+    c.setFont("Syne-Bold", 14)
+    arrow_x = panel_x + 30 + c.stringWidth(demo_label, "Fraunces-Bold", 14) + 8
+    c.drawString(arrow_x, panel_y + panel_h - 230, "→")
+    demo_url = "https://www.clarobill.com/demo"
+    c.linkURL(demo_url,
+              (panel_x + 30, panel_y + panel_h - 236,
+               panel_x + 30 + 230, panel_y + panel_h - 214),
+              relative=0)
+
+    # Reach out
+    fill(c, LIME)
+    c.setFont("Syne-Medium", 10)
+    c.drawString(panel_x + 30, panel_y + 50, "REACH OUT")
+    fill(c, CREAM)
+    c.setFont("Fraunces-Bold", 14)
+    c.drawString(panel_x + 30, panel_y + 26, "sandra@clarobill.com")
+    c.linkURL("mailto:sandra@clarobill.com",
+              (panel_x + 30, panel_y + 20,
+               panel_x + 30 + 220, panel_y + 42),
+              relative=0)
 
     footer(c, 12)
     c.showPage()
