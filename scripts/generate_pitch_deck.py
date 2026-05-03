@@ -732,10 +732,6 @@ def slide_12_team(c: canvas.Canvas) -> None:
     c.setFont("Fraunces-Bold", 14)
     demo_label = "clarobill.com/demo"
     c.drawString(panel_x + 30, panel_y + panel_h - 230, demo_label)
-    fill(c, LIME)
-    c.setFont("Syne-Bold", 14)
-    arrow_x = panel_x + 30 + c.stringWidth(demo_label, "Fraunces-Bold", 14) + 8
-    c.drawString(arrow_x, panel_y + panel_h - 230, "→")
     demo_url = "https://www.clarobill.com/demo"
     c.linkURL(demo_url,
               (panel_x + 30, panel_y + panel_h - 236,
