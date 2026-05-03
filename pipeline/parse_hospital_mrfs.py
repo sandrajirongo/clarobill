@@ -577,6 +577,35 @@ def _task_shard(items: list, task_index: int, task_count: int) -> list:
     return items[task_index::task_count]
 
 
+def _load_terminal_mrf_urls(bq: bigquery.Client) -> set[str]:
+    """Return the set of source MRF URLs already in a terminal parse state.
+
+    The parser walks gs://mrf-staging/raw/ each run, but most blobs there
+    are already classified ('failed' / 'skipped' / 'parsed' in
+    mrf_archive_index). Re-downloading and re-sniffing them every run
+    burns Cloud Run runtime for no output. This returns the skip-set so
+    the main loop can short-circuit before any HTTP I/O.
+
+    Returns an empty set if the query fails — better to slow-process the
+    full bucket than crash on parser startup.
+    """
+    query = f"""
+        SELECT DISTINCT source_mrf_url
+        FROM `{ARCHIVE_INDEX_TABLE}`
+        WHERE parse_status IN ('failed', 'skipped', 'parsed')
+          AND source_mrf_url IS NOT NULL
+    """
+    try:
+        rows = list(bq.query(query).result())
+    except Exception as exc:
+        logger.warning("Could not load terminal-state skip-set from %s: %s — proceeding without it",
+                       ARCHIVE_INDEX_TABLE, exc)
+        return set()
+    skip_set = {str(r["source_mrf_url"]) for r in rows}
+    logger.info("Loaded skip-set: %d source MRF URLs already in terminal state", len(skip_set))
+    return skip_set
+
+
 def main() -> None:
     task_index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
     task_count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
@@ -596,15 +625,33 @@ def main() -> None:
             task_index, task_count, len(blobs), len(all_blobs),
         )
 
+    # Pre-fetch the set of MRF URLs already in a terminal parse state.
+    # Each blob's mrf_url comes from custom GCS metadata; checking the set
+    # before download is what cuts a 49-hour run down to ~60 minutes when
+    # most of the staging bucket has already been classified.
+    skip_set = _load_terminal_mrf_urls(bq)
+
     succeeded = 0
     failed = 0
+    skipped_terminal = 0
     for blob in blobs:
+        # Cheap pre-flight: read blob metadata once. If its mrf_url is in
+        # the skip-set, move on without download / sniff / index update.
+        meta = _get_blob_metadata(bucket, blob)
+        mrf_url = meta.get("mrf_url") or ""
+        if mrf_url and mrf_url in skip_set:
+            skipped_terminal += 1
+            continue
+
         if process_blob(blob, bq, bucket):
             succeeded += 1
         else:
             failed += 1
 
-    logger.info("Parse complete: %d succeeded, %d failed", succeeded, failed)
+    logger.info(
+        "Parse complete: %d succeeded, %d failed, %d already-terminal (skipped pre-flight)",
+        succeeded, failed, skipped_terminal,
+    )
     if failed > 0:
         logger.warning("%d hospitals failed to load — check logs above", failed)
         # Exit 0 anyway — partial success is acceptable for a weekly batch job.
