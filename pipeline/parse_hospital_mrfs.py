@@ -289,6 +289,42 @@ def _is_parseable_extension(blob_name: str) -> bool:
     return any(name.endswith(ext) for ext in _PARSEABLE_EXTENSIONS)
 
 
+def _sniff_blob_format(blob: storage.Blob) -> str:
+    """Sniff the first 4 KiB of a blob and return one of:
+    'json' | 'html' | 'xlsx' | 'pdf' | 'empty' | 'unknown'.
+
+    The scraper saves whatever the source URL returned, so a blob with a
+    .json or .json.gz suffix may actually contain HTML (404 page, marketing
+    landing page) or XLSX. Walking ijson over those would burn 5-10s per
+    blob to produce zero rows. This pre-flight aborts in <1s when the
+    content is clearly not JSON.
+
+    For .gz blobs we decompress what we have first; partial gzip data is
+    enough to read the opening braces and HTML markers.
+    """
+    try:
+        head = blob.download_as_bytes(start=0, end=4095, raw_download=True)
+    except Exception:
+        return "unknown"
+    if blob.name.endswith(".gz") or blob.name.endswith(".gzip"):
+        try:
+            head = gzip.GzipFile(fileobj=io.BytesIO(head), mode="rb").read(4096)
+        except Exception:
+            return "unknown"
+    if not head:
+        return "empty"
+    s = head.lstrip(b"\xef\xbb\xbf").lstrip()
+    if s.startswith(b"{") or s.startswith(b"["):
+        return "json"
+    if s[:1] == b"<":
+        return "html"
+    if s.startswith(b"PK\x03\x04"):
+        return "xlsx"
+    if s.startswith(b"%PDF"):
+        return "pdf"
+    return "unknown"
+
+
 def process_blob(
     blob: storage.Blob,
     bq: bigquery.Client,
@@ -338,6 +374,24 @@ def process_blob(
         # Do NOT delete the staging blob — preserves a forensic copy until
         # the CSV parser ships. The archive bucket already has the immutable
         # copy, so this is belt-and-suspenders.
+        return False
+
+    # Content sniff — extension says ".json" but the bytes may say HTML
+    # (404 page, hospital marketing page, even Facebook redirects in
+    # observed cases). The scraper used to save whatever the source URL
+    # returned regardless of body type; this pre-flight aborts before the
+    # full ijson parse so a 26K-blob queue of garbage doesn't burn 36+ hours
+    # of Cloud Run runtime to produce zero charge rows.
+    fmt = _sniff_blob_format(blob)
+    if fmt != "json":
+        logger.warning(
+            "[%s] Content is %s, not JSON — marking failed (path was %s)",
+            label, fmt, blob.name,
+        )
+        update_archive_index_status(
+            bq, mrf_url, "failed",
+            error=f"content-sniff: {fmt}",
+        )
         return False
 
     logger.info("[%s] Processing %s", label, blob.name)

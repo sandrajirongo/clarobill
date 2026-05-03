@@ -308,13 +308,13 @@ are suppressed.
 
 ### 4. Reporting — translating findings into actionable language
 
-The 13-error output is summarised by Gemini 2.0 Flash (primary) with
-Anthropic Claude Sonnet (fallback). Both write a 2-3-sentence
-patient-facing summary and a formal dispute letter with one numbered
-dispute paragraph per finding. The LLM is constrained: it receives the
-structured `BillingError` records, never the raw bill, and is
-instructed to write only what the deterministic rules already
-established. This keeps the LLM in the narrow role of language
+The 13-error output is summarised by a generative language model,
+with a redundant fallback model wired in for reliability. Both write a
+2-3-sentence patient-facing summary and a formal dispute letter with
+one numbered dispute paragraph per finding. The model is constrained:
+it receives the structured `BillingError` records, never the raw bill,
+and is instructed to write only what the deterministic rules already
+established. This keeps the model in the narrow role of language
 generation — never inference — and means a dispute letter never makes
 a claim the rules engine didn't first compute.
 
