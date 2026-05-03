@@ -17,10 +17,11 @@ inconsistently:
      same key, same sha256), we skip the upload. Saves bandwidth on weekly
      re-scrapes of unchanged hospital MRFs.
 
-The archive bucket is `mrf-archive-clarobill-prd` (Coldline storage class,
-versioned, no-delete IAM on the pipeline SA — see
-docs/decisions/2026-04-28-cms-direct-mrf-discovery.md). This module never
-deletes.
+The archive bucket is `mrf-archive-clarobill-prd` (Standard storage class
+as of 2026-05-03 — was Coldline, but the parser actively re-reads the
+bucket so retrieval fees + Class B op rates were burning ~$100/day; see
+docs/postmortem/2026-05-03-mrf-pipeline-postmortem.md). Versioning is
+disabled. This module never deletes.
 
 Path layout (delegated to scripts/mrf_discovery/archive_layout.py):
   pricing-year={year}/{key}/{sha256[:16]}.{ext}
