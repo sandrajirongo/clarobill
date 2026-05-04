@@ -162,6 +162,46 @@ class TestArchiveIndexDriver:
         assert url_arg == "https://hosp.org/charges.json"
         assert status_arg == "failed"
 
+    def test_dedupe_query_groups_by_gcs_uri(self) -> None:
+        # Regression for 2026-05-04 16:46 runaway: archive_index has multiple
+        # rows per source_mrf_url (re-scrapes, Dignity Health duplicate-archive
+        # cohort, etc). Without GROUP BY gcs_uri, the loop processed the same
+        # blob 3+ times before update_archive_index_status caught up, appending
+        # duplicate rows to the (append-only) hospital_charges table.
+        bq = MagicMock()
+        gcs = MagicMock()
+        staging_bucket = MagicMock()
+        bq.query.return_value.result.return_value = iter([])
+
+        parser.process_archive_index_pending(bq, gcs, staging_bucket)
+
+        sql_arg = bq.query.call_args.args[0]
+        assert "GROUP BY gcs_uri" in sql_arg, \
+            "Pending query must dedupe by gcs_uri to avoid re-processing blobs"
+
+    def test_inmemory_dedupe_skips_duplicate_uris(self) -> None:
+        # Belt-and-suspenders against any race that lets duplicate gcs_uris
+        # slip past the SQL GROUP BY. Same gcs_uri appearing twice in the
+        # iter must be processed exactly once.
+        bq = MagicMock()
+        gcs = MagicMock()
+        staging_bucket = MagicMock()
+        same_uri = "gs://mrf-archive-clarobill-prd/x/y.json"
+        bq.query.return_value.result.return_value = iter([
+            {"source_mrf_url": "https://hosp.org/c.json", "gcs_uri": same_uri,
+             "hospital_npi": "1234567890", "ccn": None, "mrf_last_modified_header": None},
+            {"source_mrf_url": "https://hosp.org/c.json", "gcs_uri": same_uri,
+             "hospital_npi": "1234567890", "ccn": None, "mrf_last_modified_header": None},
+            {"source_mrf_url": "https://hosp.org/c.json", "gcs_uri": same_uri,
+             "hospital_npi": "1234567890", "ccn": None, "mrf_last_modified_header": None},
+        ])
+
+        with patch.object(parser, "process_blob_with_meta", return_value=True) as mock_proc:
+            parser.process_archive_index_pending(bq, gcs, staging_bucket)
+
+        assert mock_proc.call_count == 1, \
+            "Duplicate gcs_uri rows must collapse to a single process call"
+
     def test_meta_built_from_archive_index_columns(self) -> None:
         # Archive-bucket blobs do NOT carry the scraper's custom metadata
         # (hospital_name, mrf_url, etc). The driver must build that meta

@@ -730,28 +730,46 @@ def process_archive_index_pending(
 
     Returns (succeeded, failed).
     """
+    # Dedupe by gcs_uri at SQL time. The same source_mrf_url can appear in
+    # multiple archive_index rows (re-scrapes, scraper retries, the pre-fix
+    # Dignity Health duplicate-archive cohort). When `update_archive_index_status`
+    # flips a URL's parse_status, ALL archive_index rows for that URL flip —
+    # but the in-memory result list still contains every original row.
+    # Without dedup, we'd re-parse the same blob N times AND append duplicate
+    # rows into hospital_charges (append-only, no on-write dedup). 2026-05-04
+    # 16:46 incident: ~3x duplication of Saint Michaels Medical Center rows
+    # before the runaway loop was caught.
     sql = f"""
     SELECT
-      source_mrf_url,
+      ANY_VALUE(source_mrf_url) AS source_mrf_url,
       gcs_uri,
-      hospital_npi,
-      ccn,
-      mrf_last_modified_header
+      ANY_VALUE(hospital_npi) AS hospital_npi,
+      ANY_VALUE(ccn) AS ccn,
+      ANY_VALUE(mrf_last_modified_header) AS mrf_last_modified_header
     FROM `{ARCHIVE_INDEX_TABLE}`
     WHERE parse_status = 'pending'
       AND gcs_uri IS NOT NULL
       AND gcs_uri != ''
+    GROUP BY gcs_uri
     """
     if limit:
         sql += f"\nLIMIT {int(limit)}"
 
     rows = list(bq.query(sql).result())
-    logger.info("Loaded %d pending archive_index rows for processing", len(rows))
+    logger.info("Loaded %d distinct gcs_uris from pending archive_index rows", len(rows))
+
+    # In-memory belt-and-suspenders dedupe — defends against any race where
+    # the same gcs_uri could re-appear after our SQL-side GROUP BY (e.g., if
+    # a concurrent process re-inserted a pending row mid-loop).
+    seen_uris: set[str] = set()
 
     succeeded = 0
     failed = 0
     for row in rows:
         gcs_uri = str(row["gcs_uri"])
+        if gcs_uri in seen_uris:
+            continue
+        seen_uris.add(gcs_uri)
         mrf_url = str(row["source_mrf_url"] or "")
         try:
             blob = _blob_from_gcs_uri(gcs, gcs_uri)
