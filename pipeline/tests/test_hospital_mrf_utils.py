@@ -20,7 +20,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hospital_mrf_utils import ChargeRow, _strip_bom, stream_charges_v2
+from hospital_mrf_utils import (
+    ChargeRow,
+    _strip_bom,
+    extract_npi_from_url,
+    stream_charges_v2,
+)
 
 
 # --- Fixtures ---------------------------------------------------------------
@@ -170,6 +175,107 @@ class _NonSeekableStream(io.RawIOBase):
 
     def read(self, n: int = -1) -> bytes:
         return self._buf.read(n)
+
+
+class TestExtractNpiFromUrl:
+    """Phase 4 follow-up (2026-05-04): the parser previously fell back to an
+    empty NPI when MRF JSON internals didn't carry one, silently writing
+    rows with no joinable hospital identifier. ~60% of hospital_charges and
+    2,111 of the 'parsed' archive blobs ended up with NULL NPI as a result.
+    Real-world URLs almost always embed the NPI in the filename, so URL
+    extraction is the cheapest and highest-coverage fix.
+
+    Each test URL here is a real example pulled from
+    `mrf_archive_index` rows whose `hospital_npi` was NULL.
+    """
+
+    def test_dignity_health_real_url_returns_none(self) -> None:
+        # Real Dignity Health URL: filename starts with `941196203_` —
+        # nine digits, which is the parent system's EIN/CMS Provider ID,
+        # NOT an NPI. We deliberately do not promote 9-digit IDs to NPI.
+        # This is the exact pattern that produced 2,111 NULL-NPI archive
+        # rows on 2026-05-01/02. Surfaces as a separate "EIN-only" cohort
+        # for backfill via hospital_directory.ccn → npi mapping.
+        url = (
+            "https://www.dignityhealth.org/content/dam/dignity-health/documents/"
+            "mrf-json/southern-california/json/941196203_marian-regional-medical-center_standardcharges.json"
+        )
+        assert extract_npi_from_url(url) is None
+
+    def test_filename_prefix_10_digit_npi(self) -> None:
+        url = (
+            "https://www.dignityhealth.org/content/dam/dignity-health/documents/"
+            "mrf-json/socal/json/9411962030_marian-regional-medical-center_standardcharges.json"
+        )
+        assert extract_npi_from_url(url) == "9411962030"
+
+    def test_aultman_real_pattern(self) -> None:
+        url = "https://aultman.org/pricing-transparency/2026/1356366991_aultman-hospital_standardcharges.json"
+        assert extract_npi_from_url(url) == "1356366991"
+
+    def test_kettering_multi_id_prefers_10_digit(self) -> None:
+        # Real URL: 9-digit health-system EIN (310536662) followed by 10-digit facility NPI (1104867167).
+        # Filename basename has the EIN first; the 10-digit NPI must still be selected.
+        url = "https://cdn.ketteringhealth.org/wp-content/uploads/2026/03/310536662_1104867167_fort-hamilton-hospital_standardcharges.json"
+        assert extract_npi_from_url(url) == "1104867167"
+
+    def test_uppercase_json_extension(self) -> None:
+        url = "https://montclair-hospital.org/wp-content/uploads/2026/04/2028987710_MontclairHospitalMedicalCenter_standardcharges.JSON"
+        assert extract_npi_from_url(url) == "2028987710"
+
+    def test_no_separator_concatenated_filename(self) -> None:
+        url = "http://www.bayhealth.org/-/media/files/patients-and-visitors/billing-financial-aid/price-transparency/2026/5100643180bayhealthhospitalsussexcampusstandardcharges.json"
+        assert extract_npi_from_url(url) == "5100643180"
+
+    def test_query_string_is_ignored(self) -> None:
+        # Real URL with SAS token whose digit runs must NOT be mistaken for an NPI.
+        url = (
+            "https://pricetransparency.blob.core.windows.net/newmanregionalhospital/"
+            "4860268351_Newman-Regional-Health_standardcharges.json"
+            "?sv=2022-11-02&se=2099-04-26T22:40:35Z&sig=V53UDZpYxrVMzk1BKj4Dvm45q%2FAztzKKQCADbpBONqo%3D"
+        )
+        assert extract_npi_from_url(url) == "4860268351"
+
+    def test_url_encoded_path_segments(self) -> None:
+        url = (
+            "https://ernesthealth.com/wp-content/uploads/2025/01/pricing/"
+            "Bloomington%20Regional%20Rehabilitation%20Hospital/"
+            "8537968410_Bloomington-Regional-Rehabilitation-Hospital_Standard-Charges.json"
+        )
+        assert extract_npi_from_url(url) == "8537968410"
+
+    def test_path_based_layout_no_filename_npi(self) -> None:
+        # Hypothetical: directory carries the NPI, basename does not.
+        url = "https://example.org/mrf/1234567890/charges.json"
+        assert extract_npi_from_url(url) == "1234567890"
+
+    def test_ein_only_returns_none(self) -> None:
+        # Real URL: Beartooth Billings Clinic has EIN 81-0224734 in filename
+        # (renders as 9 contiguous digits without the dash). 9 digits ≠ NPI.
+        # Returning None forces the parser to mark this 'failed' rather than
+        # writing rows with corrupt EIN-as-NPI data.
+        url = (
+            "https://pricetransparency.blob.core.windows.net/beartooth/"
+            "81-0224734_Beartooth-Billings-Clinic_standardcharges.json"
+        )
+        assert extract_npi_from_url(url) is None
+
+    def test_ein_with_dash_collapsed_returns_none(self) -> None:
+        # 9 contiguous digits collapsed from XX-XXXXXXX format must NOT match.
+        url = "https://example.org/files/810224734_Some-Clinic_standardcharges.json"
+        assert extract_npi_from_url(url) is None
+
+    def test_no_digit_run_returns_none(self) -> None:
+        url = "https://example.org/mrf/SomeHospital_charges.json"
+        assert extract_npi_from_url(url) is None
+
+    def test_empty_url_returns_none(self) -> None:
+        assert extract_npi_from_url("") is None
+
+    def test_eleven_digit_run_does_not_match(self) -> None:
+        # Bare 11-digit number is not an NPI; we must not pick the trailing 10.
+        url = "https://example.org/mrf/12345678901_Hospital_standardcharges.json"
+        assert extract_npi_from_url(url) is None
 
 
 class TestNonSeekableStream:

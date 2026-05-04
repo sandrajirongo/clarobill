@@ -16,8 +16,10 @@ Normalisation flattens this into rows, one per
 
 import io
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Generator
+from urllib.parse import unquote, urlparse
 
 import ijson
 
@@ -174,6 +176,54 @@ def extract_npi_from_mrf_root(root: dict[str, Any]) -> str | None:
         if len(digits) == 10 and digits.isdigit():
             return digits
 
+    return None
+
+
+# Standalone 10-digit NPI: bounded by non-digit characters so we don't pick
+# the middle of a longer numeric string (e.g. a SAS token or hash).
+_NPI_RE = re.compile(r"(?<!\d)(\d{10})(?!\d)")
+
+
+def extract_npi_from_url(url: str) -> str | None:
+    """Extract a 10-digit hospital NPI from an MRF source URL.
+
+    CMS does not require NPI in the URL, but virtually every observed
+    publishing pattern embeds it in the filename — typically as a leading
+    `{npi}_{slug}_standardcharges.json` prefix (Dignity Health, Saint Lukes,
+    Providence, BJC). When MRFs are produced by health-system tooling, the
+    URL is the most reliable extraction surface — JSON internals sometimes
+    carry the parent organisation's NPI rather than the facility's.
+
+    Strategy:
+      1. Strip the query string (SAS tokens, signed-URL params).
+      2. Decode percent-encoding so `%20` directories don't hide digits.
+      3. Search the URL basename first — that's where the NPI is in 95%+
+         of observed real-world URLs (filename-leading position).
+      4. Fall back to the full URL path so directory-based layouts like
+         `/mrf/{npi}/charges.json` still resolve.
+      5. 9-digit numbers (EINs in `XX-XXXXXXX` format) are NOT returned —
+         a small subset of small/critical-access hospitals publish only
+         their EIN. Those need separate handling and a dedicated tax_id
+         column; silently treating EIN as NPI corrupts downstream joins.
+
+    Returns a 10-digit NPI string or None.
+    """
+    if not url:
+        return None
+    parsed = urlparse(url)
+    # Path only — query strings often contain digit runs from SAS tokens.
+    path = unquote(parsed.path or "")
+    if not path:
+        return None
+    # Basename first: the dominant publishing pattern.
+    basename = path.rsplit("/", 1)[-1]
+    match = _NPI_RE.search(basename)
+    if match:
+        return match.group(1)
+    # Path fallback: catches /mrf/1234567890/charges.json layouts.
+    match = _NPI_RE.search(path)
+    if match:
+        return match.group(1)
     return None
 
 

@@ -45,6 +45,7 @@ from hospital_mrf_utils import (
     ChargeRow,
     extract_mrf_date,
     extract_npi_from_mrf_root,
+    extract_npi_from_url,
     stream_charges_v2,
 )
 
@@ -237,6 +238,39 @@ def update_archive_index_status(
         logger.warning("archive_index status update failed for %s: %s", mrf_url, exc)
 
 
+def update_archive_index_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) -> None:
+    """Backfill mrf_archive_index.hospital_npi after a successful parse.
+
+    The scraper stores whatever NPI was known at scrape time (often NULL for
+    hospitals discovered without an NPPES match). The parser resolves the NPI
+    via JSON > URL > metadata cascade. Writing the resolved value back lets
+    `mrf_archive_index` serve as a queryable parse-provenance table — useful
+    for backfilling hospital_charges and for verifying coverage by hospital.
+
+    Only updates rows that currently have no NPI; never overwrites an existing
+    value, and only the row matching this exact URL (so re-publications under
+    a new URL get their own row keyed on the new URL).
+    """
+    if not hospital_npi:
+        return
+    sql = f"""
+        UPDATE `{ARCHIVE_INDEX_TABLE}`
+        SET hospital_npi = @hospital_npi
+        WHERE source_mrf_url = @mrf_url
+          AND (hospital_npi IS NULL OR hospital_npi = '')
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("hospital_npi", "STRING", hospital_npi),
+            bigquery.ScalarQueryParameter("mrf_url", "STRING", mrf_url),
+        ]
+    )
+    try:
+        bq.query(sql, job_config=job_config).result()
+    except Exception as exc:
+        logger.warning("archive_index NPI backfill failed for %s: %s", mrf_url, exc)
+
+
 def mark_last_scraped(bq: bigquery.Client, mrf_url: str, scraped_at: str) -> None:
     """Update hospital_directory.last_scraped after successful charge load.
 
@@ -421,14 +455,33 @@ def process_blob(
     # recover the archive blob if needed.
     source_gcs_uri: str | None = None
 
-    # Extract NPI from MRF JSON root — the most reliable source.
-    # Fall back to the value the scraper stored in blob metadata (may be empty).
-    hospital_npi = _read_mrf_npi(blob) or meta.get("hospital_npi") or ""
+    # NPI resolution chain — fall through until one source yields a 10-digit
+    # NPI. In priority order: MRF JSON root (authoritative when present),
+    # source URL filename (where ~95% of real-world MRFs embed the NPI),
+    # then scraper-supplied blob metadata (least reliable; often empty for
+    # hospitals discovered via CMS PI list rather than NPPES).
+    #
+    # Strict mode (2026-05-04): if no source yields an NPI we mark the blob
+    # as 'failed' and abort, instead of writing un-joinable rows with empty
+    # NPI. ~60% of pre-fix hospital_charges rows had NULL NPI; that data was
+    # effectively unusable downstream — better to flag the blob for re-parse
+    # after a fix than to keep accumulating unqueryable charge rows.
+    hospital_npi = (
+        _read_mrf_npi(blob)
+        or extract_npi_from_url(mrf_url)
+        or meta.get("hospital_npi")
+        or ""
+    )
     if not hospital_npi:
         logger.warning(
-            "[%s] NPI not found in MRF root or blob metadata — charges will have blank NPI",
-            label,
+            "[%s] No NPI from JSON, URL, or metadata — marking failed (url=%s)",
+            label, mrf_url,
         )
+        update_archive_index_status(
+            bq, mrf_url, "failed",
+            error="no NPI resolvable from JSON root, URL, or scraper metadata",
+        )
+        return False
 
     staging_blob_name = f"{STAGING_PREFIX}{uuid.uuid4()}.ndjson"
     staging_uri = f"gs://{GCS_BUCKET}/{staging_blob_name}"
@@ -464,6 +517,7 @@ def process_blob(
             update_hospital_npi(bq, mrf_url, hospital_npi)
 
         update_archive_index_status(bq, mrf_url, "parsed")
+        update_archive_index_npi(bq, mrf_url, hospital_npi)
 
         # Delete raw MRF blob — prevents double-processing on next run.
         # The immutable archive bucket still has the file (Phase 4 dual-write).
