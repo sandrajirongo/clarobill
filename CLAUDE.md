@@ -371,6 +371,46 @@ cd apps/web && npm run build
 
 ---
 
+## RULE 16: COST DISCIPLINE — RESEARCH BEFORE PROPOSING
+
+**Every change that touches a billable surface MUST come with a verified cost breakdown sourced from current pricing pages, never from memory or estimation.**
+
+Billable surfaces include (non-exhaustive):
+- Cloud Storage (class changes, region/location moves, lifecycle rules, object rewrites)
+- Network egress (cross-region, cross-cloud, GCS↔BQ, GCS↔Compute)
+- Cloud Run / Cloud Functions / Cloud Build (compute-time, memory, ops)
+- BigQuery (slot-hours, on-demand bytes scanned, storage)
+- External APIs (Google Places, NPPES rate limits, Stripe, SendGrid, OpenAI/Anthropic)
+- Supabase (database storage, file storage, bandwidth)
+- Vercel (bandwidth, edge function invocations)
+
+### The non-negotiable workflow
+
+1. **WebSearch the current rate** for every line item involved. Pricing changes often (GCP changed multi-region→regional egress on Feb 1 2026; rates from training data are unreliable).
+2. **Cite the source URL** alongside each rate.
+3. **Get the exact quantity** before multiplying — query the actual size via BigQuery / `gcloud storage du` / equivalent. NEVER estimate object counts or GB.
+4. **Show the math line-by-line** in a markdown table with Rate / Quantity / Total columns.
+5. **Include best-case AND worst-case columns** when storage class, retrieval, or early-deletion fees might apply.
+6. **State assumptions explicitly** for any unknowns (e.g. "assumes all objects are Standard class — verifying with `gcloud storage objects describe`").
+7. **Compute payback period** for any one-time cost vs. recurring savings.
+
+### Why this rule exists
+
+On 2026-05-04, an off-the-cuff "~$2-5" estimate for a Coldline → Standard storage class change cost Sandra **$226** — a 50× underestimate. The actual costs that were missed:
+
+- Coldline retrieval fee on rewrite (~$0.02/GB × 2.5 TB = $50)
+- Coldline 90-day minimum-storage early-deletion fee on <90d objects (prorated, up to ~$175 for 2.5 TB)
+- Cross-region egress that became billable Feb 1 2026 ($0.02/GB)
+- Class A operations on the rewrite ($0.005 / 1000 ops)
+
+None of these were checked. None were communicated. The cost surprised Sandra after the fact.
+
+### Cost quotes that don't follow Rule 16 are bullshit by definition
+
+Phrases like "should be cheap", "minimal", "a few dollars", "rounding error" without the math are forbidden. Either show the table sourced from a current pricing page, or refuse to quote a number until you've done the research.
+
+---
+
 ## EMERGENCY PROCEDURES
 
 ### If the build is broken and you can't figure out why:
