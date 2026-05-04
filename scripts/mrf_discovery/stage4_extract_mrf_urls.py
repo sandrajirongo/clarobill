@@ -1,46 +1,50 @@
 """Stage 4 — Extract MRF download URLs from each hospital's website.
 
-Discovery's missing piece. Phase 3 found ~12,000 hospital homepage URLs but
-no stage existed to crawl those homepages and extract the actual price-
-transparency MRF download links. This stage fills that gap.
-
 For each hospital with `hospital_website` set on `mrf_discovery_checkpoint`
-but `validated_mrf_urls IS NULL`, this stage:
+but `validated_mrf_urls IS NULL`, this stage crawls the website using a
+generic depth-2 heuristic and extracts CMS-shaped MRF URLs.
 
-  1. Path-heuristic probe — try N common CMS-mandated paths (most hospitals
-     publish at predictable URLs like `/price-transparency`).
-  2. HTML link extraction — for any candidate page that returns 200, regex
-     out `<a href>` whose text/URL matches the CMS filename pattern
-     `\\d{9,10}_.+_standardcharges\\.(csv|json|xml)` or near-text keywords
-     ("standard charges", "machine readable file").
-  3. Table-of-Contents fan-out — hospital systems publish a single TOC JSON
-     listing every facility's MRF. If we find one, fetch + parse + emit one
-     URL per facility.
-  4. HEAD validation — every candidate URL is HEAD-checked. Only URLs with
-     200 OK + plausible Content-Type (csv/json/octet-stream/text) survive.
-  5. Persist — for surviving URLs:
+Pipeline per hospital:
+
+  1. Crawl homepage + every PATH_HEURISTICS path (one GET each).
+  2. From every fetched HTML page, follow up to MAX_FOLLOWUPS_PER_PAGE
+     anchor links whose text/href matches `_KEYWORD_RE`. Recursively up
+     to MAX_FOLLOW_DEPTH levels deep. Same-host only.
+  3. URL extraction on every HTML response (filename regex + anchor scan
+     for direct file links + TOC JSON expansion for system-wide indexes).
+  4. STRICT validation: a URL is a valid MRF candidate ONLY if its path
+     looks like an MRF file (CMS filename pattern OR real MRF extension)
+     AND the server returns a non-HTML Content-Type. HTML responses are
+     never classified as MRFs even if Content-Type is technically OK,
+     because they're landing pages by definition.
+  5. Persist:
        a. checkpoint.validated_mrf_urls = JSON array of URLs
-       b. checkpoint.mrf_discovery_method = "path_heuristic"|"html_link"|"toc_expansion"
+       b. checkpoint.mrf_discovery_method = "homepage" | "path_heuristic"
+          | "depth_follow" | "toc_expansion"
        c. checkpoint.mrf_validated_at + crawl_complete_at = NOW()
        d. MERGE into hospital_directory so the scraper picks them up
 
-Free, idempotent, ~15-25 min wall-clock at 60 concurrent workers for
-~12,000 hospitals × ~5 path probes each.
+2026-05-04 rewrite removed the previous `_SYSTEM_LISTING_PAGES` hardcoded
+dictionary (Sutter, Providence, Banner, MGB, Northwell). The depth-2
+generic follow does the same job universally — the homepage links to a
+landing page, the landing page links to the MRF files, depth-2 reaches
+both. Hardcoded entries don't scale and gave a false sense of coverage:
+the original Sutter entry produced 5 landing-page URLs that were all
+classified as "validated MRF URLs" because the validation gate was too
+permissive. Both gaps are closed in this rewrite.
+
+Concurrency control
+-------------------
+`MAX_WORKERS` (60) bounds total parallelism. Per-host concurrency is
+additionally capped at PER_HOST_MAX_CONCURRENT so 30+ Sutter hospitals
+sharing `sutterhealth.org` don't stampede a single origin.
 
 Resumability
 ------------
-Skips any hospital whose `validated_mrf_urls` is already populated. Re-runs
-are safe; existing matches are not re-crawled. Failures (no MRF found)
-populate `error_stage='stage4_no_mrf_found'` so a later --gap-fill run can
-retry with widened heuristics.
-
-Hit rate (industry expectation, refined post-run)
--------------------------------------------------
-Target: 70-80% of website-having hospitals resolve to a valid MRF URL.
-The remainder split into:
-  - non-compliant with CMS rule (5-10%, CMS publishes enforcement)
-  - portal/JS-walled (10-15%, requires headless-browser scrape later)
-  - non-standard URL pattern (5-10%, widen heuristics + manual curation)
+Skips any hospital whose `validated_mrf_urls` is already populated. To
+re-process the cohort affected by the pre-2026-05-04 bug, run with
+`--force-recrawl-broken` — that clears validated_mrf_urls for any row
+whose JSON array doesn't contain a CMS-pattern URL.
 """
 
 from __future__ import annotations
@@ -82,6 +86,20 @@ HEAD_TIMEOUT = 10
 GET_TIMEOUT = 20
 MAX_REDIRECTS = 3
 MAX_WORKERS = 60
+
+# Depth-2 generic follow: from any fetched HTML page we follow up to N
+# anchor links whose text/href matches `_KEYWORD_RE`. Bounds:
+MAX_FOLLOW_DEPTH = 2
+MAX_FOLLOWUPS_PER_PAGE = 5
+
+# Per-host concurrency cap. Two reasons:
+#   1. Hospital systems (Sutter ~30 facilities, HCA ~180, etc.) all live on
+#      the same domain. Without a cap, 60 workers can fan out to the same
+#      origin simultaneously and trigger rate-limiting / 429s.
+#   2. Some sites are slow under concurrent load — limiting per-host keeps
+#      individual response times sane and lets the global thread pool
+#      saturate other hospitals' domains.
+PER_HOST_MAX_CONCURRENT = 2
 
 # CMS-mandated and CMS-suggested price-transparency landing pages.
 # Updated 2026-04-30 after the first production run found 32% hit rate.
@@ -192,40 +210,38 @@ _TOC_FILENAME_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Curated listing pages for known multi-hospital systems. One successful
-# crawl of a system listing page = up to 50+ facility MRFs. Each entry maps
-# a domain (substring host match — `www.foo.com` and `mychart.foo.com`
-# both hit) to the absolute path of the system's listing page.
+# 2026-05-04: the previous `_SYSTEM_LISTING_PAGES` hardcoded dict has been
+# deleted. Hardcoding system→path mappings is brittle (paths break when
+# systems rebrand their pricing pages), incomplete (only 5 systems out of
+# the ~hundreds that exist), and it gives a false sense of coverage when
+# the heuristic crawler should be doing this generically anyway.
 #
-# Curation criteria — every entry must satisfy ALL three:
-#   1. Returns HTTP 200 to our scraper UA.
-#   2. The HTML contains ≥10 occurrences of "standardcharges" so the CMS
-#      filename regex actually extracts MRF URLs (not just nav text).
-#   3. The page links to ≥3 facility MRFs (single-facility entries get
-#      caught by the generic crawler; no need to curate them).
-#
-# 2026-04-30 round 2: of 16 originally-curated entries, 13 turned out to
-# return 404/403 or to be JS-rendered (verified empty `standardcharges`
-# count after fetch). Only 5 met the criteria. Pruned the rest — the
-# generic depth-1 keyword-follow strategy (homepage → "Billing" or
-# "Price Transparency" anchor → resolved page) handles the others.
-#
-# Re-verification pattern (run if a system stops working):
-#   curl -sL --max-time 15 -A "Mozilla/5.0..." \
-#     "https://www.<host><path>" | grep -c standardcharges
-_SYSTEM_LISTING_PAGES: dict[str, str] = {
-    # Verified 2026-04-30 — every entry returns 200 with ≥10 standardcharges hits.
-    "sutterhealth.org":          "/billing-insurance/costs-and-charges/cost-transparency",  # 54 hits
-    "providence.org":            "/billing-support/pricing-transparency",                    # 57 hits
-    "bannerhealth.com":          "/patients/billing/pricing-resources/hospital-price-transparency",  # 31 hits
-    "massgeneralbrigham.org":    "/en/patient-care/patient-visitor-information/billing/cms-required-hospital-charge-data",  # 28 hits
-    "northwell.edu":             "/billing-and-insurance/price-estimator-tools",             # 17 hits
-}
+# Replacement strategy: depth-2 generic follow.
+#   - Crawl the homepage + every PATH_HEURISTICS path.
+#   - From every fetched HTML page, follow up to MAX_FOLLOWUPS_PER_PAGE
+#     anchor links whose text/href matches `_KEYWORD_RE`. Track depth so
+#     a homepage → cost-transparency landing → MRF-files page chain works.
+#   - Tighten validation so HTML responses are NEVER classified as MRFs;
+#     the actual MRF files are extracted from those landing pages by
+#     `_extract_links_from_html` and HEAD-validated separately.
 
 
 # Acceptable Content-Type prefixes for HEAD validation — covers all the
 # common MRF formats (CSV, JSON, gzipped, XLSX, generic octet-stream that
 # many CDNs serve unhelpfully).
+#
+# 2026-05-04 INCIDENT FIX: text/html is NOT an acceptable MRF Content-Type.
+# The previous "we accept and let parser decide" comment was the root cause
+# of the Sutter Stage 4 miss: 5 landing pages with text/html responses passed
+# validation as "MRF URLs" and got MERGEd into hospital_directory.mrf_url, so
+# every Sutter hospital's mrf_url pointed at a billing-info marketing page
+# instead of the real /files/Project/SutterHealth/.../standardcharges.csv
+# files. By the time the parser saw them they were already terminal.
+#
+# An MRF URL is a FILE. Anything served as text/html is by definition not
+# the file we're looking for — even if the page happens to contain links to
+# the actual files (those are extracted by _extract_links_from_html and
+# validated separately). The landing page itself is never the MRF.
 _OK_CONTENT_TYPES = (
     "text/csv",
     "text/plain",
@@ -234,8 +250,9 @@ _OK_CONTENT_TYPES = (
     "application/gzip",
     "application/x-gzip",
     "application/zip",
-    "text/csv;",
-    "text/html",  # some servers mislabel; we accept and let parser decide
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/xml",
+    "text/xml",
 )
 
 
@@ -265,43 +282,87 @@ def _http_session() -> requests.Session:
     return s
 
 
+# Process-wide per-host semaphores. Lazy-created on first hit per host so we
+# don't enumerate every possible host upfront. Threadsafe via threading.Lock.
+import threading as _threading
+_PER_HOST_SEMAPHORES: dict[str, _threading.Semaphore] = {}
+_PER_HOST_LOCK = _threading.Lock()
+
+
+def _per_host_semaphore(host: str) -> _threading.Semaphore:
+    """Return the shared concurrency-cap semaphore for `host`.
+
+    Creates one Semaphore(PER_HOST_MAX_CONCURRENT) per unique host. All
+    workers across the thread pool share the same semaphore for a given
+    host so hospital-system fan-outs (Sutter, HCA) can't stampede a single
+    origin.
+    """
+    h = host.lower()
+    sem = _PER_HOST_SEMAPHORES.get(h)
+    if sem is not None:
+        return sem
+    with _PER_HOST_LOCK:
+        sem = _PER_HOST_SEMAPHORES.get(h)
+        if sem is None:
+            sem = _threading.Semaphore(PER_HOST_MAX_CONCURRENT)
+            _PER_HOST_SEMAPHORES[h] = sem
+        return sem
+
+
+def _host_of(url: str) -> str:
+    """Lowercase host portion of a URL, for per-host rate-limiting bucket key."""
+    try:
+        return urllib.parse.urlparse(url).netloc.lower()
+    except (ValueError, TypeError):
+        return ""
+
+
 def _get_with_ua_fallback(
     session: requests.Session, url: str, timeout: int
 ) -> requests.Response | None:
     """GET with descriptive UA; on 403/406/429 retry with a browser UA.
 
-    Returns None on any persistent failure. Same pattern as Stage 3 Tier 1.
+    Wraps every network call in a per-host semaphore (PER_HOST_MAX_CONCURRENT)
+    so that hospital-system fan-outs (Sutter, HCA, Providence) don't stampede
+    a single origin. Returns None on persistent failure.
     """
-    try:
-        resp = session.get(url, timeout=timeout, allow_redirects=True)
-        if resp.status_code in (403, 406, 429):
-            resp.close()
-            resp = session.get(
-                url, timeout=timeout, allow_redirects=True,
-                headers={"User-Agent": BROWSER_UA},
-            )
-        return resp
-    except requests.RequestException:
-        return None
+    sem = _per_host_semaphore(_host_of(url))
+    with sem:
+        try:
+            resp = session.get(url, timeout=timeout, allow_redirects=True)
+            if resp.status_code in (403, 406, 429):
+                resp.close()
+                resp = session.get(
+                    url, timeout=timeout, allow_redirects=True,
+                    headers={"User-Agent": BROWSER_UA},
+                )
+            return resp
+        except requests.RequestException:
+            return None
 
 
 def _head_with_ua_fallback(
     session: requests.Session, url: str
 ) -> tuple[int | None, str | None, int | None]:
-    """HEAD probe with UA fallback. Returns (status, content_type, content_length)."""
-    try:
-        resp = session.head(url, timeout=HEAD_TIMEOUT, allow_redirects=True)
-        if resp.status_code in (403, 406, 429):
-            resp = session.head(
-                url, timeout=HEAD_TIMEOUT, allow_redirects=True,
-                headers={"User-Agent": BROWSER_UA},
-            )
-        ct = resp.headers.get("Content-Type")
-        cl = resp.headers.get("Content-Length")
-        size = int(cl) if cl and cl.isdigit() else None
-        return resp.status_code, ct, size
-    except requests.RequestException:
-        return None, None, None
+    """HEAD probe with UA fallback. Returns (status, content_type, content_length).
+
+    Per-host concurrency capped via _per_host_semaphore.
+    """
+    sem = _per_host_semaphore(_host_of(url))
+    with sem:
+        try:
+            resp = session.head(url, timeout=HEAD_TIMEOUT, allow_redirects=True)
+            if resp.status_code in (403, 406, 429):
+                resp = session.head(
+                    url, timeout=HEAD_TIMEOUT, allow_redirects=True,
+                    headers={"User-Agent": BROWSER_UA},
+                )
+            ct = resp.headers.get("Content-Type")
+            cl = resp.headers.get("Content-Length")
+            size = int(cl) if cl and cl.isdigit() else None
+            return resp.status_code, ct, size
+        except requests.RequestException:
+            return None, None, None
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +418,15 @@ def _extract_links_from_html(html: str, base_url: str) -> set[str]:
             if absolute:
                 found.add(absolute)
 
-    # Pass 2: anchor tags with keyword text.
+    # Pass 2: anchor tags whose target IS a real MRF file.
+    # 2026-05-04 incident fix: previously this pass also accepted anchors
+    # whose URL merely had _KEYWORD_RE keyword text (e.g. "/cost-transparency"
+    # in the path). That caused Sutter's 5 landing-page URLs — which look
+    # nothing like MRF files — to be classified as "validated MRF URLs".
+    # The new rule: anchor-keyword pass emits ONLY URLs that look like real
+    # MRF files (extension match OR CMS filename pattern). Landing pages
+    # whose path matches keywords are NOT MRF candidates themselves; they
+    # are crawl candidates handled by `_follow_keyword_anchors` separately.
     for anchor_match in re.finditer(
         r'<a\s+[^>]*?href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
         html, re.IGNORECASE | re.DOTALL,
@@ -367,16 +436,17 @@ def _extract_links_from_html(html: str, base_url: str) -> set[str]:
         clean_text = re.sub(r"<[^>]+>", "", anchor_text)
         if not _KEYWORD_RE.search(clean_text) and not _KEYWORD_RE.search(href):
             continue
-        # Only follow if it actually looks like a file or another HTML page
-        # (skip mailto: tel: javascript: etc. — _resolve_url filters those).
         absolute = _resolve_url(base_url, href)
         if not absolute:
             continue
-        # Filter: must look like a file or another HTML link likely to host one.
+        # STRICT: anchor-keyword candidates only count if the URL itself
+        # looks like an MRF file. URLs like `/billing/cost-transparency`
+        # don't qualify even if the anchor text says "Cost Transparency".
         if (_CMS_FILENAME_RE.search(absolute)
-                or absolute.lower().endswith((".csv", ".json", ".xml", ".xlsx",
-                                              ".csv.gz", ".json.gz", ".zip"))
-                or _KEYWORD_RE.search(absolute)):
+                or absolute.lower().split("?", 1)[0].endswith((
+                    ".csv", ".json", ".xml", ".xlsx",
+                    ".csv.gz", ".json.gz", ".zip", ".xml.gz", ".gzip",
+                ))):
             found.add(absolute)
 
     return found
@@ -467,35 +537,56 @@ def _file_format_from_url(url: str) -> str:
 def _validate_mrf_url(
     session: requests.Session, url: str
 ) -> tuple[bool, str | None, int | None]:
-    """HEAD-check a candidate MRF URL. Returns (ok, content_type, size_bytes)."""
+    """HEAD-check a candidate MRF URL.
+
+    A URL is a valid MRF candidate ONLY if BOTH:
+      1. URL shape says it's an MRF file (CMS filename pattern OR a real
+         MRF extension on the path component).
+      2. Server returns 200 + a non-HTML Content-Type (or no Content-Type
+         at all — some CDNs omit it; we trust the URL shape in that case).
+
+    The HTML rejection is the 2026-05-04 incident fix: previously HTML
+    responses were accepted "and let the parser decide", which let 5
+    Sutter landing pages get classified as MRF URLs and MERGEd into
+    hospital_directory.
+
+    Returns (ok, content_type, size_bytes).
+    """
+    # Gate 1: URL must look like an MRF file. This filters out landing pages
+    # before we even make a network call.
+    url_path_lower = url.lower().split("?", 1)[0]
+    looks_like_file = (
+        _CMS_FILENAME_RE.search(url_path_lower) is not None
+        or url_path_lower.endswith((
+            ".csv", ".json", ".xml", ".xlsx",
+            ".csv.gz", ".json.gz", ".zip", ".xml.gz", ".gzip",
+        ))
+    )
+    if not looks_like_file:
+        return False, None, None
+
+    # Gate 2: HEAD probe — 200 + non-HTML Content-Type.
     status, ct, size = _head_with_ua_fallback(session, url)
     if status is None or status >= 400:
         return False, ct, size
+
+    # Reject HTML responses outright. If a server insists on serving an MRF
+    # file as text/html (we've seen it on a few CDNs that auto-detect by
+    # extension only) we'd rather miss it than admit landing pages.
+    if ct and ct.lower().startswith(("text/html", "application/xhtml")):
+        return False, ct, size
+
     if ct is None:
-        # Some servers return 200 with no Content-Type. Accept on the URL
-        # extension alone — the scraper will reject if the bytes are wrong.
+        # No Content-Type — trust the URL extension.
         return True, ct, size
+
     ct_lower = ct.lower()
     for ok_ct in _OK_CONTENT_TYPES:
         if ct_lower.startswith(ok_ct):
             return True, ct, size
-    # Unknown CT — only accept if the URL extension says it's a real MRF.
-    if _file_format_from_url(url) != "unknown":
-        return True, ct, size
-    return False, ct, size
-
-
-def _system_listing_path(host: str) -> str | None:
-    """Return the curated listing-page path for a known hospital system, or None.
-
-    Domain match is a substring check so subdomains and `www.` variants both
-    resolve. Iteration order is the dict insertion order — first hit wins.
-    """
-    host_lower = host.lower()
-    for system_domain, path in _SYSTEM_LISTING_PAGES.items():
-        if system_domain in host_lower:
-            return path
-    return None
+    # Unknown CT — accept only because Gate 1 already verified the URL
+    # extension. The scraper's content-sniff guard provides a final check.
+    return True, ct, size
 
 
 def _scan_page_for_urls(
@@ -572,22 +663,19 @@ def _follow_keyword_anchors(
 def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
     """Discover MRF URLs for one hospital. Returns 0-or-more DiscoveredMrf rows.
 
-    2026-04-30 rewrite: aggregates across every strategy instead of stopping
-    on first match. Order of attempts:
+    2026-05-04 rewrite: removed all hardcoded system→path mappings. Pure
+    heuristic discovery, depth-2 generic follow:
 
-      (1) System-listing page (if homepage host matches a curated entry in
-          _SYSTEM_LISTING_PAGES — Sutter, HCA, Ascension, etc.). One URL,
-          highest-leverage probe.
-      (2) Path heuristics (every entry, no early-stop). Each 200 OK page is
-          scanned for filename-shaped URLs, keyword anchors, and TOC JSONs.
-      (3) Homepage. Always crawled, even if (1) or (2) found URLs — picks
-          up MRF links advertised in the main nav that aren't on a
-          dedicated /price-transparency path.
-      (4) Depth-1 follow-link from the homepage: any anchor whose text/href
-          matches _KEYWORD_RE is fetched and re-scanned. This is what
-          generically catches Sutter-style sites: homepage → "Cost
-          Transparency" anchor → that page's embedded MRF URL list.
-      (5) HEAD-validate every candidate URL. Survivors become DiscoveredMrf.
+      (1) Homepage + every PATH_HEURISTICS path (one GET each, scan HTML).
+      (2) From every fetched HTML page, follow up to MAX_FOLLOWUPS_PER_PAGE
+          anchors whose text/href matches _KEYWORD_RE. Recursively up to
+          MAX_FOLLOW_DEPTH levels deep. Same-host only.
+      (3) HEAD-validate every candidate URL. Validation is strict — URL
+          must look like an MRF file AND server must return non-HTML.
+
+    The depth-2 follow is what unblocks Sutter-style sites: the homepage
+    links to a "Cost Transparency" landing page (depth 1) which links to
+    the actual /-/media/Project/.../standardcharges.csv files (depth 2).
     """
     website = (hospital.get("hospital_website") or "").strip()
     label = hospital.get("hospital_name") or hospital.get("ccn") or "?"
@@ -598,14 +686,25 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
     parsed = urllib.parse.urlparse(website)
     if parsed.scheme not in ("http", "https"):
         return []
+    base_host = parsed.netloc.lower()
 
     found_urls: dict[str, str] = {}  # url -> discovery_method
     toc_seen: set[str] = set()
     visited_pages: set[str] = set()
 
-    def _scan(probe_url: str, method: str) -> None:
-        """Fetch `probe_url`, run all extractors, record matches. Idempotent."""
+    def _scan(probe_url: str, method: str, depth: int) -> None:
+        """Fetch `probe_url`, run extractors, recurse depth-N follow.
+
+        Same-host only — never follows cross-domain links. Bounded by
+        `visited_pages` (no loops) and `MAX_FOLLOW_DEPTH`.
+        """
         if probe_url in visited_pages:
+            return
+        if _host_of(probe_url) != base_host:
+            # Stay on the hospital's own domain. CDN links that resolve
+            # off-host (e.g. `cdn.somecdn.com/.../charges.csv`) are still
+            # valid MRF candidates and are picked up by the URL extractor;
+            # what we don't want is to crawl off-host LANDING pages.
             return
         visited_pages.add(probe_url)
         resp = _get_with_ua_fallback(session, probe_url, GET_TIMEOUT)
@@ -616,48 +715,25 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
         html = resp.text or ""
         resp.close()
         _scan_page_for_urls(session, probe_url, html, found_urls, toc_seen, method)
-        return
+
+        if depth < MAX_FOLLOW_DEPTH:
+            for follow_url, _anchor_text in _follow_keyword_anchors(
+                session, html, probe_url, max_followups=MAX_FOLLOWUPS_PER_PAGE,
+            ):
+                _scan(follow_url, "depth_follow", depth + 1)
 
     with _http_session() as session:
-        # ---- (1) System-aware curated listing page ----
-        # If this hospital belongs to one of the big systems we've curated,
-        # hit the system's known cost-transparency page first. One curated
-        # entry per system can match 5-50 hospitals.
-        listing_path = _system_listing_path(parsed.netloc)
-        if listing_path:
-            listing_url = f"{parsed.scheme}://{parsed.netloc}{listing_path}"
-            _scan(listing_url, "system_listing")
+        # ---- (1) Homepage ----
+        _scan(website, "homepage", depth=0)
 
-        # ---- (2) Every path heuristic ----
-        # Aggregating, not first-match-wins. A hospital might 200 on
-        # /charges (generic page, no MRF) AND on /standard-charges (the
-        # real cost page) — we want both scanned.
+        # ---- (2) Path heuristics (every entry, aggregating) ----
+        # A hospital might 200 on /charges (generic page, no MRF) AND on
+        # /standard-charges (the real cost page) — scan both.
         for path in PATH_HEURISTICS:
             probe = f"{parsed.scheme}://{parsed.netloc}{path}"
-            _scan(probe, "path_heuristic")
+            _scan(probe, "path_heuristic", depth=0)
 
-        # ---- (3) Homepage ----
-        # Always crawl, regardless of what (1)/(2) found. Catches MRF links
-        # advertised directly in the homepage nav.
-        if website not in visited_pages:
-            resp = _get_with_ua_fallback(session, website, GET_TIMEOUT)
-            if resp is not None and resp.status_code == 200:
-                html = resp.text or ""
-                resp.close()
-                visited_pages.add(website)
-                _scan_page_for_urls(session, website, html, found_urls, toc_seen, "html_link")
-
-                # ---- (4) Depth-1 follow from the homepage ----
-                # If the homepage has a "Cost Transparency" / "Standard
-                # Charges" / "Pricing" anchor, follow it one level deep.
-                # This is the universal Sutter solution: many hospitals'
-                # MRF link is one nav-click away from home.
-                for follow_url, _anchor_text in _follow_keyword_anchors(
-                    session, html, website, max_followups=5,
-                ):
-                    _scan(follow_url, "homepage_keyword_follow")
-
-        # ---- (5) HEAD-validate every candidate ----
+        # ---- (3) HEAD-validate every candidate ----
         validated: list[DiscoveredMrf] = []
         for url, method in found_urls.items():
             ok, ct, size = _validate_mrf_url(session, url)
@@ -913,6 +989,49 @@ def _query_pending(
     ]
 
 
+def reset_broken_validated_urls(
+    bq: bigquery.Client, project: str, dataset: str, run_id: str,
+) -> int:
+    """Clear validated_mrf_urls for rows whose URLs don't look like real MRFs.
+
+    Targets the cohort caused by the pre-2026-05-04 Stage 4 bug where
+    landing pages (Sutter Health is the canonical example: 5 sub-pages of
+    `/billing-insurance/costs-and-charges/` got recorded as "validated MRF
+    URLs"). The fix: any checkpoint row whose validated_mrf_urls JSON
+    array contains ZERO entries matching the CMS filename pattern
+    `\\d{6,12}_..._standardcharges.{csv,json,xml}` is reset to pending so
+    the rewritten Stage 4 (depth-2 generic follow + strict validation) can
+    re-discover the real URLs.
+
+    Returns the number of rows reset.
+    """
+    sql = f"""
+        UPDATE `{project}.{dataset}.mrf_discovery_checkpoint`
+        SET validated_mrf_urls = NULL,
+            mrf_discovery_method = NULL,
+            mrf_file_format = NULL,
+            mrf_validated_at = NULL,
+            crawl_complete_at = NULL,
+            error_stage = NULL
+        WHERE run_id = @run_id
+          AND validated_mrf_urls IS NOT NULL
+          AND NOT REGEXP_CONTAINS(
+            validated_mrf_urls,
+            r'\\d{{6,12}}[_\\-].+?[_\\-]?standard[_\\- ]?charges'
+          )
+    """
+    job = bq.query(
+        sql,
+        job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
+        ]),
+    )
+    job.result()
+    n = int(job.num_dml_affected_rows or 0)
+    logger.info("reset_broken_validated_urls: cleared %d checkpoint rows for re-crawl", n)
+    return n
+
+
 def run(
     bq: bigquery.Client,
     project: str,
@@ -1041,9 +1160,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-hospitals", type=int, default=None,
                         help="Process only first N hospitals (testing)")
     parser.add_argument("--workers", type=int, default=MAX_WORKERS)
+    parser.add_argument(
+        "--force-recrawl-broken",
+        action="store_true",
+        help=(
+            "Before crawling, clear validated_mrf_urls for any checkpoint "
+            "row whose URLs don't match the CMS filename pattern "
+            "(\\d{6,12}_..._standardcharges...). Used to recover from the "
+            "pre-2026-05-04 Stage 4 bug that classified landing pages as "
+            "MRF URLs (Sutter, Providence, Banner, etc.). Idempotent."
+        ),
+    )
     args = parser.parse_args(argv)
 
     bq = bigquery.Client(project=args.project)
+
+    if args.force_recrawl_broken:
+        n = reset_broken_validated_urls(bq, args.project, args.dataset, args.run_id)
+        logger.info("Pre-run reset: %d rows flipped back to pending", n)
+
     stats = run(
         bq, args.project, args.run_id,
         dataset=args.dataset,

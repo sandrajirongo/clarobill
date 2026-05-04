@@ -134,31 +134,107 @@ def test_find_toc_url_returns_none_when_missing() -> None:
 # --- TOC walker (no network) ----------------------------------------------
 
 
-class TestSystemListingPages:
-    """The 2026-04-30 widening added a curated dict of hospital-system
-    listing pages so we hit Sutter / HCA / Ascension etc. directly. These
-    tests guard the lookup contract — substring host match, first-hit-wins.
+class TestSutterIncidentRegression:
+    """Regression guards for the 2026-05-04 Sutter Stage 4 incident.
+
+    The pre-2026-05-04 code had three bugs that conspired to classify
+    Sutter's 5 landing-page URLs as "validated MRF URLs":
+      1. _extract_links_from_html Pass 2 accepted URLs whose path contained
+         keyword text (e.g. `/cost-transparency`) even when the URL had no
+         MRF extension.
+      2. _validate_mrf_url accepted text/html as a valid Content-Type.
+      3. _SYSTEM_LISTING_PAGES hardcoded `sutterhealth.org` →
+         `/billing-insurance/costs-and-charges/cost-transparency`, which
+         was a landing page, not an MRF.
+
+    All three are removed. These tests pin the new strict behaviour.
     """
 
-    def test_sutter_homepage_resolves_to_listing(self) -> None:
-        path = s4._system_listing_path("www.sutterhealth.org")
-        assert path == "/billing-insurance/costs-and-charges/cost-transparency"
+    SUTTER_BAD_URLS = [
+        "https://www.sutterhealth.org/billing-insurance/costs-and-charges/billing-hospital-anesthesia",
+        "https://www.sutterhealth.org/billing-insurance/costs-and-charges/non-contracted-provider-payment-appeal-process",
+        "https://www.sutterhealth.org/billing-insurance/costs-and-charges/cost-transparency",
+        "https://www.sutterhealth.org/billing-insurance/costs-and-charges/no-surprises-act",
+        "https://www.sutterhealth.org/billing-insurance/costs-and-charges",
+    ]
 
-    def test_unknown_system_returns_none(self) -> None:
-        path = s4._system_listing_path("www.tinyruralhospital.com")
-        assert path is None
+    def test_link_extraction_rejects_landing_pages_with_keyword_text(self) -> None:
+        # Each of these 5 anchors has keyword text ("Cost Transparency" etc.)
+        # but the URL itself is a landing page. The old Pass 2 accepted them;
+        # the new Pass 2 must reject them.
+        html = (
+            '<a href="/billing-insurance/costs-and-charges/billing-hospital-anesthesia">Billing</a>'
+            '<a href="/billing-insurance/costs-and-charges/non-contracted-provider-payment-appeal-process">Provider Payment</a>'
+            '<a href="/billing-insurance/costs-and-charges/cost-transparency">Cost Transparency</a>'
+            '<a href="/billing-insurance/costs-and-charges/no-surprises-act">No Surprises Act</a>'
+            '<a href="/billing-insurance/costs-and-charges">Costs and Charges</a>'
+        )
+        links = s4._extract_links_from_html(html, "https://www.sutterhealth.org/")
+        assert links == set(), (
+            f"Sutter landing-page URLs must NOT be classified as MRFs; got {links}"
+        )
 
-    def test_subdomain_match(self) -> None:
-        # `mychart.sutterhealth.org` is still a Sutter property.
-        path = s4._system_listing_path("mychart.sutterhealth.org")
-        assert path is not None
-        assert "cost-transparency" in path
+    def test_link_extraction_keeps_real_mrf_urls(self) -> None:
+        # The actual Sutter MRF URL pattern contains a CMS-shaped filename.
+        # That MUST still be extracted.
+        html = (
+            '<a href="/-/media/Project/SutterHealth/SutterHealth/files/'
+            'billing-insurance/costs-and-charges/'
+            '1295181477_alta-bates-summit-medical-center_standardcharges.csv">Download</a>'
+        )
+        links = s4._extract_links_from_html(html, "https://www.sutterhealth.org/")
+        assert any("1295181477_alta-bates-summit" in u for u in links)
 
-    def test_curated_list_has_verified_entries(self) -> None:
-        # Round-2 trimmed the list from 16 unverified to 5 verified entries.
-        # Guard floor at 4 so we notice if more entries get pruned without
-        # replacement; raise this when new systems are verified + added.
-        assert len(s4._SYSTEM_LISTING_PAGES) >= 4
+    def test_validate_rejects_url_without_mrf_shape(self) -> None:
+        # Gate 1 of _validate_mrf_url filters out landing-page-shaped URLs
+        # before any HEAD probe — saves a network call AND prevents
+        # accidentally classifying them as MRFs.
+        for url in self.SUTTER_BAD_URLS:
+            ok, _ct, _size = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+            assert ok is False, f"Landing-page URL must be rejected pre-flight: {url}"
+
+    def test_validate_accepts_url_with_real_mrf_shape(self, monkeypatch) -> None:
+        # The real Sutter MRF URL passes Gate 1; we mock Gate 2 (HEAD) to
+        # simulate a clean text/csv response so the test doesn't need network.
+        url = (
+            "https://www.sutterhealth.org/-/media/Project/SutterHealth/SutterHealth/files/"
+            "billing-insurance/costs-and-charges/"
+            "1295181477_alta-bates-summit-medical-center_standardcharges.csv"
+        )
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *_a, **_kw: (200, "text/csv", 50_000_000))
+        ok, ct, size = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is True
+        assert ct == "text/csv"
+        assert size == 50_000_000
+
+    def test_validate_rejects_html_response_even_for_csv_url(self, monkeypatch) -> None:
+        # Defence-in-depth: even if Gate 1 passes (URL ends in .csv) the HEAD
+        # probe rejecting text/html stops a misconfigured server from leaking
+        # a landing page in.
+        url = "https://example.org/files/123456789_test_standardcharges.csv"
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *_a, **_kw: (200, "text/html; charset=utf-8", None))
+        ok, ct, _size = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is False
+        assert "text/html" in ct.lower()
+
+    def test_ok_content_types_no_longer_includes_html(self) -> None:
+        # The doomed line was `"text/html",  # some servers mislabel; we accept`.
+        # Pin its removal so it can't accidentally come back in.
+        assert not any(ct.startswith("text/html") for ct in s4._OK_CONTENT_TYPES)
+        assert not any(ct.startswith("application/xhtml") for ct in s4._OK_CONTENT_TYPES)
+
+
+class TestNoSystemListingDict:
+    """The hardcoded _SYSTEM_LISTING_PAGES dict is removed. Pin its absence."""
+
+    def test_no_system_listing_pages_attr(self) -> None:
+        assert not hasattr(s4, "_SYSTEM_LISTING_PAGES"), (
+            "Hardcoded system-listing dict must stay deleted; the depth-2 "
+            "generic follow does the same job universally without curation."
+        )
+
+    def test_no_system_listing_path_function(self) -> None:
+        assert not hasattr(s4, "_system_listing_path")
 
 
 class TestKeywordAnchorFollow:
