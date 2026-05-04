@@ -71,7 +71,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["POST", "GET"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-PostHog-Distinct-Id", "X-PostHog-Session-Id"],
 )
 
 app.include_router(

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
 
     sentry_dsn: str = ""  # Optional — errors silently dropped if not set
 
+    posthog_api_key: str = ""  # Optional — analytics silently skipped if not set
+    posthog_host: str = "https://us.i.posthog.com"
+
     environment: str = "development"
     log_level: str = "INFO"
     allowed_origins: str = "http://localhost:3000"

@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict
 from vertexai.generative_models import GenerativeModel, Part
 
 from app.core.config import settings
+from app.core.posthog_client import posthog_client
 
 router = APIRouter(prefix="/insurance-card", tags=["insurance-card"])
 logger = logging.getLogger(__name__)
@@ -116,6 +117,7 @@ async def extract_insurance_card(
 
     # Primary: Gemini vision
     raw_text: str | None = None
+    provider: str = "gemini"
     try:
         raw_text = await _extract_via_gemini(image_bytes, content_type)
         logger.info("Card extracted via Gemini")
@@ -127,11 +129,17 @@ async def extract_insurance_card(
 
     # Fallback: Claude vision
     if raw_text is None:
+        provider = "claude"
         try:
             raw_text = await asyncio.to_thread(_extract_via_claude_sync, image_bytes, content_type)
             logger.info("Card extracted via Claude fallback")
         except Exception as exc:
             logger.error("Both vision providers failed for card extraction: %s", exc)
+            posthog_client.capture(
+                distinct_id="anonymous",
+                event="insurance card extraction failed",
+                properties={"$process_person_profile": False},
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Could not read the card. Ensure it is well-lit and try again.",
@@ -150,7 +158,7 @@ async def extract_insurance_card(
         val = data.get(key)
         return str(val) if val else None
 
-    return InsuranceCardExtraction(
+    result = InsuranceCardExtraction(
         payer_name=_str("payer_name"),
         plan_name=_str("plan_name"),
         member_id=_str("member_id"),
@@ -162,6 +170,17 @@ async def extract_insurance_card(
         confident=bool(data.get("confident", False)),
         note=_str("note"),
     )
+    posthog_client.capture(
+        distinct_id="anonymous",
+        event="insurance card extracted",
+        properties={
+            "$process_person_profile": False,
+            "provider": provider,
+            "confident": result.confident,
+            "plan_type": result.plan_type,
+        },
+    )
+    return result
 
 
 def _extract_via_claude_sync(image_bytes: bytes, mime_type: str) -> str:

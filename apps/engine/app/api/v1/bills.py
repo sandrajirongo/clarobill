@@ -16,6 +16,7 @@ from supabase import Client
 
 from app.core.config import settings
 from app.core.dependencies import get_ai_analysis_service, get_email_service, get_supabase_client
+from app.core.posthog_client import posthog_client
 from app.models.bill import (
     AnalyzeAccepted,
     AnalyzeRequest,
@@ -56,6 +57,16 @@ async def analyze_bill(
 
     # Mark the bill as in OCR processing so the frontend shows progress
     supabase.table("bills").update({"status": BillStatus.OCR_PROCESSING}).eq("id", bill_id).execute()
+
+    posthog_client.capture(
+        distinct_id=body.user_id,
+        event="bill analysis started",
+        properties={
+            "bill_id": bill_id,
+            "has_payer_info": bool(body.payer_name),
+            "plan_type": body.plan_type,
+        },
+    )
 
     background_tasks.add_task(
         _run_analysis_pipeline,
@@ -332,13 +343,34 @@ async def _run_analysis_pipeline(
 
         supabase.table("bills").update({"status": BillStatus.COMPLETE}).eq("id", bill_id).execute()
         logger.info("Analysis complete for bill %s — %d errors found", bill_id, len(billing_errors))
+        posthog_client.capture(
+            distinct_id=user_id,
+            event="bill analysis completed",
+            properties={
+                "bill_id": bill_id,
+                "errors_found": len(billing_errors),
+                "has_savings": float(total_savings) > 0,
+                "line_item_count": len(parsed_items),
+                "has_payer_info": bool(payer_name),
+            },
+        )
 
     except OcrExtractionError as exc:
         logger.error("OCR failed for bill %s: %s", bill_id, exc)
         supabase.table("bills").update({"status": BillStatus.FAILED}).eq("id", bill_id).execute()
+        posthog_client.capture(
+            distinct_id=user_id,
+            event="bill analysis failed",
+            properties={"bill_id": bill_id, "failure_reason": "ocr_failed"},
+        )
     except Exception as exc:
         logger.exception("Unexpected error in analysis pipeline for bill %s: %s", bill_id, exc)
         supabase.table("bills").update({"status": BillStatus.FAILED}).eq("id", bill_id).execute()
+        posthog_client.capture(
+            distinct_id=user_id,
+            event="bill analysis failed",
+            properties={"bill_id": bill_id, "failure_reason": "pipeline_error"},
+        )
 
 
 def _mime_type_from_path(file_path: str) -> str:
@@ -1629,6 +1661,11 @@ async def generate_report(
         email_service=email_service,
     )
     logger.info("Report generation queued for bill %s", bill_id)
+    posthog_client.capture(
+        distinct_id=user_id,
+        event="report generation requested",
+        properties={"bill_id": bill_id},
+    )
     return {"status": "processing"}
 
 
@@ -1642,9 +1679,9 @@ async def _do_generate_report(
     email_service: EmailService,
 ) -> None:
     """Background task: generate PDF + DOCX, upload to storage, email the patient."""
+    user_id: str = bill_data["user_id"]
     try:
         file_name: str = bill_data["file_name"]
-        user_id: str = bill_data["user_id"]
         hospital_name: str | None = bill_data.get("hospital_name")
         hospital_city: str | None = bill_data.get("hospital_city")
         hospital_state: str | None = bill_data.get("hospital_state")
@@ -1777,6 +1814,16 @@ async def _do_generate_report(
             dispute_letter_docx=dispute_docx,
         )
         logger.info("Report generated and emailed for bill %s", bill_id)
+        posthog_client.capture(
+            distinct_id=user_id,
+            event="report generated",
+            properties={"bill_id": bill_id},
+        )
 
     except Exception:
         logger.exception("Report generation background task failed for bill %s", bill_id)
+        posthog_client.capture(
+            distinct_id=user_id,
+            event="report generation failed",
+            properties={"bill_id": bill_id},
+        )
