@@ -1,6 +1,18 @@
 # CSV-format MRF parser
 
-**Status:** Deferred (Phase 4d).
+**Status:** SUPERSEDED 2026-05-04 — see
+[`docs/decisions/2026-05-04-mrf-coverage-plan.md`](../decisions/2026-05-04-mrf-coverage-plan.md)
+Part 2 for the current design and Part 3 for the phased rollout (4a-4d).
+
+The doc below is the original deferred sketch from 2026-04-29 and is kept
+for historical context. The actual scope was re-measured on 2026-05-04 and
+is roughly 100× the original estimate (~1.97 TB across 13,206 blobs vs
+~16 GB / ~11K blobs). The new design doc supersedes the build sketch in
+this file.
+
+---
+
+**Original status (2026-04-29):** Deferred (Phase 4d).
 **Triggers re-opening:** measurable share of `mrf_archive_index.parse_status='skipped'`
 rows whose `gcs_uri` ends in `.csv` or `.csv.gz`.
 

@@ -123,9 +123,27 @@ Six stages, executed in sequence by a top-level orchestrator. Each stage is resu
 
 ---
 
-## Phase 4 — Effective-dated archiver (rewrite weekly scraper, not yet started)
+## Phase 4 — Effective-dated archiver (DONE 2026-04-29, hardened 2026-05-04)
 
-`pipeline/scrape_hospital_mrfs.py` is rewritten to compute `pricing_effective_year`, stream-download to `gs://mrf-archive-clarobill-prd/pricing-year={year}/...`, and insert into `mrf_archive_index`. `pipeline/parse_hospital_mrfs.py` is rewritten to read pending rows from `mrf_archive_index` and write to the new `hospital_charges`.
+`pipeline/scrape_hospital_mrfs.py` and `pipeline/parse_hospital_mrfs.py`
+were rewritten in commit `8e4a796` to compute `pricing_effective_year`,
+stream-download to `gs://mrf-archive-clarobill-prd/pricing-year={year}/...`,
+and use `mrf_archive_index` for parse-state tracking.
+
+**5/3 postmortem follow-ups shipped 2026-05-04:**
+
+| # | Item | Commit |
+|---|---|---|
+| 1 | URL-NPI fallback + strict mode | `cb9b420` |
+| 2 | Scrape-time content validation (HTML/PDF reject, format sniff) | `e2745d4` |
+| 3 | Parser-from-`mrf_archive_index` driver (`PARSER_DRIVER=archive_index`) | `5a1de5d` |
+| 4 | NPPES-based EIN/slug → NPI resolver | `750f83b` |
+| 5 | Driver dedupe (`GROUP BY gcs_uri`) — runaway-loop fix | `3684894` |
+| 6 | Driver task sharding (`--tasks 6 --parallelism 6`) | `6bc53c5` |
+
+**4a-4d (CSV-format support):** see
+[`docs/decisions/2026-05-04-mrf-coverage-plan.md`](../decisions/2026-05-04-mrf-coverage-plan.md)
+for the full design and phased rollout.
 
 ---
 
@@ -158,6 +176,7 @@ Switch rules engine to read new `hospital_charges`. Retain `hospital_charges_leg
 | 3f. Stage 5 (MRF validator + TOC expansion) | not started | |
 | 3g. Stage 6 (BQ MERGE) + orchestrator | not started | |
 | 3h. Discovery Dockerfile + Cloud Run job | not started | |
-| 4. Effective-dated archiver | not started | |
+| 4. Effective-dated archiver | **done + applied** | Phase 4 base shipped 2026-04-29 (`8e4a796`); 5/3 postmortem follow-ups + hardening shipped 2026-05-04 (`cb9b420`, `e2745d4`, `5a1de5d`, `750f83b`, `3684894`, `6bc53c5`) |
+| 4a-4d. CSV-format MRF support | in progress | Design at `docs/decisions/2026-05-04-mrf-coverage-plan.md`; 4a (Sutter + framework) targeted for the 2026-05-04 session |
 | 5. Rules engine effective-date join | not started | |
 | 6. Cutover | not started | |

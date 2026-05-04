@@ -38,6 +38,27 @@ Keeps `hospital_charges` fresh by re-downloading any MRF whose `Last-Modified` h
 | **Writes to** | `gs://mrf-staging/raw/` (scraper), `gs://mrf-archive-clarobill-prd/` (immutable archive, Phase 4+), `mrf_archive_index` (Phase 4+), `hospital_charges` (parser) |
 | **Why Feb 15** | 6 weeks past the Jan 1 CMS republish deadline — gives hospitals time to fix first-pass errors. Same date as annual discovery so newly-discovered URLs feed straight into the scrape. |
 | **Why Aug 15** | Catches the ~10% of hospitals that republish in summer. |
+
+#### Parser env vars (2026-05-04+)
+
+| Var | Default | Effect |
+|---|---|---|
+| `PARSER_DRIVER` | `bucket_walk` | `archive_index` mode reads pending work from BigQuery and opens blobs from `mrf-archive-clarobill-prd`. Required for retrying historical cohorts whose staging copies were already deleted post-parse. |
+| `PARSER_RETRY_PATTERN` | unset | SQL LIKE pattern. When set, matching `parse_status='failed'` rows are flipped to `'pending'` before the run starts. Only useful with `PARSER_DRIVER=archive_index`. Example: `parsed with NULL NPI%`. |
+| `CLOUD_RUN_TASK_INDEX` / `_COUNT` | injected by Cloud Run | Task sharding. Both bucket-walk and archive_index drivers stripe work as `rows[index::count]`. Recommended: `--tasks 6 --parallelism 6`. |
+
+#### Scrape-time content validation (2026-05-04+, commit `e2745d4`)
+
+The scraper sniffs the first 4 KB of every HTTP response via
+`sniff_mrf_format()` and rejects responses whose format is not in
+`ACCEPTED_MRF_FORMATS = {json, csv, zip, xlsx, xml}`. HTML, PDF, and
+unknown formats are dropped with no GCS write and no `mrf_archive_index`
+row. The 4 KB sniff buffer is spliced back onto the upload stream via
+`_PrependedStream` so the bytes the parser eventually sees are
+bit-identical to what the scraper received.
+
+Without this, every scheduled scrape re-pollutes the archive with the
+same garbage that the 5/3 postmortem flagged.
 | **Why not weekly** | MRFs change at most twice a year per CMS rule. Weekly polling burned ~96% of compute on no-op `If-Modified-Since` checks. See `docs/decisions/2026-04-30-pipeline-cadence.md`. |
 
 **Health check (run after each Feb 15 / Aug 15 firing):**
@@ -190,7 +211,9 @@ The current state is "Sandra runs manual `python3 scripts/...` commands." Produc
 | Phase | What | Status |
 |---|---|---|
 | 3g | Cloud Run Job `clarobill-mrf-discovery-annual` + Cloud Scheduler trigger `0 2 15 1 *` | Not started — see `docs/future_improvements/pra-pipeline-build.md` |
-| 4 | Effective-dated archiver (rewrite `pipeline/scrape_hospital_mrfs.py` to write to `gs://mrf-archive-clarobill-prd` with year-partitioning) | Not started |
+| 4 | Effective-dated archiver (rewrite `pipeline/scrape_hospital_mrfs.py` to write to `gs://mrf-archive-clarobill-prd` with year-partitioning) | **Done 2026-04-29** (commit `8e4a796`) |
+| 4 follow-ups | Postmortem #1 (scrape-time validation) + #2 (parser-from-archive_index) + URL-NPI fallback + NPPES resolver | **Done 2026-05-04** (`cb9b420`, `e2745d4`, `5a1de5d`, `750f83b`, `3684894`, `6bc53c5`) |
+| 4a-4d | CSV-format MRF parser rollout | In progress — see `docs/decisions/2026-05-04-mrf-coverage-plan.md` |
 | 5 | Rules engine cutover (read from new effective-dated `hospital_charges`) | Not started |
 | Future | Schedule the CMS reference-data loaders as Cloud Run Jobs on cron triggers (today they're manual) | Not started; create a unified `clarobill-cms-refresh` job that orchestrates all loaders |
 | Future | Sentry alerting on Cloud Run Job failures (today: only logs in Cloud Logging) | Not started |
@@ -243,14 +266,28 @@ The current state is "Sandra runs manual `python3 scripts/...` commands." Produc
 4. If the source is a CMS reference table (`cms_pfs_indicators`, `ncci_edit_pairs`, etc.): confirm the table's `effective_year` matches the bill's service year. If not, the annual loader is overdue.
 5. Check whether the source MRF is in `gs://mrf-archive-clarobill-prd/pricing-year=<bill_year>/<npi>/`. If yes, you can reproduce the audit deterministically. If no, the file was never archived for that year — record a known limitation.
 
-### "The weekly scraper logged 0 successful downloads"
+### "The annual/mid-year scraper logged 0 successful downloads"
 
 1. Look at the most recent run logs: `gcloud run jobs executions list --job clarobill-mrf-scraper --region us-central1`
 2. Common causes (in order of likelihood):
-   a. CMS or Cloud Build outage during the run window — wait, retry next Tuesday
+   a. CMS or Cloud Build outage during the run window — wait, retry on the next scheduled date
    b. Massive outage in `hospital_directory.mrf_url` (e.g. a major vendor went down) — confirm by sampling 10 URLs manually with `curl -I`
    c. Service account lost permissions — check `clarobill-pipeline-sa` IAM bindings on the dataset and bucket
+   d. **Scrape-time format guard rejecting everything** — this can happen if `sniff_mrf_format()` is over-strict; check logs for `Rejecting non-MRF response` warnings. Compare reject volume against historic %.
 3. Manual retrigger: `gcloud run jobs execute clarobill-mrf-scraper --region us-central1`
+
+### "I shipped a parser fix and want to retry historical 'failed' rows"
+
+1. Identify the cohort by `parse_error` LIKE pattern from `mrf_archive_index`.
+2. Trigger a one-off run with both env-var overrides:
+   ```bash
+   gcloud run jobs execute clarobill-mrf-parser \
+     --region=us-central1 --tasks=6 \
+     --update-env-vars="PARSER_DRIVER=archive_index,PARSER_RETRY_PATTERN=<your-LIKE-pattern>"
+   ```
+3. The driver flips matching rows to `pending`, then processes from
+   `mrf-archive-clarobill-prd`. Source blobs are NOT deleted (immutable).
+4. Watch BQ delta: `parse_status` distribution + `hospital_charges` row + NPI counts.
 
 ### "The annual discovery pipeline crashed at stage N"
 

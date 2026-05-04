@@ -109,49 +109,82 @@ commercial-benchmark `PRICE_OUTLIER` findings the prior pipeline produced.
 
 ## What is still open work
 
-### Scrape-time validation (the root fix)
+### ~~Scrape-time validation (the root fix)~~ — SHIPPED 2026-05-04 (commit `e2745d4`)
 
-The scraper should **never write a non-JSON response** as `.json.gz`.
-Add at scrape time:
+`sniff_mrf_format()` in `pipeline/hospital_mrf_utils.py` plus the
+`_PrependedStream` helper in `pipeline/scrape_hospital_mrfs.py` now read
+the first 4 KB of every response, classify it (json/csv/zip/xlsx/xml/
+pdf/html/empty/unknown), and reject anything outside the
+`ACCEPTED_MRF_FORMATS = {json, csv, zip, xlsx, xml}` set before any
+write to staging or archive. The 4 KB sniff buffer is spliced back
+onto the upload stream so original bytes are preserved.
 
-1. Reject responses with `Content-Type: text/html`, `application/pdf`,
-   or `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
-2. Sniff first 4 KiB of the response body before upload; if it
-   doesn't start with `{` / `[` / BOM-prefixed JSON, log + drop.
-3. Skip URLs that produce a 200 with `<` as the first byte — these
-   are landing pages.
+Coverage in tests: 17 sniffer cases (gzip-of-html, BOM-prefixed JSON,
+CSV via URL extension, etc.) plus 6 download-path cases (HTML reject,
+PDF reject, JSON accept, CSV accept, gzipped JSON accept, full-body
+preservation).
 
-This prevents the staging bucket from accumulating new garbage on
-every annual + mid-year scrape.
+### ~~Parser reads from `mrf_archive_index`, not the bucket~~ — SHIPPED 2026-05-04 (commits `5a1de5d`, `3684894`, `6bc53c5`)
 
-### Parser reads from `mrf_archive_index`, not the bucket
+`PARSER_DRIVER=archive_index` env var selects a new mode that reads
+`SELECT ... FROM mrf_archive_index WHERE parse_status='pending' GROUP
+BY gcs_uri ORDER BY gcs_uri`, opens the blob via its `gcs_uri`
+(immutable archive bucket), and processes through the same
+`process_blob_with_meta()` core. Source blob is **never** deleted on
+success — the immutable-archive invariant is asserted by the
+`test_archive_blob_never_deleted_on_success` regression test.
 
-The current `577e6d8` skip-set is a band-aid. The right architecture
-is: the parser issues `SELECT gcs_uri FROM mrf_archive_index WHERE
-parse_status = 'pending'` and processes only those blobs. No bucket
-walk, no metadata HEAD requests, no skip-set logic. Estimated work:
-~80 lines of code change in `parse_hospital_mrfs.py`.
+Two follow-up commits hardened this:
+  - `3684894` adds `GROUP BY gcs_uri` + an in-memory dedupe set after a
+    runaway loop appended 643,839 duplicate rows for Saint Michaels
+    Medical Center (the same URL had multiple archive_index entries;
+    `update_archive_index_status` flipped them all but the loop kept
+    iterating). 643,839 dupe rows were cleaned up via SQL DELETE.
+  - `6bc53c5` adds task sharding (`rows[task_index::task_count]`) so
+    `--tasks 6 --parallelism 6` cuts wall-clock from ~37h to ~6h.
 
-### Storage cleanup
+`PARSER_RETRY_PATTERN` env var, when paired with the archive_index
+driver, flips matching `failed` rows back to `pending` for retry.
+Used 2026-05-04 to recover the 2,111 NULL-NPI cohort.
 
-15,647 garbage blobs are sitting in `mrf-archive-clarobill-prd`
-(Coldline) taking permanent storage cost. Single SQL + `gcloud
-storage rm` pass would remove them. Estimated saving: a few GB ×
-Coldline rate per month.
+### ~~Storage cleanup~~ — DECLINED 2026-05-04
 
-### GCS lifecycle on `mrf-staging`
+Sampling the "11,984 garbage" cohort showed it's **mixed**: 1,981
+blobs (81.76 GB) are real chargemaster data in unsupported formats
+(1,216 ZIP, 765 CSV) — these are exactly the cohort that the CSV
+parser rollout (Phase 4) is meant to unlock. Bulk delete would erase
+recoverable data.
 
-30-day auto-delete on `gs://mrf-staging/raw/`. Staging only needs
-to live until the parser consumes it — without a lifecycle rule the
-bucket grows unbounded across annual scrapes.
+What did happen: the 1,981 non-JSON-extension blobs were reclassified
+from `failed`/`classified-as: failed` to
+`skipped`/`format not yet supported by parser: <ext>` so they're
+properly categorised when CSV/ZIP support lands. No GCS deletes.
 
-### CSV-format MRF support
+Coldline cost for the entire archive (~100 GB) is ~$0.40/month — not
+worth the deletion risk.
 
-11,262 blobs marked `skipped` because Sutter Health, Kaiser, and
-several other systems publish CSV instead of JSON. Adding CSV support
-unlocks the entire Bay Area cluster (Alta Bates Summit, CPMC, Eden,
-Mills-Peninsula) plus Kaiser. Sandra has flagged this as the
-next-after-YC project.
+### ~~GCS lifecycle on `mrf-staging`~~ — DECLINED 2026-05-04
+
+Sandra's decision: keep all blobs. The new content-validation guard
+prevents new garbage from accumulating, so unbounded growth is no
+longer a concern.
+
+### CSV-format MRF support — IN PROGRESS
+
+Scope re-measured 2026-05-04: **13,206 blobs / 1,973 GB** (much larger
+than the original ~11K estimate). Full design doc at
+`docs/decisions/2026-05-04-mrf-coverage-plan.md`. Phased rollout:
+
+- **4a** (this session): framework + Sutter parser
+- **4b**: Kaiser, HCA, Mercy, Tenet
+- **4c**: ZIP-unwrap + recursive dispatch
+- **4d**: long-tail vendors + auto-discovery cron
+
+### ~~Cloud Build path filter~~ — out of scope of this postmortem; tracked separately.
+
+### ~~`hospital_directory` deduplication~~ — partially handled by the NPPES resolver (commit `750f83b`); a dedicated dedupe pass remains tracked separately.
+
+### Places API budget alert — still open (separate concern).
 
 ### Cloud Build path filter
 
