@@ -715,6 +715,8 @@ def process_archive_index_pending(
     gcs: storage.Client,
     staging_bucket: storage.Bucket,
     limit: int | None = None,
+    task_index: int = 0,
+    task_count: int = 1,
 ) -> tuple[int, int]:
     """Drive parsing from `mrf_archive_index` instead of walking the staging bucket.
 
@@ -727,6 +729,14 @@ def process_archive_index_pending(
     the pre-2026-05-04 cohort had their staging blobs deleted post-parse,
     so the bucket walk could never find them. Reading from archive_index
     + gcs_uri makes them reachable again.
+
+    Task sharding: when running with --tasks N --parallelism N on Cloud Run,
+    each task instance receives task_index ∈ [0, task_count). The query
+    orders by gcs_uri so every task sees the SAME ordered list, then each
+    takes its `rows[task_index::task_count]` stripe. Idempotent re-queries
+    converge because the underlying ordering doesn't drift even as rows
+    transition pending → parsed (a parsed row simply drops out of the
+    pending set; remaining pending rows keep the same relative order).
 
     Returns (succeeded, failed).
     """
@@ -751,12 +761,20 @@ def process_archive_index_pending(
       AND gcs_uri IS NOT NULL
       AND gcs_uri != ''
     GROUP BY gcs_uri
+    ORDER BY gcs_uri
     """
     if limit:
         sql += f"\nLIMIT {int(limit)}"
 
-    rows = list(bq.query(sql).result())
-    logger.info("Loaded %d distinct gcs_uris from pending archive_index rows", len(rows))
+    all_rows = list(bq.query(sql).result())
+    rows = all_rows[task_index::task_count] if task_count > 1 else all_rows
+    if task_count > 1:
+        logger.info(
+            "Task %d/%d — processing %d/%d distinct gcs_uris (stripe rows[%d::%d])",
+            task_index, task_count, len(rows), len(all_rows), task_index, task_count,
+        )
+    else:
+        logger.info("Loaded %d distinct gcs_uris from pending archive_index rows", len(rows))
 
     # In-memory belt-and-suspenders dedupe — defends against any race where
     # the same gcs_uri could re-appear after our SQL-side GROUP BY (e.g., if
@@ -865,12 +883,12 @@ def main() -> None:
     driver = os.environ.get("PARSER_DRIVER", "bucket_walk").strip().lower()
 
     if driver == "archive_index":
-        if task_count > 1:
-            logger.warning("archive_index driver does not yet support task sharding; "
-                           "task %d/%d will process the full pending set", task_index, task_count)
-        succeeded, failed = process_archive_index_pending(bq, gcs, bucket)
-        logger.info("Parse complete (archive_index driver): %d succeeded, %d failed",
-                    succeeded, failed)
+        succeeded, failed = process_archive_index_pending(
+            bq, gcs, bucket,
+            task_index=task_index, task_count=task_count,
+        )
+        logger.info("Parse complete (archive_index driver, task %d/%d): %d succeeded, %d failed",
+                    task_index, task_count, succeeded, failed)
         return
 
     all_blobs = list_raw_blobs(bucket)

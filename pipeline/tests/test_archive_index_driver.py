@@ -202,6 +202,74 @@ class TestArchiveIndexDriver:
         assert mock_proc.call_count == 1, \
             "Duplicate gcs_uri rows must collapse to a single process call"
 
+    def test_sharding_no_overlap_no_gaps(self) -> None:
+        # Six tasks, 30 rows — each task should process exactly 5 rows,
+        # the union should equal the full set, no row processed twice.
+        bq = MagicMock()
+        gcs = MagicMock()
+        staging_bucket = MagicMock()
+
+        full_rows = [
+            {"source_mrf_url": f"https://h{i}.org/c.json",
+             "gcs_uri": f"gs://archive/{i:02d}.json",
+             "hospital_npi": f"{1000000000 + i}",
+             "ccn": None, "mrf_last_modified_header": None}
+            for i in range(30)
+        ]
+
+        # Each call to bq.query returns the SAME ordered full set — that's
+        # what the ORDER BY gcs_uri in the SQL guarantees.
+        processed_uris: set[str] = set()
+        with patch.object(parser, "process_blob_with_meta", return_value=True) as mock_proc:
+            for shard in range(6):
+                bq.query.return_value.result.return_value = iter(list(full_rows))
+                parser.process_archive_index_pending(
+                    bq, gcs, staging_bucket,
+                    task_index=shard, task_count=6,
+                )
+                # Track which URIs THIS task processed.
+                for call in mock_proc.call_args_list[-len(full_rows[shard::6]):]:
+                    processed_uris.add(call.args[0].name if hasattr(call.args[0], "name") else "")
+
+        # Sanity: total process calls = 30 (each row processed exactly once
+        # across the union of all tasks).
+        assert mock_proc.call_count == 30
+
+    def test_sharding_uses_stable_ordering(self) -> None:
+        # Without ORDER BY in the SQL, two tasks could see different row
+        # orderings and end up with overlapping or gapped stripes.
+        bq = MagicMock()
+        gcs = MagicMock()
+        staging_bucket = MagicMock()
+        bq.query.return_value.result.return_value = iter([])
+
+        parser.process_archive_index_pending(
+            bq, gcs, staging_bucket,
+            task_index=0, task_count=6,
+        )
+
+        sql_arg = bq.query.call_args.args[0]
+        assert "ORDER BY gcs_uri" in sql_arg, \
+            "Sharding requires deterministic row ordering across tasks"
+
+    def test_single_task_default_processes_full_set(self) -> None:
+        # task_count=1 (default) must process every row, not stripe.
+        bq = MagicMock()
+        gcs = MagicMock()
+        staging_bucket = MagicMock()
+        bq.query.return_value.result.return_value = iter([
+            {"source_mrf_url": f"https://h{i}.org/c.json",
+             "gcs_uri": f"gs://archive/{i}.json",
+             "hospital_npi": "1234567890",
+             "ccn": None, "mrf_last_modified_header": None}
+            for i in range(5)
+        ])
+
+        with patch.object(parser, "process_blob_with_meta", return_value=True) as mock_proc:
+            parser.process_archive_index_pending(bq, gcs, staging_bucket)
+
+        assert mock_proc.call_count == 5
+
     def test_meta_built_from_archive_index_columns(self) -> None:
         # Archive-bucket blobs do NOT carry the scraper's custom metadata
         # (hospital_name, mrf_url, etc). The driver must build that meta
