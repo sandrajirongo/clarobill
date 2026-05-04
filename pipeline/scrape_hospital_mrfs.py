@@ -46,6 +46,7 @@ from google.cloud import bigquery, storage
 # Phase 4 helpers — pulled from sibling files in pipeline/
 import effective_year
 import archive_writer
+from hospital_mrf_utils import ACCEPTED_MRF_FORMATS, sniff_mrf_format
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -214,6 +215,52 @@ def _check_hospital(
     return hospital, changed, new_lm, size
 
 
+class _PrependedStream(io.RawIOBase):
+    """A read-only stream that yields `prefix` bytes first, then drains `rest`.
+
+    Used to splice the 4 KB sniff buffer back onto the front of the response
+    stream so GCS upload sees the unaltered bytes. We can't `seek(0)` on
+    `requests` HTTP streams, and re-opening the connection would double-fetch
+    every hospital. This wrapper solves it without buffering the full body.
+
+    Forward-only: GCS resumable uploads call read()/readinto() sequentially,
+    so seek/tell support is not needed (and would be misleading anyway since
+    `rest` is a non-seekable network socket).
+    """
+
+    def __init__(self, prefix: bytes, rest) -> None:  # type: ignore[no-untyped-def]
+        super().__init__()
+        self._prefix = io.BytesIO(prefix)
+        self._rest = rest
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, size: int = -1) -> bytes:
+        if size == -1:
+            return self._prefix.read() + self._rest.read()
+        out = self._prefix.read(size)
+        if len(out) < size:
+            remainder = self._rest.read(size - len(out))
+            out += remainder if isinstance(remainder, bytes) else bytes(remainder)
+        return out
+
+    def readinto(self, b) -> int:  # type: ignore[no-untyped-def]
+        # GCS resumable upload uses readinto when available; fall back to
+        # read() if `rest` doesn't expose readinto.
+        n = self._prefix.readinto(b)
+        if n < len(b):
+            view = memoryview(b)[n:]
+            try:
+                more = self._rest.readinto(view)
+            except AttributeError:
+                chunk = self._rest.read(len(view))
+                view[: len(chunk)] = chunk
+                more = len(chunk)
+            n += more or 0
+        return n
+
+
 def _download_to_gcs(
     session: requests.Session,
     bucket: storage.Bucket,
@@ -257,6 +304,27 @@ def _download_to_gcs(
     if "gzip" in content_encoding and not ext.endswith(".gz"):
         ext += ".gz"
 
+    # Scrape-time content validation (postmortem #1). Read the first 4 KB
+    # off the response, sniff the format, and reject HTML / PDF / unknown
+    # formats *before* writing anything to GCS. Without this, every
+    # scheduled scrape re-pollutes the archive with hospital landing pages,
+    # marketing brochures, 404 HTML, and once a Facebook redirect chain.
+    # The sniffed bytes are then prepended back onto the upload stream so
+    # the on-the-wire content is preserved bit-for-bit.
+    try:
+        prefix = resp.raw.read(4096)
+    except Exception as exc:
+        logger.error("[%s] read prefix failed: %s", label, exc)
+        return None
+    fmt = sniff_mrf_format(prefix, content_type=content_type, url=url)
+    if fmt not in ACCEPTED_MRF_FORMATS:
+        logger.warning(
+            "[%s] Rejecting non-MRF response: format=%s url=%s ct=%s",
+            label, fmt, url, content_type,
+        )
+        return None
+    upload_stream = _PrependedStream(prefix, resp.raw)
+
     # 2026-05-01 fix: include the hospital's archive key (NPI or CCN) in
     # the staging path so multi-facility hospital systems whose names
     # truncate to identical 60-char slugs don't collide. Saw this on the
@@ -287,7 +355,7 @@ def _download_to_gcs(
         # resumable upload gets more bytes than the Content-Range header
         # declares, causing a 400 "Invalid request" from the GCS API.
         resp.raw.decode_content = False
-        blob.upload_from_file(resp.raw)
+        blob.upload_from_file(upload_stream)
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name
     except Exception as exc:

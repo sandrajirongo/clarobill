@@ -9,25 +9,22 @@ This doc tracks the remaining coverage work in priority order.
 
 ## Checklist (in execution order)
 
-- [ ] **1. NPPES-based EIN/slug → NPI resolver**
-  - Source: `bigquery-public-data.nppes.npi_raw` (1.89M organizational NPIs, last updated 2026-02-09)
-  - For each ambiguous EIN-only URL: extract filename slug, fuzzy-match against
-    `provider_organization_name_legal_business_name` filtered to hospital
-    taxonomy codes (`28*` series).
-  - Backfill `hospital_charges.hospital_npi` for matches above confidence threshold.
-  - Backfill `mrf_archive_index.hospital_npi` for the same URL set.
-  - Estimated unlock: up to 158 URLs × ~3M rows/URL = ~440M rows.
-  - Risk: bad matches assign wrong NPI to charges → false-flag dispute letters.
-    Mitigation: high score threshold + manual review of low-confidence matches.
+- [x] **1. NPPES-based EIN/slug → NPI resolver** — DONE 2026-05-04 (commit `750f83b`)
+  - Implemented at `scripts/mrf_discovery/resolve_ambiguous_npis.py`.
+  - Acceptance gates: score ≥ 0.75 + margin ≥ 0.25 OR score=1.0; ≥ 2 shared
+    tokens OR rare token (NPPES freq ≤ 5); pharmacy/clinic/group tiebreak.
+  - Result: 75 of 210 URLs resolved (35.7%).
+  - hospital_charges: 192 → **254 distinct hospitals** (+62).
+  - NULL-NPI rows: 605.7M → **390.7M** (recovered 215M rows).
 
-- [ ] **2. Postmortem #1 — scrape-time content validation (root fix)**
-  - Modify `pipeline/scrape_hospital_mrfs.py` to reject responses by Content-Type
-    + first-byte sniff *before* writing to staging/archive.
-  - Reject: HTML, PDF, redirect chains ending at non-hospital domains.
-  - Accept: JSON (`{` / `[` / BOM-prefixed), CSV, ZIP, XLSX.
-  - Without this, the next scheduled scrape (Aug 1) re-pollutes the archive
-    with garbage, undoing the BQ-side `skipped` reclassifications.
-  - Estimated work: ~80 LOC + tests.
+- [x] **2. Postmortem #1 — scrape-time content validation (root fix)** — DONE 2026-05-04
+  - `sniff_mrf_format()` added to `pipeline/hospital_mrf_utils.py` — magic-byte
+    + URL/Content-Type detection across json/csv/zip/xlsx/xml/pdf/html/empty.
+  - `_PrependedStream` in `pipeline/scrape_hospital_mrfs.py` splices the 4 KB
+    sniff buffer back onto the upload stream so original bytes are preserved.
+  - Scraper rejects HTML/PDF/unknown responses before any GCS write.
+  - 23 new tests across `test_hospital_mrf_utils.py` (sniffer) and
+    `test_scrape_validation.py` (PrependedStream + reject path).
 
 - [ ] **3. Postmortem #2 — parser pulls work from `mrf_archive_index`, not bucket walk**
   - Modify `pipeline/parse_hospital_mrfs.py` `main()` to query

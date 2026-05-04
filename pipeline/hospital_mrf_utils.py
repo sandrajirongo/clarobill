@@ -14,6 +14,7 @@ Normalisation flattens this into rows, one per
   code × setting × payer_or_null combination.
 """
 
+import gzip
 import io
 import logging
 import re
@@ -225,6 +226,96 @@ def extract_npi_from_url(url: str) -> str | None:
     if match:
         return match.group(1)
     return None
+
+
+def sniff_mrf_format(
+    prefix_bytes: bytes,
+    content_type: str | None = None,
+    url: str | None = None,
+) -> str:
+    """Identify the format of an MRF response from its first bytes + headers.
+
+    Returns one of: 'json', 'csv', 'zip', 'xlsx', 'xml', 'pdf', 'html',
+    'empty', 'unknown'.
+
+    The 5/3 postmortem traced ~16,000 garbage blobs in mrf-archive to the
+    scraper writing whatever the HTTP response body was — HTML 404 pages,
+    hospital marketing landing pages, an Evangelical Lutheran Church
+    grants page, a utility billing page — all saved as `.json.gz`. The
+    parser then spent 5–10 seconds per blob trying to ijson-stream them
+    before failing.
+
+    This sniff is the scrape-side gate: if the response is not a real data
+    format (json/csv/zip/xlsx/xml), the scraper rejects it before writing
+    to staging or archive. Without this, every scheduled scrape would
+    re-pollute the archive with the same garbage.
+
+    Detection order:
+      1. Magic bytes — most reliable for binary formats (zip, xlsx, pdf, gzip-of-json).
+      2. URL extension — for csv (no magic bytes) when the URL is unambiguous.
+      3. Content-Type header — fallback for csv/xml when bytes are inconclusive.
+      4. First-byte heuristic — `<` ⇒ html, `{`/`[` ⇒ json (after BOM strip).
+    """
+    if not prefix_bytes:
+        return "empty"
+
+    # Strip optional UTF-8 BOM before character checks.
+    stripped = prefix_bytes.lstrip(b"\xef\xbb\xbf").lstrip()
+
+    # --- Magic-bytes (most reliable) ---
+    if prefix_bytes.startswith(b"PK\x03\x04"):
+        # ZIP container; can be xlsx (xlsx are zip + Office XML inside) or a
+        # plain zip of MRF files. Trust URL extension to distinguish.
+        if url and url.lower().split("?", 1)[0].endswith(".xlsx"):
+            return "xlsx"
+        return "zip"
+    if prefix_bytes.startswith(b"%PDF"):
+        return "pdf"
+    if prefix_bytes.startswith(b"\x1f\x8b"):
+        # gzip — try to peek at the decompressed first byte to classify the
+        # underlying format (json.gz vs csv.gz vs anything.gz).
+        try:
+            decoded = gzip.GzipFile(fileobj=io.BytesIO(prefix_bytes)).read(64)
+            if decoded:
+                inner = decoded.lstrip(b"\xef\xbb\xbf").lstrip()
+                if inner.startswith((b"{", b"[")):
+                    return "json"
+                if inner.startswith(b"<"):
+                    return "xml" if b"<?xml" in inner[:64] else "html"
+        except (OSError, EOFError):
+            pass
+        # Default for unknown gzip content: classify by URL/content-type.
+        if url and ".csv" in url.lower():
+            return "csv"
+        return "unknown"
+
+    # --- Text formats (no magic bytes) ---
+    if stripped.startswith(b"<?xml"):
+        return "xml"
+    if stripped.startswith(b"<"):
+        return "html"
+    if stripped.startswith((b"{", b"[")):
+        return "json"
+
+    # --- URL/Content-Type fallbacks for CSV (no magic bytes) ---
+    url_lower = (url or "").lower().split("?", 1)[0]
+    ct_lower = (content_type or "").lower()
+    if url_lower.endswith(".csv") or "csv" in ct_lower:
+        return "csv"
+    if url_lower.endswith(".xml") or "xml" in ct_lower:
+        return "xml"
+
+    return "unknown"
+
+
+# Formats the scrape-time validator considers real MRF data and will accept
+# into staging/archive. Anything outside this set is rejected at scrape time.
+# json/csv/zip/xlsx/xml are formats hospitals legitimately publish in;
+# html/pdf/empty/unknown are the rejection bucket. PDF is always rejected
+# because in the entire historic archive we found zero real chargemaster
+# PDFs — they were all landing pages, good-faith-estimate notices, or
+# patient-billing brochures.
+ACCEPTED_MRF_FORMATS = frozenset({"json", "csv", "zip", "xlsx", "xml"})
 
 
 def detect_mrf_version(root: dict[str, Any]) -> str | None:

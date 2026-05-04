@@ -21,9 +21,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from hospital_mrf_utils import (
+    ACCEPTED_MRF_FORMATS,
     ChargeRow,
     _strip_bom,
     extract_npi_from_url,
+    sniff_mrf_format,
     stream_charges_v2,
 )
 
@@ -276,6 +278,95 @@ class TestExtractNpiFromUrl:
         # Bare 11-digit number is not an NPI; we must not pick the trailing 10.
         url = "https://example.org/mrf/12345678901_Hospital_standardcharges.json"
         assert extract_npi_from_url(url) is None
+
+
+class TestSniffMrfFormat:
+    """Scrape-time content validation — postmortem #1 root fix.
+
+    The 5/3 postmortem traced 16K+ garbage blobs in mrf-archive to the
+    scraper writing whatever HTTP response body it got, regardless of
+    Content-Type. This sniff is the gate that rejects HTML landing pages,
+    PDFs, wrong-domain redirects (one ended at facebook.com) and similar
+    garbage *before* it lands in staging or the immutable archive.
+
+    Each test case is anchored to a real-world artifact we observed in
+    the existing archive.
+    """
+
+    # --- Magic-byte detection ---
+
+    def test_zip_archive(self) -> None:
+        # Real example: massgeneralbrigham.org/.../222617175_Cooley-Dickinson_StandardCharges.zip
+        assert sniff_mrf_format(b"PK\x03\x04..." + b"\x00" * 100) == "zip"
+
+    def test_xlsx_via_url_extension(self) -> None:
+        # XLSX is also a PK ZIP container — disambiguate by URL extension.
+        assert sniff_mrf_format(b"PK\x03\x04..." + b"\x00" * 100,
+                                url="https://hosp.org/charges.xlsx") == "xlsx"
+
+    def test_pdf_rejected(self) -> None:
+        assert sniff_mrf_format(b"%PDF-1.7\n...") == "pdf"
+
+    def test_gzip_of_json(self) -> None:
+        import gzip as _gz
+        payload = _gz.compress(b'{"hospital_npi":"1234567890"}')
+        assert sniff_mrf_format(payload) == "json"
+
+    def test_gzip_of_html_classified_as_html(self) -> None:
+        # Pre-fix scraper saved gzipped HTML 404 pages as `.json.gz`.
+        # The sniffer must recognise the inner content is HTML, not JSON.
+        import gzip as _gz
+        payload = _gz.compress(b"<!doctype html><html><body>404</body></html>")
+        assert sniff_mrf_format(payload) == "html"
+
+    # --- Plain JSON / XML / HTML ---
+
+    def test_json_object(self) -> None:
+        assert sniff_mrf_format(b'{"hospital_name":"X"}') == "json"
+
+    def test_json_array(self) -> None:
+        assert sniff_mrf_format(b"[1,2,3]") == "json"
+
+    def test_json_with_bom(self) -> None:
+        assert sniff_mrf_format(b"\xef\xbb\xbf{\"a\":1}") == "json"
+
+    def test_xml(self) -> None:
+        assert sniff_mrf_format(b'<?xml version="1.0"?><root/>') == "xml"
+
+    def test_html_landing_page(self) -> None:
+        # Real example: dignityhealth.org/.../insurance-information page
+        # was scraped + stored as JSON. 4 KB of HTML markup.
+        assert sniff_mrf_format(b"<!DOCTYPE html><html><head><title>")  == "html"
+
+    # --- Edge cases ---
+
+    def test_empty_response(self) -> None:
+        assert sniff_mrf_format(b"") == "empty"
+
+    def test_csv_via_url_extension(self) -> None:
+        # CSV has no magic bytes; URL extension is the only reliable signal.
+        assert sniff_mrf_format(b"code,description,charge\n99214,Office,350.00\n",
+                                url="https://hosp.org/charges.csv") == "csv"
+
+    def test_csv_via_content_type(self) -> None:
+        assert sniff_mrf_format(b"code,description,charge\n",
+                                content_type="text/csv") == "csv"
+
+    def test_unknown_falls_through(self) -> None:
+        assert sniff_mrf_format(b"\x00\x00\x00\x00random binary") == "unknown"
+
+    # --- Acceptance set ---
+
+    def test_accepted_formats_set(self) -> None:
+        assert ACCEPTED_MRF_FORMATS == {"json", "csv", "zip", "xlsx", "xml"}
+
+    def test_pdf_not_in_accepted(self) -> None:
+        # Every real archive PDF observed was a landing page or notice,
+        # never a chargemaster. Explicit rejection.
+        assert "pdf" not in ACCEPTED_MRF_FORMATS
+
+    def test_html_not_in_accepted(self) -> None:
+        assert "html" not in ACCEPTED_MRF_FORMATS
 
 
 class TestNonSeekableStream:
