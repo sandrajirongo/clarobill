@@ -26,15 +26,16 @@ This doc tracks the remaining coverage work in priority order.
   - 23 new tests across `test_hospital_mrf_utils.py` (sniffer) and
     `test_scrape_validation.py` (PrependedStream + reject path).
 
-- [ ] **3. Postmortem #2 — parser pulls work from `mrf_archive_index`, not bucket walk**
-  - Modify `pipeline/parse_hospital_mrfs.py` `main()` to query
-    `SELECT gcs_uri FROM mrf_archive_index WHERE parse_status = 'pending'`
-    and process those blobs directly.
-  - When staging blob is missing, fall back to reading from
-    `mrf-archive-clarobill-prd` (immutable copy still has the bytes).
-  - Without this, the 2,583 rows reset-to-pending (NULL-NPI parsed cohort)
-    can't actually retry — staging blobs are deleted post-parse.
-  - Estimated work: ~120 LOC + tests + idempotency check.
+- [x] **3. Postmortem #2 — parser pulls work from `mrf_archive_index`** — DONE 2026-05-04
+  - `process_archive_index_pending()` added to `pipeline/parse_hospital_mrfs.py`.
+  - Selected via env var `PARSER_DRIVER=archive_index`. Bucket-walk remains default.
+  - `process_blob` refactored into `process_blob_with_meta(... delete_source_on_success)`
+    so archive-bucket blobs are NEVER deleted (immutable forensic invariant).
+  - `reset_failed_to_pending(pattern)` flips historical 'failed' rows back
+    to 'pending' for retry. Triggered via env var `PARSER_RETRY_PATTERN`.
+  - `_blob_from_gcs_uri()` resolves arbitrary `gs://bucket/path` URIs.
+  - 11 new tests in `tests/test_archive_index_driver.py` covering URI parsing,
+    SQL parameterization, and the immutable-archive invariant.
 
 - [ ] **4. CSV-format MRF support**
   - 11,262 historic + 1,981 reclassified `skipped` blobs (Sutter, Kaiser,

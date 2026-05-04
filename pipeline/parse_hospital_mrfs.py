@@ -364,27 +364,48 @@ def process_blob(
     bq: bigquery.Client,
     bucket: storage.Bucket,
 ) -> bool:
+    """Bucket-walk entry point. Reads metadata from staging blob, then parses.
+
+    Kept as a thin wrapper so the existing bucket-walk path is unchanged.
+    The shared parse logic now lives in process_blob_with_meta so the
+    archive-index-driven mode can pass metadata explicitly (archive blobs
+    don't carry the scraper's custom metadata).
+    """
+    meta = _get_blob_metadata(bucket, blob)
+    return process_blob_with_meta(blob, meta, bq, bucket, delete_source_on_success=True)
+
+
+def process_blob_with_meta(
+    blob: storage.Blob,
+    meta: dict[str, str],
+    bq: bigquery.Client,
+    staging_bucket: storage.Bucket,
+    *,
+    delete_source_on_success: bool,
+) -> bool:
     """Parse one MRF blob and load its charges into BigQuery.
 
     Returns True on success, False on any error (logs details and continues
     to the next hospital so one bad MRF doesn't abort the entire run).
 
-    Phase 4 changes:
-      - Resolves pricing_effective_year via effective_year.resolve_year()
-        from the MRF JSON last_updated_on (best), HTTP Last-Modified header
-        carried in blob metadata (good), or current calendar year (fallback).
-      - Append-only: no DELETE before LOAD. Downstream queries pick the most
-        recent (scraped_at, pricing_effective_year) per (hospital_npi, code).
-      - Updates mrf_archive_index.parse_status to 'parsed' / 'failed' /
-        'skipped' so the archive bucket has authoritative parse provenance.
-      - Skips non-JSON formats (CSV/XLSX/ZIP) cleanly without crashing.
+    Args:
+      blob: The MRF source blob — staging or archive bucket. The function
+            reads its bytes via blob.open()/download_as_bytes() and never
+            assumes a particular bucket.
+      meta: Hospital context dict with at minimum {mrf_url, hospital_name,
+            hospital_npi, last_modified}. In bucket-walk mode this is the
+            scraper-stamped blob metadata; in archive-index mode this is
+            built from the archive_index row.
+      staging_bucket: Bucket for the per-parse NDJSON staging file
+            (always mrf-staging regardless of where the source blob lives).
+      delete_source_on_success: True for staging blobs (delete after parse
+            to prevent re-processing), False for archive blobs (immutable;
+            never delete from the immutable archive).
 
-    NPI strategy: the scraper stores the hospital_name/mrf_url/state in GCS
-    blob metadata at download time. The NPI is not reliably available then
-    (some discovery sources only have CCN). This function reads the MRF JSON
-    root to extract the NPI, then backfills hospital_directory if it was NULL.
+    NPI strategy is a fallback chain — JSON root → URL → scraper metadata.
+    Strict mode rejects blobs that yield no NPI (was a silent NULL-NPI
+    write before commit cb9b420).
     """
-    meta = _get_blob_metadata(bucket, blob)
     mrf_url = meta.get("mrf_url") or ""
     hospital_name = meta.get("hospital_name") or blob.name
     label = hospital_name
@@ -492,11 +513,11 @@ def process_blob(
                 f, hospital_npi, pricing_effective_year, scraped_at,
                 source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
             )
-            row_count = _write_ndjson_to_gcs(rows, bucket, staging_blob_name)
+            row_count = _write_ndjson_to_gcs(rows, staging_bucket, staging_blob_name)
 
         if row_count == 0:
             logger.warning("[%s] No charge rows parsed — skipping load", label)
-            bucket.blob(staging_blob_name).delete()
+            staging_bucket.blob(staging_blob_name).delete()
             update_archive_index_status(
                 bq, mrf_url, "failed",
                 error="no charge rows extracted from MRF",
@@ -519,16 +540,18 @@ def process_blob(
         update_archive_index_status(bq, mrf_url, "parsed")
         update_archive_index_npi(bq, mrf_url, hospital_npi)
 
-        # Delete raw MRF blob — prevents double-processing on next run.
-        # The immutable archive bucket still has the file (Phase 4 dual-write).
-        blob.delete()
-        bucket.blob(staging_blob_name).delete()
+        # Delete the source MRF blob only when it was the ephemeral staging
+        # copy. Archive-bucket blobs are immutable forensic evidence and
+        # MUST never be deleted by the parser.
+        if delete_source_on_success:
+            blob.delete()
+        staging_bucket.blob(staging_blob_name).delete()
         return True
 
     except Exception as exc:
         logger.error("[%s] Failed: %s", label, exc, exc_info=True)
         try:
-            bucket.blob(staging_blob_name).delete()
+            staging_bucket.blob(staging_blob_name).delete()
         except Exception:
             pass
         update_archive_index_status(
@@ -631,6 +654,137 @@ def _task_shard(items: list, task_index: int, task_count: int) -> list:
     return items[task_index::task_count]
 
 
+def _blob_from_gcs_uri(gcs: storage.Client, gcs_uri: str) -> storage.Blob:
+    """Resolve a `gs://bucket/path` URI to a Blob handle.
+
+    Used by the archive_index-driven parser path so the same blob open/read
+    code path works on both staging and immutable-archive buckets.
+    """
+    if not gcs_uri.startswith("gs://"):
+        raise ValueError(f"Invalid GCS URI (no gs:// prefix): {gcs_uri}")
+    rest = gcs_uri[5:]
+    bucket_name, _, blob_name = rest.partition("/")
+    if not bucket_name or not blob_name:
+        raise ValueError(f"Malformed GCS URI: {gcs_uri}")
+    return gcs.bucket(bucket_name).blob(blob_name)
+
+
+def reset_failed_to_pending(
+    bq: bigquery.Client,
+    error_pattern: str | None = None,
+) -> int:
+    """Flip historical mrf_archive_index 'failed' rows back to 'pending' for retry.
+
+    The pre-2026-05-04 parser silently wrote rows with NULL hospital_npi when
+    JSON internals lacked one, marking the archive blob 'parsed'. The 5/4
+    investigation reclassified that cohort to 'failed'. With the URL-NPI
+    fallback shipped in cb9b420 + the scrape-time validation in e2745d4,
+    those blobs are now retryable — but the bucket walk skips terminal-state
+    rows by URL, and most of those staging blobs were deleted post-parse.
+    The archive_index-driven mode reads from gcs_uri (immutable archive),
+    so resetting these rows to 'pending' enables a clean retry pass.
+
+    Args:
+      error_pattern: SQL LIKE pattern to scope the reset (e.g.,
+                     'parsed with NULL NPI%' to only retry the NPI cohort).
+                     None resets ALL 'failed' rows — use with caution.
+
+    Returns the number of rows reset.
+    """
+    where_clause = "parse_status = 'failed'"
+    params = []
+    if error_pattern:
+        where_clause += " AND parse_error LIKE @pattern"
+        params.append(bigquery.ScalarQueryParameter("pattern", "STRING", error_pattern))
+    sql = f"""
+        UPDATE `{ARCHIVE_INDEX_TABLE}`
+        SET parse_status = 'pending',
+            parsed_at = NULL,
+            parse_error = CONCAT('reset for retry: ', IFNULL(parse_error, 'unknown'))
+        WHERE {where_clause}
+    """
+    job = bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params))
+    job.result()
+    n = int(job.num_dml_affected_rows or 0)
+    logger.info("Reset %d failed rows to pending (pattern=%r)", n, error_pattern)
+    return n
+
+
+def process_archive_index_pending(
+    bq: bigquery.Client,
+    gcs: storage.Client,
+    staging_bucket: storage.Bucket,
+    limit: int | None = None,
+) -> tuple[int, int]:
+    """Drive parsing from `mrf_archive_index` instead of walking the staging bucket.
+
+    For each pending archive_index row, opens the blob at gcs_uri (typically
+    the immutable archive bucket) and processes through the same parser core
+    as bucket-walk mode. Source blob is NOT deleted on success — archive is
+    forensic.
+
+    This is the postmortem #2 fix: the 2,583 rows we'd want to retry from
+    the pre-2026-05-04 cohort had their staging blobs deleted post-parse,
+    so the bucket walk could never find them. Reading from archive_index
+    + gcs_uri makes them reachable again.
+
+    Returns (succeeded, failed).
+    """
+    sql = f"""
+    SELECT
+      source_mrf_url,
+      gcs_uri,
+      hospital_npi,
+      ccn,
+      mrf_last_modified_header
+    FROM `{ARCHIVE_INDEX_TABLE}`
+    WHERE parse_status = 'pending'
+      AND gcs_uri IS NOT NULL
+      AND gcs_uri != ''
+    """
+    if limit:
+        sql += f"\nLIMIT {int(limit)}"
+
+    rows = list(bq.query(sql).result())
+    logger.info("Loaded %d pending archive_index rows for processing", len(rows))
+
+    succeeded = 0
+    failed = 0
+    for row in rows:
+        gcs_uri = str(row["gcs_uri"])
+        mrf_url = str(row["source_mrf_url"] or "")
+        try:
+            blob = _blob_from_gcs_uri(gcs, gcs_uri)
+            meta = {
+                "mrf_url": mrf_url,
+                # Archive-index has no hospital_name — derive a label from URL
+                # so logs are readable. The actual name lookup happens at
+                # report-generation time via hospital_directory join.
+                "hospital_name": mrf_url or gcs_uri,
+                "hospital_npi": str(row["hospital_npi"] or ""),
+                "state": "",
+                "last_modified": str(row["mrf_last_modified_header"] or ""),
+            }
+            ok = process_blob_with_meta(
+                blob, meta, bq, staging_bucket,
+                delete_source_on_success=False,  # archive is immutable
+            )
+            if ok:
+                succeeded += 1
+            else:
+                failed += 1
+        except Exception as exc:
+            logger.error("[archive_index %s] Failed: %s", gcs_uri, exc, exc_info=True)
+            failed += 1
+            if mrf_url:
+                update_archive_index_status(
+                    bq, mrf_url, "failed",
+                    error=f"archive_index_driver: {type(exc).__name__}: {exc}"[:1000],
+                )
+
+    return succeeded, failed
+
+
 def _load_terminal_mrf_urls(bq: bigquery.Client) -> set[str]:
     """Return the set of source MRF URLs already in a terminal parse state.
 
@@ -666,6 +820,41 @@ def main() -> None:
 
     bq, gcs = build_clients()
     bucket = gcs.bucket(GCS_BUCKET)
+
+    # PARSER_RETRY_PATTERN, if set, resets matching 'failed' rows back to
+    # 'pending' BEFORE the run starts. Use SQL LIKE syntax. Examples:
+    #   PARSER_RETRY_PATTERN='parsed with NULL NPI%'  → retry the post-cb9b420
+    #                                                   reclassified cohort
+    #   PARSER_RETRY_PATTERN='no NPI resolvable%'    → retry the strict-mode
+    #                                                   reject cohort
+    # Only meaningful when paired with PARSER_DRIVER=archive_index since
+    # the bucket-walk mode can't reach blobs whose staging copy is gone.
+    retry_pattern = os.environ.get("PARSER_RETRY_PATTERN", "").strip()
+    if retry_pattern:
+        n = reset_failed_to_pending(bq, retry_pattern)
+        logger.info("Pre-run retry reset: %d rows", n)
+
+    # PARSER_DRIVER selects how the parser sources work:
+    #   bucket_walk    (default) — walk gs://mrf-staging/raw/ and skip rows
+    #                              already in a terminal mrf_archive_index state.
+    #                              Bytes-source = staging bucket only.
+    #                              Source blob deleted on success.
+    #   archive_index  — query `mrf_archive_index` for parse_status='pending',
+    #                    open each row's gcs_uri (immutable archive bucket),
+    #                    and process. Source blob is NOT deleted (archive is
+    #                    forensic). Required for retrying historical 'failed'
+    #                    cohorts whose staging copies were already deleted.
+    driver = os.environ.get("PARSER_DRIVER", "bucket_walk").strip().lower()
+
+    if driver == "archive_index":
+        if task_count > 1:
+            logger.warning("archive_index driver does not yet support task sharding; "
+                           "task %d/%d will process the full pending set", task_index, task_count)
+        succeeded, failed = process_archive_index_pending(bq, gcs, bucket)
+        logger.info("Parse complete (archive_index driver): %d succeeded, %d failed",
+                    succeeded, failed)
+        return
+
     all_blobs = list_raw_blobs(bucket)
 
     if not all_blobs:
