@@ -14,7 +14,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 posthog_client: Posthog = Posthog(
-    api_key=settings.posthog_api_key or "disabled",
+    settings.posthog_api_key or "disabled",  # project_api_key (positional in posthog>=7.x)
     host=settings.posthog_host,
     enable_exception_autocapture=True,
     disabled=not bool(settings.posthog_api_key),
