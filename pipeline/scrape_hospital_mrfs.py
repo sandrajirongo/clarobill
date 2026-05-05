@@ -48,6 +48,10 @@ import effective_year
 import archive_writer
 from hospital_mrf_utils import ACCEPTED_MRF_FORMATS, sniff_mrf_format
 
+# SF5 (Phase 8.4): centralised DML helper. See parse_hospital_mrfs.py for context.
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "scripts" / "mrf_discovery"))
+from bq_checkpoint import run_dml_with_count  # noqa: E402
+
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -578,9 +582,13 @@ def update_last_modified(
         WHEN MATCHED THEN
             UPDATE SET last_modified = S.last_modified
     """
-    bq.query(merge_sql).result()
+    # SF5 (Phase 8.4): verify the MERGE actually wrote rows.
+    affected = run_dml_with_count(bq, merge_sql, label="hospital_directory.last_modified MERGE")
     bq.delete_table(staging_id, not_found_ok=True)
-    logger.info("Updated last_modified for %d unique mrf_urls", len(deduped))
+    logger.info(
+        "Updated last_modified for %d unique mrf_urls (MERGE affected %d rows)",
+        len(deduped), affected,
+    )
 
 
 def _task_shard(items: list, task_index: int, task_count: int) -> list:

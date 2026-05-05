@@ -49,6 +49,13 @@ from hospital_mrf_utils import (
     stream_charges_v2,
 )
 
+# SF5 (Phase 8.4): centralised DML helper that asserts num_dml_affected_rows.
+# pipeline/ runs as a Cloud Run Job; the script-style import path adds the
+# scripts/mrf_discovery dir to sys.path so the M13 helper at
+# scripts/mrf_discovery/bq_checkpoint.py can be imported here.
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "scripts" / "mrf_discovery"))
+from bq_checkpoint import run_dml_with_count  # noqa: E402
+
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -230,12 +237,22 @@ def update_archive_index_status(
             bigquery.ScalarQueryParameter("url", "STRING", mrf_url),
         ]
     )
-    try:
-        bq.query(sql, job_config=job_config).result()
-    except Exception as exc:
-        # archive_index updates are bookkeeping, not data — failure to update
-        # must not fail the parse itself. Log and continue.
-        logger.warning("archive_index status update failed for %s: %s", mrf_url, exc)
+    # SF5 + SF6 (Phase 8.4): use run_dml_with_count to verify the UPDATE
+    # actually flipped the parse_status row. SF6 also says: this UPDATE
+    # is the data-flow control plane for the parser's work queue, not
+    # mere "bookkeeping". A swallowed failure here means the row stays
+    # 'pending' forever and the parser re-processes the same blob on
+    # every run, polluting hospital_charges with duplicates. Bubble up
+    # to the caller (process_blob_with_meta) so a failed UPDATE is
+    # treated as a failed parse instead of being papered over.
+    affected = run_dml_with_count(
+        bq, sql, job_config=job_config, label=f"archive_index status update {mrf_url}"
+    )
+    if affected == 0:
+        logger.warning(
+            "archive_index status update for %s affected 0 rows — row may be missing",
+            mrf_url,
+        )
 
 
 def update_archive_index_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) -> None:
@@ -265,8 +282,11 @@ def update_archive_index_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: st
             bigquery.ScalarQueryParameter("mrf_url", "STRING", mrf_url),
         ]
     )
+    # SF5 (Phase 8.4): verify the UPDATE actually wrote a row.
     try:
-        bq.query(sql, job_config=job_config).result()
+        run_dml_with_count(
+            bq, sql, job_config=job_config, label=f"archive_index NPI backfill {mrf_url}"
+        )
     except Exception as exc:
         logger.warning("archive_index NPI backfill failed for %s: %s", mrf_url, exc)
 
@@ -288,7 +308,8 @@ def mark_last_scraped(bq: bigquery.Client, mrf_url: str, scraped_at: str) -> Non
             bigquery.ScalarQueryParameter("mrf_url", "STRING", mrf_url),
         ]
     )
-    bq.query(sql, job_config=job_config).result()
+    # SF5 (Phase 8.4): verify the UPDATE wrote a row.
+    run_dml_with_count(bq, sql, job_config=job_config, label="hospital_directory.last_scraped")
 
 
 def update_hospital_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) -> None:
@@ -309,8 +330,11 @@ def update_hospital_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) ->
             bigquery.ScalarQueryParameter("mrf_url", "STRING", mrf_url),
         ]
     )
-    bq.query(sql, job_config=job_config).result()
-    logger.info("Backfilled hospital_npi=%s for mrf_url=%s", hospital_npi, mrf_url)
+    # SF5 (Phase 8.4): verify the UPDATE wrote a row.
+    affected = run_dml_with_count(
+        bq, sql, job_config=job_config, label=f"hospital_directory.hospital_npi {mrf_url}"
+    )
+    logger.info("Backfilled hospital_npi=%s for mrf_url=%s (%d rows)", hospital_npi, mrf_url, affected)
 
 
 def _is_parseable_extension(blob_name: str) -> bool:
