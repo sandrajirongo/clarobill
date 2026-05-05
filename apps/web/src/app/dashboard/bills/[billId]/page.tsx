@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { BillResultsView } from '@/components/bill-results-view';
 import { parseBillingErrors } from '@/lib/api/parsers';
+import { mapBillRow, mapLineItemRow } from '@/lib/api/mappers';
 
 interface PageProps {
   params: Promise<{ billId: string }>;
@@ -51,25 +52,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
     .limit(1)
     .maybeSingle();
 
-  const billProps = {
-    id: bill.id,
-    userId: bill.user_id,
-    displayName: bill.display_name ?? null,
-    fileName: bill.file_name,
-    filePath: bill.file_path,
-    fileSize: bill.file_size,
-    mimeType: bill.mime_type,
-    status: bill.status,
-    hospitalNpi: bill.hospital_npi ?? null,
-    hospitalName: bill.hospital_name ?? null,
-    profileMemberId: bill.profile_member_id ?? null,
-    payerName: bill.payer_name ?? null,
-    planName: bill.plan_name ?? null,
-    planType: null,
-    confirmedAt: bill.confirmed_at ?? null,
-    createdAt: bill.created_at,
-    updatedAt: bill.updated_at,
-  };
+  const billProps = mapBillRow(bill);
 
   // Analysis not ready yet — show a processing state instead of a broken redirect.
   // This handles: navigating directly to the URL while the engine is still running,
@@ -95,18 +78,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
     if (isComplete) {
       return <BillResultsView
         bill={billProps}
-        lineItems={(lineItems ?? []).map((item) => ({
-          id: item.id,
-          billId: item.bill_id,
-          cptCode: item.cpt_code,
-          description: item.description,
-          serviceDate: item.service_date,
-          quantity: item.quantity,
-          unitCharge: Number(item.unit_charge),
-          totalCharge: Number(item.total_charge),
-          modifier: item.modifier,
-          diagnosisPointers: item.diagnosis_pointers,
-        }))}
+        lineItems={(lineItems ?? []).map(mapLineItemRow)}
         analysis={{
           id: '',
           billId: billId,
@@ -159,18 +131,7 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
   return (
     <BillResultsView
       bill={billProps}
-      lineItems={(lineItems ?? []).map((item) => ({
-        id: item.id,
-        billId: item.bill_id,
-        cptCode: item.cpt_code,
-        description: item.description,
-        serviceDate: item.service_date,
-        quantity: item.quantity,
-        unitCharge: Number(item.unit_charge),
-        totalCharge: Number(item.total_charge),
-        modifier: item.modifier,
-        diagnosisPointers: item.diagnosis_pointers,
-      }))}
+      lineItems={(lineItems ?? []).map(mapLineItemRow)}
       analysis={{
         id: analysis.id,
         billId: analysis.bill_id,
