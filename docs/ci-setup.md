@@ -7,7 +7,18 @@ One-time setup for the workflows added in `.github/workflows/`.
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | every push to `main`; every PR | Full regression gate — engine ruff/mypy/pytest, web typecheck/lint/test/build, plus the engine→web boundary contract |
-| `migration-check.yml` | PRs touching `supabase/migrations/**` | Boots a local Supabase stack via Docker, applies every migration in order, tests reversibility of new `.down.sql` files, runs engine pytest against the live DB |
+| `migration-check.yml` | PRs touching `supabase/migrations/**` | Boots a local Supabase stack via Docker, applies every migration in order, tests reversibility against `supabase/migrations_down/*.down.sql`, runs engine pytest against the live DB |
+
+## Migration folder layout
+
+```
+supabase/
+├── migrations/         ← up migrations only (Supabase CLI applies these in lex order)
+├── migrations_down/    ← matching <version>_<name>.down.sql siblings (CLI ignores)
+└── config.toml
+```
+
+Down migrations are deliberately stored in a sibling folder so the Supabase CLI doesn't pick them up as additional migrations to apply. The reversibility test in `migration-check.yml` looks for `supabase/migrations_down/<filename>.down.sql` for each touched up-migration. Add a down sibling whenever the migration is reversible — the workflow emits a `::warning::` if one is missing.
 
 ## Local setup (one-time)
 
@@ -87,3 +98,4 @@ GitHub Actions on a public repo is free; on a private repo, `ubuntu-latest` minu
 The migration-check workflow only fires on PRs that touch migration files — typically 1-2 PRs/month — so its cost is negligible.
 
 Sources verified 2026-05-04: <https://github.com/pricing>, <https://supabase.com/pricing>.
+

@@ -68,27 +68,29 @@ jobs:
           fi
 
       - name: Test reversibility of changed migrations
-        # For every *.down.sql that lives next to a migration touched in this
-        # PR, run the down migration AND re-apply the up migration. Confirms
-        # the .down.sql actually reverses cleanly.
+        # For every up-migration touched in this PR, run its sibling
+        # supabase/migrations_down/<version>_<name>.down.sql AND re-apply the up.
+        # Down migrations live in a sibling folder rather than alongside the
+        # ups so the Supabase CLI doesn't treat them as additional migrations
+        # to apply (the CLI scans only supabase/migrations/).
         env:
           PGPASSWORD: postgres
         run: |
           set -eu
           changed=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- supabase/migrations/ \
-            | grep -v '\.down\.sql$' | grep '\.sql$' || true)
+            | grep '\.sql$' || true)
           if [ -z "$changed" ]; then
             echo "No new up-migrations in this PR — skipping reversibility test."
             exit 0
           fi
           for migration in $changed; do
-            base="${migration%.sql}"
-            down="${base}.down.sql"
+            filename=$(basename "$migration" .sql)
+            down="supabase/migrations_down/${filename}.down.sql"
             if [ ! -f "$down" ]; then
-              echo "::warning::No .down.sql for $migration — skipping reversibility check. Add one if the migration is reversible."
+              echo "::warning::No down migration for $migration at $down — skipping reversibility check. Add one if the migration is reversible."
               continue
             fi
-            echo "Testing reversibility of $migration"
+            echo "Testing reversibility of $migration via $down"
             psql -h localhost -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$down"
             psql -h localhost -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$migration"
           done
