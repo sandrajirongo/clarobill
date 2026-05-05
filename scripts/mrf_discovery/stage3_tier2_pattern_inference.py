@@ -198,6 +198,24 @@ def verify_hospital_in_page(url: str, name: str) -> bool:
         if resp.status_code >= 400:
             resp.close()
             return False
+        # SF9 (Phase 8.4): pre-fix this called resp.raw.read(65536,
+        # decode_content=True) without a Content-Length pre-check —
+        # urllib3 buffers internally before decode, so a misconfigured
+        # CDN serving a 500MB binary as text/html could OOM the worker.
+        # Same S5 pattern that was fixed in Stage 4 via _read_capped.
+        # Reuse that defense here:
+        content_length = resp.headers.get("Content-Length")
+        if content_length:
+            try:
+                if int(content_length) > 65536 * 16:  # 1 MiB hard cap
+                    resp.close()
+                    logger.debug(
+                        "Skipping %s: Content-Length=%s exceeds verify cap",
+                        url, content_length,
+                    )
+                    return False
+            except (ValueError, TypeError):
+                pass
         # Read first 64 KB only
         body = resp.raw.read(65536, decode_content=True)
         resp.close()

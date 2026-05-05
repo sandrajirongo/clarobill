@@ -111,6 +111,20 @@ def _assert_flush_complete(
             f"Stage 4 final flush failed: {flush_failures[-1][1]}. "
             f"All recorded failures: {flush_failures}."
         )
+    # SF10 (Phase 8.4): intermediate flush failures (non-final) that were
+    # eventually drained by the next periodic flush still indicate BQ
+    # instability that should be triaged. Pre-SF10 the operator saw
+    # `flush_failures: 3` in the summary stdout but the run exited 0
+    # with no alert. Now: emit a WARN log line so Cloud Logging filters
+    # can configure an alert. Keeps the run successful (data did make
+    # it in eventually) but surfaces the signal.
+    if flush_failures:
+        logger.warning(
+            "Stage 4 finished with %d intermediate flush failure(s) (non-final). "
+            "Buffers eventually drained, but BQ instability should be triaged. "
+            "Failures: %s",
+            len(flush_failures), flush_failures,
+        )
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

@@ -114,12 +114,18 @@ def fetch_all_pos_rows(api_url: str = POS_API) -> Iterator[dict]:
     = ~150 MB in memory if we materialised it; streaming keeps the working set
     bounded.
     """
+    # SF7 (Phase 8.4): hard cap on pagination to prevent runaway loops
+    # if the upstream stops honoring `len(rows) < PAGE_SIZE` as the
+    # termination signal (the H6 pattern alive in Stage 2A pre-fix).
+    # POS file is ~30K rows / 5K per page = 6 pages; 100 is generous.
+    MAX_PAGES = 100
+
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
     offset = 0
     page = 0
     total_yielded = 0
 
-    while True:
+    while page < MAX_PAGES:
         url = f"{api_url}?offset={offset}&size={PAGE_SIZE}"
         page += 1
         logger.info("  POS page %d (offset=%d)", page, offset)
@@ -135,6 +141,13 @@ def fetch_all_pos_rows(api_url: str = POS_API) -> Iterator[dict]:
             break
         offset += PAGE_SIZE
         time.sleep(0.25)  # polite
+    else:
+        logger.warning(
+            "POS fetch hit MAX_PAGES=%d cap (offset=%d, yielded=%d). "
+            "Investigate before re-running — upstream may be returning "
+            "full pages indefinitely.",
+            MAX_PAGES, offset, total_yielded,
+        )
 
     logger.info("POS fetch complete: %d rows yielded across %d pages", total_yielded, page)
 
