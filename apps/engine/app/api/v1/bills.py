@@ -17,6 +17,7 @@ from supabase import Client
 from app.core.config import settings
 from app.core.dependencies import get_ai_analysis_service, get_email_service, get_supabase_client
 from app.core.posthog_client import posthog_client
+from app.core.supabase_helpers import as_optional_row, as_rows
 from app.models.bill import (
     AnalyzeAccepted,
     AnalyzeRequest,
@@ -160,7 +161,7 @@ async def _run_analysis_pipeline(
             supabase.table("bills").update(identity_update).eq("id", bill_id).execute()
 
         # Persist line items to the database
-        line_item_rows = [
+        line_item_rows: list[dict[str, Any]] = [
             {
                 "id": str(uuid.uuid4()),
                 "bill_id": bill_id,
@@ -494,11 +495,12 @@ def _load_ncci_pairs(
     # silently caps at 1,000 — and because the result is non-empty (some pairs are always
     # returned), the empty-result warning never fires. We'd silently miss pairs.
     response = query.limit(10000).execute()
+    rows = as_rows(response.data)
     pairs: dict[str, set[str]] = {}
-    for row in response.data:
+    for row in rows:
         pairs.setdefault(row["column_one_code"], set()).add(row["column_two_code"])
 
-    if len(response.data) >= 10000:
+    if len(rows) >= 10000:
         logger.warning(
             "NCCI pairs result hit the 10000-row limit for service_types=%s payer_type=%s "
             "cpt_codes=%s — some pairs may be silently missing. Consider paginating.",
@@ -552,7 +554,7 @@ def _load_mue_limits(
     )
 
     result: dict[str, tuple[int, int]] = {}
-    for row in response.data:
+    for row in as_rows(response.data):
         code = row["hcpcs_code"]
         if code not in result:
             result[code] = (int(row["mue_value"]), int(row["adjudication_indicator"]))
@@ -618,8 +620,8 @@ def _load_medicare_rates(
     )
 
     # Take the most recent available entry per HCPC code (≤ service date)
-    indicators: dict[str, dict[str, object]] = {}
-    for row in indicators_resp.data:
+    indicators: dict[str, dict[str, Any]] = {}
+    for row in as_rows(indicators_resp.data):
         if row["hcpc"] not in indicators:
             indicators[row["hcpc"]] = row
 
@@ -644,8 +646,9 @@ def _load_medicare_rates(
         .execute()
     )
 
-    if locality_resp.data:
-        gpci = locality_resp.data[0]
+    locality_rows = as_rows(locality_resp.data)
+    if locality_rows:
+        gpci = locality_rows[0]
         gpci_work = Decimal(str(gpci["gpci_work"]))
         gpci_pe   = Decimal(str(gpci["gpci_pe"]))
         gpci_mp   = Decimal(str(gpci["gpci_mp"]))
@@ -699,7 +702,7 @@ def _load_non_payable_codes(
         .execute()
     )
     result: dict[str, str] = {}
-    for row in response.data:
+    for row in as_rows(response.data):
         if row["hcpc"] not in result:
             result[row["hcpc"]] = row["proc_stat"]
     return result
@@ -745,7 +748,7 @@ def _load_hcpcs_code_data(
     non_payable: dict[str, str] = {}
     termination_dates: dict[str, date] = {}
 
-    for row in response.data:
+    for row in as_rows(response.data):
         hcpc = row["hcpc"]
         if hcpc in seen:
             continue
@@ -802,7 +805,7 @@ def _load_anesthesia_base_units(
 
     # Take the most recent available entry per code (≤ bill year)
     result: dict[str, int] = {}
-    for row in response.data:
+    for row in as_rows(response.data):
         if row["cpt_code"] not in result:
             result[row["cpt_code"]] = int(row["base_units"])
     return result
@@ -843,7 +846,7 @@ def _load_opps_rates(
 
     # Take the most recent available entry per code (≤ service date)
     rates: dict[str, Decimal] = {}
-    for row in response.data:
+    for row in as_rows(response.data):
         hcpc = row["hcpc"]
         if hcpc not in rates and row["facility_price"] is not None:
             rates[hcpc] = Decimal(str(row["facility_price"]))
@@ -882,14 +885,16 @@ def _resolve_ambulance_rural_indicator(
         .limit(1)
         .execute()
     )
-    if not response.data:
+    rows = as_rows(response.data)
+    if not rows:
         logger.warning(
             "ZIP %s not found in ambulance ZIP table (effective_from<=%s) — using urban rate.",
             zip5,
             rate_date,
         )
         return ""
-    return response.data[0]["rural_indicator"] or ""
+    indicator = rows[0]["rural_indicator"]
+    return str(indicator) if indicator else ""
 
 
 def _load_ambulance_rates(
@@ -946,12 +951,13 @@ def _load_ambulance_rates(
         .execute()
     )
 
-    if not response.data:
+    ambulance_rows = as_rows(response.data)
+    if not ambulance_rows:
         return {}
 
     # Take the most recent available entry per HCPC code (≤ service date)
-    latest: dict[str, dict[str, object]] = {}
-    for row in response.data:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in ambulance_rows:
         if row["hcpc"] not in latest:
             latest[row["hcpc"]] = row
 
@@ -1014,8 +1020,9 @@ def _resolve_locality(
             .limit(1)
             .execute()
         )
-        if response.data:
-            return str(response.data[0]["locality_code"])
+        rows = as_rows(response.data)
+        if rows:
+            return str(rows[0]["locality_code"])
 
     # 2. REST OF STATE fallback
     response = (
@@ -1028,8 +1035,9 @@ def _resolve_locality(
         .limit(1)
         .execute()
     )
-    if response.data:
-        return str(response.data[0]["locality_code"])
+    rows = as_rows(response.data)
+    if rows:
+        return str(rows[0]["locality_code"])
 
     # 3. STATEWIDE entry
     response = (
@@ -1042,8 +1050,9 @@ def _resolve_locality(
         .limit(1)
         .execute()
     )
-    if response.data:
-        return str(response.data[0]["locality_code"])
+    rows = as_rows(response.data)
+    if rows:
+        return str(rows[0]["locality_code"])
 
     # 4. National default
     logger.warning(
@@ -1087,7 +1096,8 @@ def _load_anesthesia_cf(
         .limit(1)
         .execute()
     )
-    if not response.data:
+    rows = as_rows(response.data)
+    if not rows:
         # Try national fallback if the specific locality doesn't have an anesthesia CF
         if contractor != "NATL":
             return _load_anesthesia_cf(supabase, "0000000", rate_date)
@@ -1099,7 +1109,7 @@ def _load_anesthesia_cf(
             rate_date,
         )
         return None
-    return Decimal(str(response.data[0]["non_qualifying_cf"]))
+    return Decimal(str(rows[0]["non_qualifying_cf"]))
 
 
 def _build_bq_client() -> bigquery.Client | None:
@@ -1613,9 +1623,10 @@ async def generate_report(
         "id,file_name,file_path,user_id,hospital_name,hospital_city,hospital_state,hospital_zip,"
         "payer_name,plan_name,profile_member_id"
     ).eq("id", bill_id).single().execute()
-    if not bill_row.data:
+    bill_data = as_optional_row(bill_row.data)
+    if not bill_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found.")
-    if bill_row.data["user_id"] != body.user_id:
+    if bill_data["user_id"] != body.user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized.")
 
     analysis_row = (
@@ -1625,11 +1636,12 @@ async def generate_report(
         .single()
         .execute()
     )
-    if not analysis_row.data:
+    analysis_data = as_optional_row(analysis_row.data)
+    if not analysis_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
 
-    user_id: str = bill_row.data["user_id"]
-    existing_url: str | None = analysis_row.data.get("report_url")
+    user_id: str = bill_data["user_id"]
+    existing_url: str | None = analysis_data.get("report_url")
 
     # Idempotency: skip only if the file actually exists in storage.
     # create_signed_url always succeeds regardless of whether the file exists;
@@ -1654,8 +1666,8 @@ async def generate_report(
         _do_generate_report,
         bill_id=bill_id,
         body=body,
-        bill_data=bill_row.data,
-        analysis_data=analysis_row.data,
+        bill_data=bill_data,
+        analysis_data=analysis_data,
         supabase=supabase,
         ai_service=ai_service,
         email_service=email_service,
@@ -1705,9 +1717,11 @@ async def _do_generate_report(
                 .single()
                 .execute()
             )
-            if member_row.data:
-                patient_name = member_row.data.get("full_name")
-                dob_raw = member_row.data.get("date_of_birth")
+            member_data = as_optional_row(member_row.data)
+            if member_data:
+                pn = member_data.get("full_name")
+                patient_name = str(pn) if pn else None
+                dob_raw = member_data.get("date_of_birth")
                 patient_dob = str(dob_raw) if dob_raw else None
 
             if payer_name and plan_name:
@@ -1720,8 +1734,10 @@ async def _do_generate_report(
                     .limit(1)
                     .execute()
                 )
-                if plan_row.data:
-                    member_id = plan_row.data[0].get("member_id")
+                plan_rows = as_rows(plan_row.data)
+                if plan_rows:
+                    raw_member_id = plan_rows[0].get("member_id")
+                    member_id = str(raw_member_id) if raw_member_id else None
 
         items_row = (
             supabase.table("line_items")
@@ -1731,24 +1747,24 @@ async def _do_generate_report(
         )
         line_items = [
             ParsedLineItem(
-                cpt_code=r["cpt_code"],
-                description=r["description"],
-                service_date=date.fromisoformat(r["service_date"]),
-                quantity=r["quantity"],
+                cpt_code=str(r["cpt_code"]),
+                description=str(r["description"]),
+                service_date=date.fromisoformat(str(r["service_date"])),
+                quantity=int(r["quantity"]),
                 unit_charge=float(r["unit_charge"]),
                 total_charge=float(r["total_charge"]),
-                modifier=r["modifier"],
-                diagnosis_pointers=r["diagnosis_pointers"],
+                modifier=str(r["modifier"]) if r["modifier"] is not None else None,
+                diagnosis_pointers=list(r["diagnosis_pointers"]) if r["diagnosis_pointers"] else [],
             )
-            for r in items_row.data
+            for r in as_rows(items_row.data)
         ]
 
         billing_errors = [
             BillingError(
                 code=BillingErrorCode(e["code"]),
                 severity=ErrorSeverity(e["severity"]),
-                affected_line_item_ids=e["affected_line_item_ids"],
-                description=e["description"],
+                affected_line_item_ids=list(e["affected_line_item_ids"]),
+                description=str(e["description"]),
                 estimated_overcharge=Decimal(str(e["estimated_overcharge"])),
                 medicare_benchmark_rate=(
                     Decimal(str(e["medicare_benchmark_rate"]))
