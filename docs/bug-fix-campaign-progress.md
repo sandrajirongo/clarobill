@@ -15,8 +15,8 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **CI** | GitHub Actions + Supabase migration-check | ✅ done 2026-05-04 | `8f1d3c8` `f236283` `0624ad9` `694de6a` `5b1ea62` (PR #8 merged) |
 | **2** | S2 NCCI modifier-59 per-line | ✅ done 2026-05-04 | `41412c1` |
 | **3** | High-severity engine (H1, H2, H3, H8, H9, H10) | ✅ done 2026-05-04 | `be0c76a` `0010f73` `98f51c5` `d5ffd8b` `d3147ac` `45682cc` |
-| **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ⏳ next | — |
-| **5** | Medium-severity (M3, M4, M5, M6) | pending | — |
+| **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ✅ done 2026-05-04 | `062d8dd` `9bf138c` `073f1a1` `d7ba465` `a446c62` `5dbe5a0` `fffda05` |
+| **5** | Medium-severity (M3, M4, M5, M6) | ⏳ next | — |
 | **6** | Type-truth migration (M7-M13) | pending | — |
 | **7** | Universal coverage audit (Rule 8) | pending | — |
 
@@ -38,10 +38,22 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **H1** | Comma-less ZIP captured as CPT (`Cleveland OH 44195`) | `98f51c5` |
 | **H2** | Mileage `unit_charge` rounding lost cents — `qty × unit ≠ total` | `d5ffd8b` |
 | **H3** | NCCI `affected_line_item_ids` covered both col1 + col2 — leaked into savings dedup keys | `45682cc` |
+| **H4** | Tier 3 Places API booked cost meter BEFORE the request — phantom charges on connection errors | `fffda05` |
+| **H5** | Stage 4 staging table prefix `_stage4_*` was hidden from default BQ listings | `d7ba465` |
+| **H6** | Stage 1 CMS pagination had no hard cap — runaway loop on bad `count` response | `a446c62` |
+| **H7** | Tier 1 invalid-URL rows stuck forever (Tiers 2/3 never re-processed) | `5dbe5a0` |
 | **H8** | `AnalysisResult.total_charges` Decimal → JSON string instead of float | `be0c76a` |
 | **H9** | NPI fallback regex accepted account/MRN/claim labels (Luhn alone = 10% false positive rate) | `d3147ac` |
 | **H10** | `AnalyzeRequest` accepted any string for `state`/`zip_code`/`plan_type` | `0010f73` |
 | **H11** | Stale `.venv` shebang from MedScan rename → mypy/ruff/pytest broken locally | Phase 0 (env fix) + `e294ee7` (typed Supabase row helpers, 210 mypy errors fixed) |
+
+### Stop-the-line (continued)
+
+| Tag | Description | Commit |
+|---|---|---|
+| **S3** | Stage 4 `_persist_results` flush failure silently retained buffer + reported success | `073f1a1` |
+| **S4** | Stage 4 `_crawl_hospital` branded transient errors as permanent (no traceback, no retry) | `9bf138c` |
+| **S5** | Stage 4 `resp.text` unbounded — single 500MB response could OOM the worker | `062d8dd` |
 
 ### Medium
 
@@ -53,18 +65,6 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 ---
 
 ## Findings open
-
-### MRF pipeline (Phase 4)
-
-| Tag | Description |
-|---|---|
-| **S3** | Stage 4 `_persist_results` flush failure silently retains buffer + reports success |
-| **S4** | Stage 4 `_crawl_hospital` brands transient errors as permanent (no traceback, no retry) |
-| **S5** | Stage 4 `resp.text` unbounded — single 500MB response can OOM the worker |
-| **H4** | Tier 3 Places API books cost meter BEFORE the request — phantom charges on network errors |
-| **H5** | Stage 4 staging table prefix `_stage4_*` may be invalid in BQ (leading underscore reserved) |
-| **H6** | Stage 1 CMS pagination has no hard cap — runaway loop on bad `count` response |
-| **H7** | Tier 1 invalid-URL rows get permanently stuck (Tiers 2/3 never re-process) |
 
 ### Medium (Phase 5)
 
@@ -105,6 +105,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | End of Phase 2 | 482 | 24 |
 | End of Phase 3 | 502 passed, 10 skipped | 24 |
 | End of CI setup (PR #8) | 502 | 24 |
+| End of Phase 4 | 510 (engine) + 94 (mrf_discovery scripts) | 24 |
 
 ---
 
@@ -126,5 +127,5 @@ All four checks required for merge-readiness; branch protection adds them as req
 | Supabase Pro database compute included; backfill migration cost ~$0 | 2026-05-04 | Sandra's plan baseline |
 | Supabase preview branches — no fixed fee, $0.01344/hr Micro Compute, ~$0.60/month at beta volume | 2026-05-04 | <https://supabase.com/pricing> |
 | GitHub Actions — public repo free; private repo 2,000-3,000 min/month included; CI cost ~750 min/month at 5 PR/day × 3 reruns | 2026-05-04 | <https://github.com/pricing> |
-| BQ table rename (H5, future) — free metadata operation | TBD when fix lands | <https://cloud.google.com/bigquery/docs> |
-| Places API cost-meter fix (H4, future) — needs research before implementing | TBD when fix lands | requires WebSearch per Rule 16 |
+| BQ table rename (H5) — free metadata operation | 2026-05-04 | <https://cloud.google.com/bigquery/docs/managing-tables#renametable> |
+| Places API billing — only requests reaching Google's LB are charged; ConnectionError refundable, Timeout defensive-book | 2026-05-04 | <https://developers.google.com/maps/documentation/places/web-service/usage-and-billing>, <https://developers.google.com/maps/billing-and-pricing/manage-costs> |
