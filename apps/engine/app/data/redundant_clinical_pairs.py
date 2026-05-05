@@ -41,7 +41,7 @@ Adding a new pair
 - Add an entry to REDUNDANT_PAIRS below with all four fields populated.
 - Add a test case in tests/services/test_rules_engine.py mirroring the
   existing REDUNDANT_CLINICAL_PAIR tests.
-- Update docs/rules-engine.md if adding a new category.
+- Update docs/architecture/rules-engine.md if adding a new category.
 """
 
 from __future__ import annotations

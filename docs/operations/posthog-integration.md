@@ -44,3 +44,7 @@ We've built a dashboard and insights to monitor user behavior based on the event
 We've left an agent skill folder in your project at `.claude/skills/integration-fastapi/`. You can use this context for further agent development when using Claude Code. This will help ensure the model provides the most up-to-date approaches for integrating PostHog.
 
 </wizard-report>
+
+---
+
+_Last reviewed: 2026-05-05_

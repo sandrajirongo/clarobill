@@ -244,3 +244,7 @@ be done as additive + deprecation.
 - [ci-cd.md](ci-cd.md) — CI workflow detail
 - [../playbooks/cost-discipline.md](../playbooks/cost-discipline.md) — cost gate before any infra change
 - [../playbooks/security-phi.md](../playbooks/security-phi.md) — PHI handling on rollback / log purge
+
+---
+
+_Last reviewed: 2026-05-05_

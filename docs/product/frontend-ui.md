@@ -281,3 +281,7 @@ insurance_plans
    ```
 
 Until this runs, the upload flow will work (the API silently ignores `displayName` inserts to a missing column — Supabase will return an error but the bill row is still created), but display names won't be persisted.
+
+---
+
+_Last reviewed: 2026-05-05_

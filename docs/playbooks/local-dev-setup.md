@@ -188,3 +188,7 @@ See [testing-guide.md](testing-guide.md) for the deeper testing workflow.
 | `NEXT_PUBLIC_BETA_MODE` | Paywall | Default true; set `false` to test paid flow |
 
 The full lists are in `apps/engine/.env.example` and `apps/web/.env.example`.
+
+---
+
+_Last reviewed: 2026-05-05_

@@ -4,6 +4,8 @@ AI-powered medical bill error detection. Analyzes itemized bills for overcharges
 duplicate charges, coding violations, and charges above the patient's contracted
 insurance rate. Generates plain-English reports and ready-to-send dispute letters.
 
+> **Looking for documentation?** Start at [`docs/README.md`](docs/README.md) — it indexes every doc by topic.
+
 ---
 
 ## Stack

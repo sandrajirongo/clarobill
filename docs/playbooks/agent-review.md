@@ -269,3 +269,7 @@ shape of the output.
   `*.meta.json` files for `{"agentType": ..., "description": ...}`.
 - `CLAUDE.md` Rule 13 — the regression gate. Audit agents typically
   surface gate failures as STOP-THE-LINE.
+
+---
+
+_Last reviewed: 2026-05-05_

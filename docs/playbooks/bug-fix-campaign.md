@@ -224,3 +224,7 @@ All four checks required for merge-readiness; branch protection adds them as req
 | GitHub Actions — public repo free; private repo 2,000-3,000 min/month included; CI cost ~750 min/month at 5 PR/day × 3 reruns | 2026-05-04 | <https://github.com/pricing> |
 | BQ table rename (H5) — free metadata operation | 2026-05-04 | <https://cloud.google.com/bigquery/docs/managing-tables#renametable> |
 | Places API billing — only requests reaching Google's LB are charged; ConnectionError refundable, Timeout defensive-book | 2026-05-04 | <https://developers.google.com/maps/documentation/places/web-service/usage-and-billing>, <https://developers.google.com/maps/billing-and-pricing/manage-costs> |
+
+---
+
+_Last reviewed: 2026-05-05_

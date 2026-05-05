@@ -274,3 +274,7 @@ Use the campaign's S/H/M tagging:
 4. If it's a vitest test that hangs, check for a missing `await` on
    `screen.findByText` (synchronous `getByText` for static content,
    async `findByText` for content that appears after render).
+
+---
+
+_Last reviewed: 2026-05-05_

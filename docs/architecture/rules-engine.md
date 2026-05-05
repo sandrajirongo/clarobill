@@ -536,3 +536,7 @@ See `docs/future-improvements/` for detailed design docs on:
 
 *Last updated: April 29 2026 (added REDUNDANT_CLINICAL_PAIR + Phase 4 effective-dated MRF pipeline references)*  
 *Owner: ClaroBill Engineering*
+
+---
+
+_Last reviewed: 2026-05-05_

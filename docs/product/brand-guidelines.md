@@ -347,3 +347,7 @@ Every content section follows this pattern:
 ---
 
 *Maintained by the ClaroBill product team. Update this document whenever a design decision is codified in the codebase.*
+
+---
+
+_Last reviewed: 2026-05-05_

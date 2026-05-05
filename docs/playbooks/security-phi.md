@@ -242,3 +242,7 @@ rate-limiting at the API-route layer (Phase 8 backlog: not yet implemented).
 - M18 — Sentry `before_send` doesn't scrub `extra`, `breadcrumbs`, `contexts`
 - H12 — `generate_bill_summary` doesn't share `_sanitise_for_prompt` discipline
 - (Phase-8) — engine API key rotation has a brief 401 window (no `_PREVIOUS` slot)
+
+---
+
+_Last reviewed: 2026-05-05_

@@ -126,3 +126,7 @@ is recorded in `schema_migrations`. Local + CI use `supabase db start` to
 boot a fresh Postgres in Docker and apply every migration in order — see
 [../operations/ci-cd.md](../operations/ci-cd.md) for the migration-check
 workflow.
+
+---
+
+_Last reviewed: 2026-05-05_

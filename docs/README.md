@@ -62,3 +62,7 @@ Start here. Every doc lives under one of the categories below.
 | A backlog item not yet started | `future-improvements/X.md` |
 
 When in doubt, put it under `playbooks/` and move it later — that folder absorbs anything that doesn't fit cleanly elsewhere.
+
+---
+
+_Last reviewed: 2026-05-05_

@@ -574,3 +574,6 @@ pipeline path; enabling new APIs should be a documented decision (with cost impl
   # Review the projected $X. If reasonable:                                                                           
   python3 scripts/mrf_discovery/stage3_tier3_places.py \                                                              
     --run-id $RUN_ID --max-places-cost 450 --project clarobill-prd     
+---
+
+_Last reviewed: 2026-05-05_

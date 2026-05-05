@@ -118,3 +118,7 @@ The migration-check workflow only fires on PRs that touch migration files — ty
 
 Sources verified 2026-05-04: <https://github.com/pricing>, <https://supabase.com/pricing>.
 
+
+---
+
+_Last reviewed: 2026-05-05_

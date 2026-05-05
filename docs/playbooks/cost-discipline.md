@@ -144,3 +144,7 @@ Even with the math done, ask before:
 - [../postmortems/2026-05-04-claude-damage-report.md](../postmortems/2026-05-04-claude-damage-report.md) — the $226 incident
 - [../decisions/2026-04-28-google-places-cost-design.md](../decisions/2026-04-28-google-places-cost-design.md) — Places API tiering
 - [../decisions/2026-04-30-pipeline-cadence.md](../decisions/2026-04-30-pipeline-cadence.md) — twice-yearly vs weekly cost trade-off
+
+---
+
+_Last reviewed: 2026-05-05_

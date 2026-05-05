@@ -1,5 +1,8 @@
 # MRF coverage remediation — 2026-05-04 session ledger + Phase 4 design
 
+**Date:** 2026-05-04
+**Status:** ACTIVE — items 1 (NPPES NPI resolver) and 2 (scrape-time content validation) shipped; items 3 (parser archive_index driver) and 4 (CSV parser) tracked in Phase 8 backlog at [../playbooks/bug-fix-campaign.md](../playbooks/bug-fix-campaign.md).
+
 **Audience:** Future ClaroBill engineers (and future-Sandra) reading this six
 months from now. Single source of truth for what shipped on 2026-05-04 and
 what's planned for the CSV-format MRF parser rollout.
