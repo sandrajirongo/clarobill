@@ -232,13 +232,32 @@ def seed_hospitals(
     if not materialised:
         return 0
 
+    # SF4 (Phase 8.4): pre-fix logged errors[:3] (truncated) AND added
+    # full batch length to `inserted` even when many rows in the batch
+    # had failed. A schema drift that rejected a deterministic subset
+    # of rows produced an `inserted=N` count that was larger than the
+    # rows actually persisted — operator saw "Seeded 13,833 hospitals"
+    # but BQ held fewer. Now: log full errors list (truncation belongs
+    # to the BQ server response, not our client logger), subtract
+    # failed rows from `inserted`, and raise with the precise failed
+    # count in the message.
     inserted = 0
+    failed_total = 0
     for start in range(0, len(materialised), batch_size):
         batch = materialised[start : start + batch_size]
         errors = client.insert_rows_json(table_id, batch)
         if errors:
-            logger.error("seed_hospitals insert errors: %s", errors[:3])
-            raise RuntimeError(f"BigQuery insert failed: {errors[:3]}")
+            failed_count = len(errors)
+            failed_total += failed_count
+            logger.error(
+                "seed_hospitals: %d/%d rows in batch failed (offset=%d). Errors: %s",
+                failed_count, len(batch), start, errors,
+            )
+            raise RuntimeError(
+                f"BigQuery insert failed: {failed_count} of {len(batch)} rows "
+                f"in batch (offset {start}) rejected. {failed_total} total failed "
+                f"so far. First error: {errors[0]}"
+            )
         inserted += len(batch)
     logger.info("Seeded %d hospitals into checkpoint", inserted)
     return inserted
