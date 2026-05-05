@@ -103,29 +103,24 @@ logger = logging.getLogger(__name__)
 
 
 def _ncci_flagged_code_pairs(
-    ncci_errors: list["DetectedError"],
-    line_items: list["ParsedLineItem"],
+    ncci_pairs: list[tuple[str, list[str]]],
 ) -> set[frozenset[str]]:
-    """Extract the set of {col1_code, col2_code} pairs already flagged by NCCI.
+    """Build the set of {col1_code, col2_code} pairs flagged by NCCI on this bill.
 
     Used by the REDUNDANT_CLINICAL_PAIR rule to dedup against NCCI — if a pair
     is already in NCCI, NCCI wins and the redundancy rule stays silent.
 
-    DetectedError holds line-item indices, not CPT codes. We resolve indices
-    back to CPTs via the original line_items list.
+    Pre-H3 (2026-05-04), this function reconstructed pairs by reading
+    `affected_indices` and mapping back to CPTs via the line items. After H3,
+    `affected_indices` carries col2 only (the actual overcharged line),
+    so the col1↔col2 relationship is no longer recoverable from the error.
+    `_detect_ncci_unbundling` now passes the (col2_code, [col1_codes]) mapping
+    out directly.
     """
     pairs: set[frozenset[str]] = set()
-    for err in ncci_errors:
-        codes = {line_items[i].cpt_code for i in err.affected_indices}
-        if len(codes) >= 2:
-            # An NCCI error can carry more than 2 codes (one component bundled
-            # into multiple comprehensive codes). Emit every pairwise combo so
-            # the redundancy rule's lookup hits regardless of which order the
-            # curated list uses.
-            code_list = list(codes)
-            for i in range(len(code_list)):
-                for j in range(i + 1, len(code_list)):
-                    pairs.add(frozenset({code_list[i], code_list[j]}))
+    for col2_code, col1_codes in ncci_pairs:
+        for col1 in col1_codes:
+            pairs.add(frozenset({col1, col2_code}))
     return pairs
 
 
@@ -319,7 +314,7 @@ class RulesEngine:
             if len(e.affected_indices) >= 2
         }
 
-        ncci_errors, ncci_component_indices = self._detect_ncci_unbundling(line_items)
+        ncci_errors, ncci_component_indices, ncci_flagged_pairs = self._detect_ncci_unbundling(line_items)
         errors.extend(ncci_errors)
 
         # Line items that are fully removed from the bill — either a duplicate instance
@@ -349,7 +344,7 @@ class RulesEngine:
         # already-flagged NCCI pairs. If a pair appears in both lists, NCCI
         # wins (it's the authoritative source). The redundancy rule only
         # fires for pairs NOT already covered by NCCI on this bill.
-        already_flagged_pairs = _ncci_flagged_code_pairs(ncci_errors, line_items)
+        already_flagged_pairs = _ncci_flagged_code_pairs(ncci_flagged_pairs)
         errors.extend(_without_removed(
             self._detect_redundant_clinical_pairs(line_items, already_flagged_pairs)
         ))
@@ -482,21 +477,22 @@ class RulesEngine:
     def _detect_ncci_unbundling(
         self,
         line_items: list[ParsedLineItem],
-    ) -> tuple[list[DetectedError], set[int]]:
+    ) -> tuple[list[DetectedError], set[int], list[tuple[str, list[str]]]]:
         """Detect NCCI (National Correct Coding Initiative) edit pair violations.
 
         CMS maintains a table of procedure code pairs where one code is "bundled"
         into another. Billing both separately is called unbundling and is considered
         improper billing. Modifier 59 (distinct procedure) can override some pairs.
 
-        Returns (errors, component_indices) where component_indices is the set of all
-        line item indices that are NCCI component (col2) codes — used by run() to
-        suppress pricing errors on line items that are being fully removed.
-
-        If the same component code (col2) is flagged by multiple NCCI pairs, its charge
-        is counted only in the first error. Subsequent errors set estimated_overcharge=0
-        to prevent summing the same dollars multiple times into the savings total. All
-        errors are still included so the dispute letter covers every coding violation.
+        Returns (errors, component_indices, flagged_code_pairs):
+          - component_indices: set of all line item indices that are NCCI component
+            (col2) codes — used by run() to suppress pricing errors on line items
+            that are being fully removed.
+          - flagged_code_pairs: list of (col2_code, [col1_codes]) emitted in the
+            same iteration order as the errors. Used by REDUNDANT_CLINICAL_PAIR
+            dedup. Pre-H3 the dedup reconstructed pairs from affected_indices,
+            but H3 narrowed affected_indices to col2-only — so the mapping is
+            now passed out explicitly.
 
         # Medicare allows modifier 59 to override NCCI edits when procedures are
         # performed on distinct anatomical sites or distinct patient encounters.
@@ -564,7 +560,16 @@ class RulesEngine:
             errors.append(DetectedError(
                 code="NCCI_UNBUNDLING",
                 severity="critical",
-                affected_indices=tuple(dict.fromkeys(all_col1_indices + col2_indices)),
+                # H3 fix (2026-05-04): affected_line_item_ids now covers
+                # col2 indices only — the actual line items whose dollars
+                # constitute the overcharge. col1 codes are bundled-INTO
+                # destinations named in the description, not "affected"
+                # in the savings-math sense. Pre-fix, including col1
+                # indices created distinct grouping keys that prevented
+                # the bills.py:321 dedup from collapsing this finding
+                # with any other rule that targeted only col2 (e.g. a
+                # PRICE_OUTLIER on col2 itself, post-_without_removed).
+                affected_indices=tuple(col2_indices),
                 description=(
                     f"CPT {col2_code} should be bundled into {bundled_into} per CMS NCCI "
                     f"edits. Billing these codes separately may be improper. "
@@ -574,7 +579,11 @@ class RulesEngine:
                 medicare_benchmark_rate=None,
             ))
 
-        return errors, all_component_indices
+        flagged_code_pairs = [
+            (col2_code, list(col1_codes))
+            for col2_code, col1_codes in component_to_col1s.items()
+        ]
+        return errors, all_component_indices, flagged_code_pairs
 
     def _detect_redundant_clinical_pairs(
         self,

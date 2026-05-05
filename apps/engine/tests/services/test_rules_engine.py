@@ -231,6 +231,31 @@ class TestNcciUnbundling:
         # Overcharge counts only the un-modified line ($25), not both ($50).
         assert ncci_errors[0].estimated_overcharge == Decimal("25.00")
 
+    def test_affected_indices_covers_col2_only_not_col1(
+        self, engine_with_data: RulesEngine
+    ) -> None:
+        """H3 fix (2026-05-04): affected_line_item_ids on an NCCI finding lists
+        the col2 (component) line — the actual line whose dollars constitute
+        the overcharge. col1 (comprehensive) codes are bundled-INTO destinations
+        named in the description, not 'affected' for savings-math purposes.
+
+        Pre-fix, including col1 indices created distinct grouping keys in
+        bills.py savings_groups dedup that prevented the NCCI finding from
+        collapsing with any other rule that targeted only col2."""
+        items = [
+            make_line_item("99213", 95.00),  # col1 — bundled-into destination
+            make_line_item("36415", 25.00),  # col2 — the actual overcharge
+        ]
+        errors = engine_with_data.run(items)
+        ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
+        assert len(ncci_errors) == 1
+        # affected_indices points only at col2 (index 1).
+        assert ncci_errors[0].affected_indices == (1,)
+        # The col1 code IS still named in the description — so the dispute
+        # letter and report carry the full context.
+        assert "99213" in ncci_errors[0].description
+        assert "36415" in ncci_errors[0].description
+
     def test_modifier_59_multi_line_partial_override(
         self, engine_with_data: RulesEngine
     ) -> None:
