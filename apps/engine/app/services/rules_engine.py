@@ -511,6 +511,15 @@ class RulesEngine:
         # This produces one finding per component code regardless of how many comprehensive
         # codes are present on the bill — avoids multiple $0.00 overcharge cards for the same
         # component while preserving full detail in the description for the dispute letter.
+        #
+        # Modifier 59 / X{E,P,S,U} applies PER LINE ITEM, not per CPT code (CMS NCCI
+        # Policy Manual, Chapter I — modifier 59 covers a single distinct procedure
+        # / encounter / site). When the same col2 CPT is billed twice and only one
+        # carries the override, the un-modified line is still unbundling. Filter
+        # the override-bearing indices out before deciding whether the pair survives.
+        # Bug fix S2 (2026-05-04): pre-fix code dropped the whole pair the moment
+        # ANY line had the override, masking unbundled siblings.
+        component_to_filtered_col2_indices: dict[str, list[int]] = {}
         component_to_col1s: dict[str, list[str]] = {}
         for col1_code, component_codes in self._ncci_pairs.items():
             if col1_code not in cpt_to_indices:
@@ -518,15 +527,21 @@ class RulesEngine:
             for col2_code in component_codes:
                 if col2_code not in cpt_to_indices:
                     continue
-                col2_items = [line_items[i] for i in cpt_to_indices[col2_code]]
-                if any(item.modifier in _NCCI_OVERRIDE_MODIFIERS for item in col2_items):
+                filtered = [
+                    i for i in cpt_to_indices[col2_code]
+                    if line_items[i].modifier not in _NCCI_OVERRIDE_MODIFIERS
+                ]
+                if not filtered:
                     continue
+                # First col1_code wins the filtered set; subsequent col1s for the
+                # same col2 share it (the filter is per-line, not per-pair).
+                component_to_filtered_col2_indices.setdefault(col2_code, filtered)
                 component_to_col1s.setdefault(col2_code, []).append(col1_code)
 
         all_component_indices: set[int] = set()
 
         for col2_code, col1_codes in component_to_col1s.items():
-            col2_indices = cpt_to_indices[col2_code]
+            col2_indices = component_to_filtered_col2_indices[col2_code]
             all_component_indices.update(col2_indices)
 
             all_col1_indices: list[int] = []

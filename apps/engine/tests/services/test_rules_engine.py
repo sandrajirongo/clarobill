@@ -197,6 +197,59 @@ class TestNcciUnbundling:
         ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
         assert len(ncci_errors) == 0
 
+    def test_modifier_59_only_excludes_the_modified_line(
+        self, engine_with_data: RulesEngine
+    ) -> None:
+        """Per CMS, modifier 59 applies per LINE ITEM, not per CPT code.
+
+        On master (pre-fix), one 36415 carrying -59 would suppress the NCCI
+        flag for ALL 36415 instances on the bill — effectively giving the
+        provider a free pass to bundle as many uncovered 36415s as they want
+        as long as one of them has the override modifier. CMS intent: each
+        modifier 59 covers one distinct procedure; un-modified copies still
+        unbundle.
+
+        S2 fix: filter override-bearing indices out of col2_indices before
+        emitting a finding. The un-modified 36415 below is still flagged.
+        """
+        items = [
+            make_line_item("99213", 95.00),
+            make_line_item("36415", 25.00, modifier="59"),  # legitimately distinct
+            make_line_item("36415", 25.00),                 # plain unbundling
+        ]
+        errors = engine_with_data.run(items)
+        ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
+
+        assert len(ncci_errors) == 1, (
+            "expected exactly one NCCI flag — covering the un-modified 36415 "
+            "while leaving the -59 line alone"
+        )
+        # The flagged finding must point at the un-modified 36415 (index 2),
+        # NOT the -59 line (index 1).
+        assert 2 in ncci_errors[0].affected_indices
+        assert 1 not in ncci_errors[0].affected_indices
+        # Overcharge counts only the un-modified line ($25), not both ($50).
+        assert ncci_errors[0].estimated_overcharge == Decimal("25.00")
+
+    def test_modifier_59_multi_line_partial_override(
+        self, engine_with_data: RulesEngine
+    ) -> None:
+        """Three identical CPTs, two carry -59, one doesn't — only one flag fires."""
+        items = [
+            make_line_item("99213", 95.00),
+            make_line_item("36415", 25.00, modifier="59"),
+            make_line_item("36415", 25.00, modifier="XS"),
+            make_line_item("36415", 25.00),  # the only one that should flag
+        ]
+        errors = engine_with_data.run(items)
+        ncci_errors = [e for e in errors if e.code == "NCCI_UNBUNDLING"]
+
+        assert len(ncci_errors) == 1
+        assert ncci_errors[0].estimated_overcharge == Decimal("25.00")
+        assert 3 in ncci_errors[0].affected_indices
+        assert 1 not in ncci_errors[0].affected_indices
+        assert 2 not in ncci_errors[0].affected_indices
+
     def test_no_error_when_only_component_present(self, engine_with_data: RulesEngine) -> None:
         # 36415 alone is fine — only an error when paired with 99213
         items = [make_line_item("36415", 25.00)]
