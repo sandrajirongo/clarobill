@@ -215,10 +215,14 @@ class TestFilterNpisWithCharges:
         assert result == []
         bq.query.assert_not_called()
 
-    def test_returns_empty_on_query_failure(self) -> None:
+    def test_returns_none_on_query_failure(self) -> None:
+        """H15 (Phase 8.3): None signals 'presence check unavailable'
+        (transient outage) — distinct from [] which means 'definitively no
+        NPIs'. Caller treats None as 'abort resolution' rather than
+        'narrow to next pass that may match wrong hospital'."""
         bq = _bq_raising(RuntimeError("BQ down"))
         result = _filter_npis_with_charges(bq, "proj.dataset", ["1111111111"])
-        assert result == []
+        assert result is None
 
 
 # ── _resolve_payer_aliases ────────────────────────────────────────────────────

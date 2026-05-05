@@ -1373,6 +1373,20 @@ def _resolve_npi_by_name(
         candidate_npis = [str(r["hospital_npi"]) for r in rows]
         active_npis = _filter_npis_with_charges(bq, dataset, candidate_npis)
 
+        # H15 (Phase 8.3): if the presence-check itself errored (returned
+        # None as a sentinel rather than empty list — distinct from "no
+        # NPIs found"), abort the resolution. Pre-H15, [] on exception
+        # silently fell through to the broader pass which could resolve
+        # to a wrong-hospital NPI.
+        if active_npis is None:
+            logger.warning(
+                "Hospital '%s' %s: charges presence check unavailable; "
+                "aborting NPI resolution rather than falling back to a "
+                "broader pass that may match the wrong hospital",
+                hospital_name, label,
+            )
+            return None
+
         if len(active_npis) == 1:
             npi = active_npis[0]
             logger.info(
@@ -1397,11 +1411,17 @@ def _filter_npis_with_charges(
     bq: bigquery.Client,
     dataset: str,
     candidate_npis: list[str],
-) -> list[str]:
+) -> list[str] | None:
     """Return the subset of candidate NPIs that have at least one row in
     hospital_charges. Used by `_resolve_npi_by_name` to disambiguate when the
     directory has stale duplicates (e.g. Saint Michael's Medical Center NJ
     appears twice in `hospital_directory` — only NPI 1568825545 has pricing).
+
+    H15 (Phase 8.3): returns None on BQ exception to distinguish "presence
+    check unavailable" from "no NPIs found". Pre-H15 returned [] on
+    exception, which the caller treated as "narrow to next pass" — and
+    the next (broader) pass could resolve to a wrong-hospital NPI when
+    only a transient outage was responsible.
     """
     if not candidate_npis:
         return []
@@ -1417,7 +1437,7 @@ def _filter_npis_with_charges(
         rows = list(bq.query(query, job_config=job_config).result())
     except Exception as exc:
         logger.warning("hospital_charges presence check failed for %d NPIs: %s", len(candidate_npis), exc)
-        return []
+        return None
     return [str(r["hospital_npi"]) for r in rows]
 
 
@@ -1440,12 +1460,29 @@ def _resolve_payer_aliases(
     Falls back gracefully — the caller should fall back to CONTAINS_SUBSTR when
     this returns empty.
     """
+    # H14 + M17 (Phase 8.3): make the alias match deterministic + safer.
+    #
+    # Pre-H14: bidirectional CONTAINS_SUBSTR with no length floor +
+    # LIMIT 1 with no ORDER BY meant a 2-letter alias from any
+    # payer_group could match an arbitrary user-supplied payer_name longer
+    # than 2 chars, AND the LIMIT 1 was non-deterministic across runs.
+    # Effect: "Aetna" could match payer_group="AT&T" because alias "at"
+    # is a substring of "aetna" — wrong-hospital negotiated rates fed to
+    # the rules engine.
+    #
+    # Fix: drop the reverse direction (`@payer_name` contains `alias`)
+    # AND add `LENGTH(alias) >= 4` floor on the forward direction. Add
+    # `ORDER BY LENGTH(alias) DESC, payer_group` so the longest, then
+    # alphabetically-first alias wins — deterministic. The empty-result
+    # case still triggers the substring fallback at the call site.
+    #
     # `dataset` is engine config; @payer_name is parameterized.
     lookup_query = f"""
-        SELECT DISTINCT payer_group
+        SELECT payer_group
         FROM `{dataset}.payer_name_aliases`
-        WHERE CONTAINS_SUBSTR(alias, @payer_name)
-           OR CONTAINS_SUBSTR(@payer_name, alias)
+        WHERE CONTAINS_SUBSTR(@payer_name, alias)
+          AND LENGTH(alias) >= 4
+        ORDER BY LENGTH(alias) DESC, payer_group
         LIMIT 1
     """  # noqa: S608
     try:
