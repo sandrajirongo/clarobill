@@ -91,11 +91,27 @@ $$;
 -- Storage objects are deleted separately by the Edge Function (see 1b above),
 -- which should be scheduled at 02:15 UTC via:
 --   Dashboard → Edge Functions → process-deleted-bill-files → Cron schedule
-select cron.schedule(
-  'expire-bill-files',
-  '0 2 * * *',
-  'select public.expire_bill_files()'
-);
+--
+-- Guarded against environments without pg_cron loaded — local Supabase
+-- stacks (CI Docker, dev `supabase start`) ship the extension files but
+-- don't enable pg_cron unless `shared_preload_libraries` is configured at
+-- Postgres startup. Prod has it enabled via the dashboard, so the guard
+-- is a no-op there. Without this, applying migrations from scratch fails
+-- with "schema cron does not exist".
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    -- Idempotent: cron.schedule replaces an existing job with the same name.
+    perform cron.schedule(
+      'expire-bill-files',
+      '0 2 * * *',
+      'select public.expire_bill_files()'
+    );
+  else
+    raise notice 'pg_cron not loaded — expire-bill-files schedule skipped. Enable in Supabase dashboard for prod.';
+  end if;
+end
+$$;
 
 
 -- ─── 2. Index on payments(bill_id) ───────────────────────────────────────────

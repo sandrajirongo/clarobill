@@ -87,3 +87,4 @@ begin
   end if;
 end
 $$;
+-- registered with migration-check workflow 2026-05-05T02:32:11Z
