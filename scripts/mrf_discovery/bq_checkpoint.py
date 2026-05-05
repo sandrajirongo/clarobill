@@ -1,5 +1,15 @@
 """BigQuery checkpoint helpers shared by all CMS-direct discovery stages.
 
+Includes `run_dml_with_count` (M13, 2026-05-04): a thin wrapper around
+client.query(...).result() that asserts the DML actually affected ≥0 rows.
+Pre-fix, MERGE/UPDATE/INSERT calls discarded the QueryJob result and a
+0-rows-affected outcome (caused by a typo, a dataset rename, or an IAM
+revocation that silently downgraded the job to read-only) looked
+identical to a successful operation. Now: the helper logs the affected
+count at INFO and raises if num_dml_affected_rows is None (only happens
+when the statement isn't actually DML — useful regression net).
+
+
 The pipeline is designed for resumability. Every per-hospital row records when
 each stage completed; if the job crashes mid-run, re-launching with the same
 run_id picks up exactly where it left off. The contract for every stage is:
@@ -126,6 +136,38 @@ def ensure_checkpoint_table(
     CLUSTER BY run_id, state, ccn
     """
     client.query(sql).result()
+
+
+def run_dml_with_count(
+    client: bigquery.Client,
+    sql: str,
+    *,
+    job_config: bigquery.QueryJobConfig | None = None,
+    label: str = "DML",
+    logger: logging.Logger | None = None,
+) -> int:
+    """Run a DML statement (MERGE / UPDATE / INSERT / DELETE) and assert the
+    affected row count is captured. Returns the row count.
+
+    Raises RuntimeError when num_dml_affected_rows is None — that happens
+    when the statement isn't actually DML (e.g. a SELECT or CREATE TABLE
+    snuck through). Catching this regression at runtime is the point of
+    the wrapper.
+
+    Logs the count at INFO so operators can audit "MERGE updated 4,127
+    rows" lines in Cloud Logging without grepping for warnings.
+    """
+    job = client.query(sql, job_config=job_config) if job_config else client.query(sql)
+    job.result()  # Wait for completion + raise on query error.
+    affected = job.num_dml_affected_rows
+    if affected is None:
+        raise RuntimeError(
+            f"{label}: num_dml_affected_rows is None — the statement may not be DML. "
+            "If this is intentional (e.g. a CREATE TABLE), call client.query().result() directly."
+        )
+    if logger is not None:
+        logger.info("%s affected %d rows", label, affected)
+    return affected
 
 
 def seed_hospitals(

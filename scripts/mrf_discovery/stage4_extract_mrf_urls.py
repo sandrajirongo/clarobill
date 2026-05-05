@@ -985,12 +985,15 @@ def _persist_results(  # noqa: C901
               error_stage = S.error_stage,
               last_updated_at = CURRENT_TIMESTAMP()
         """
-        bq.query(
-            merge_sql,
+        # M13: assert + log affected row count via bq_checkpoint helper.
+        bq_checkpoint.run_dml_with_count(
+            bq, merge_sql,
             job_config=bigquery.QueryJobConfig(query_parameters=[
                 bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
             ]),
-        ).result()
+            label="Stage 4 checkpoint MERGE",
+            logger=logger,
+        )
         bq.delete_table(staging_table, not_found_ok=True)
         logger.info(
             "_persist_results: checkpoint MERGE done (rows=%d success=%d failed=%d)",
@@ -1049,7 +1052,12 @@ def _persist_results(  # noqa: C901
         WHEN MATCHED AND T.hospital_npi IS NULL AND S.hospital_npi IS NOT NULL THEN
           UPDATE SET hospital_npi = S.hospital_npi
     """
-    bq.query(dir_merge_sql).result()
+    # M13: assert + log affected row count.
+    bq_checkpoint.run_dml_with_count(
+        bq, dir_merge_sql,
+        label="Stage 4 hospital_directory MERGE",
+        logger=logger,
+    )
     bq.delete_table(staging_dir_table, not_found_ok=True)
     logger.info(
         "MERGEd %d (hospital, mrf_url) pairs into hospital_directory",

@@ -306,7 +306,11 @@ def apply_validations(
             consecutive_failures = COALESCE(T.consecutive_failures, 0) + 1,
             last_updated_at = CURRENT_TIMESTAMP()
         """
-        bq_client.query(merge_sql).result()
+        # M13 (2026-05-04): assert + log affected row count so a 0-row MERGE
+        # caused by a dataset typo or IAM regression doesn't masquerade as success.
+        bq_checkpoint.run_dml_with_count(
+            bq_client, merge_sql, label="Tier 1 validation MERGE", logger=logger,
+        )
         return {"valid": len(valid), "invalid": len(invalid), "total": len(results)}
     finally:
         bq_client.query(f"DROP TABLE IF EXISTS `{staging_table}`").result()
