@@ -33,7 +33,9 @@ import logging
 import os
 import re
 import sys
+import time
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterator
 
@@ -102,6 +104,13 @@ HOSPITAL_CHARGES_SCHEMA = [
 CHARGES_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.hospital_charges"
 DIRECTORY_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.hospital_directory"
 ARCHIVE_INDEX_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.mrf_archive_index"
+
+# Success-path bookkeeping is batched to avoid the per-blob DML serialization
+# failures that hit the 2026-05-04 8pxsj run (Incident 6). 6 concurrent tasks
+# × 4 per-blob UPDATEs overwhelmed BQ's table-level DML lock. Batching collapses
+# that to 2 MERGE statements per flush interval across all tasks.
+FLUSH_EVERY_BLOBS = 100   # flush after this many successful parses
+FLUSH_EVERY_SECS  = 300   # or after 5 minutes, whichever comes first
 
 # Extensions we know how to parse today. CSV-format MRFs are valid CMS output
 # but use vendor-specific column names — supporting them properly requires a
@@ -337,6 +346,105 @@ def update_hospital_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: str) ->
     logger.info("Backfilled hospital_npi=%s for mrf_url=%s (%d rows)", hospital_npi, mrf_url, affected)
 
 
+# ---------------------------------------------------------------------------
+# Batched success-path bookkeeping (replaces 4 per-blob UPDATEs on the happy
+# path — see FLUSH_EVERY_BLOBS / FLUSH_EVERY_SECS constants above).
+# Failure-path writes (failed / skipped status) are NOT batched: they are
+# the work-queue control signal and must be visible immediately so the next
+# run's skip-set is accurate.
+# ---------------------------------------------------------------------------
+
+def _bq_str(s: str) -> str:
+    """Escape a string for a BQ SQL literal. All values are internal (URLs/NPIs)."""
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _merge_archive_index_parsed(bq: bigquery.Client, records: list[dict[str, str]]) -> None:
+    """Single MERGE: flip all buffered pending rows to parsed and backfill NPI."""
+    rows_sql = " UNION ALL ".join(
+        f"SELECT {_bq_str(r['mrf_url'])} AS u, {_bq_str(r.get('hospital_npi') or '')} AS n"
+        for r in records
+    )
+    sql = f"""
+    MERGE `{ARCHIVE_INDEX_TABLE}` AS t
+    USING ({rows_sql}) AS s ON t.source_mrf_url = s.u AND t.parse_status = 'pending'
+    WHEN MATCHED THEN UPDATE SET
+      parse_status = 'parsed',
+      parse_error  = NULL,
+      parsed_at    = CURRENT_TIMESTAMP(),
+      hospital_npi = CASE
+        WHEN (t.hospital_npi IS NULL OR t.hospital_npi = '') AND s.n != ''
+        THEN s.n ELSE t.hospital_npi END
+    """
+    job = bq.query(sql)
+    job.result()
+    logger.info("archive_index batch MERGE: %d rows → parsed", int(job.num_dml_affected_rows or 0))
+
+
+def _merge_directory_scraped(bq: bigquery.Client, records: list[dict[str, str]]) -> None:
+    """Single MERGE: update last_scraped and backfill hospital_npi in hospital_directory."""
+    rows_sql = " UNION ALL ".join(
+        f"SELECT {_bq_str(r['mrf_url'])} AS u, "
+        f"TIMESTAMP({_bq_str(r['scraped_at'])}) AS ts, "
+        f"{_bq_str(r.get('hospital_npi') or '')} AS n"
+        for r in records
+    )
+    sql = f"""
+    MERGE `{DIRECTORY_TABLE}` AS t
+    USING ({rows_sql}) AS s ON t.mrf_url = s.u
+    WHEN MATCHED THEN UPDATE SET
+      last_scraped = s.ts,
+      hospital_npi = CASE
+        WHEN t.hospital_npi IS NULL AND s.n != ''
+        THEN s.n ELSE t.hospital_npi END
+    """
+    job = bq.query(sql)
+    job.result()
+    logger.info("hospital_directory batch MERGE: %d rows updated", int(job.num_dml_affected_rows or 0))
+
+
+@dataclass
+class _SuccessBuffer:
+    """Accumulates post-parse bookkeeping for successful blobs; flushed in batches.
+
+    Replaces the 4 per-blob success-path UPDATE calls with two MERGE statements
+    per flush. Callers MUST call flush() after the parse loop to commit the
+    final partial batch.
+    """
+    _archive:  list[dict[str, str]] = field(default_factory=list)
+    _directory: list[dict[str, str]] = field(default_factory=list)
+    _last_flush_at: float = field(default_factory=time.monotonic, compare=False, repr=False)
+
+    def record(self, mrf_url: str, hospital_npi: str, scraped_at: str) -> None:
+        self._archive.append({"mrf_url": mrf_url, "hospital_npi": hospital_npi})
+        self._directory.append({"mrf_url": mrf_url, "scraped_at": scraped_at, "hospital_npi": hospital_npi})
+
+    def needs_flush(self) -> bool:
+        return (
+            len(self._archive) >= FLUSH_EVERY_BLOBS
+            or (bool(self._archive) and time.monotonic() - self._last_flush_at >= FLUSH_EVERY_SECS)
+        )
+
+    def flush(self, bq: bigquery.Client) -> int:
+        """Write buffered records to BQ. Returns the number of records flushed."""
+        n = len(self._archive)
+        if n == 0:
+            return 0
+        try:
+            _merge_archive_index_parsed(bq, self._archive)
+        except Exception as exc:
+            logger.error("archive_index batch flush failed (%d records): %s", n, exc)
+        try:
+            _merge_directory_scraped(bq, self._directory)
+        except Exception as exc:
+            logger.error("hospital_directory batch flush failed (%d records): %s", n, exc)
+        self._archive.clear()
+        self._directory.clear()
+        self._last_flush_at = time.monotonic()
+        logger.info("Flushed %d success-bookkeeping records to BQ", n)
+        return n
+
+
 def _is_parseable_extension(blob_name: str) -> bool:
     """True if the parser knows how to handle this blob's format today.
 
@@ -387,16 +495,15 @@ def process_blob(
     blob: storage.Blob,
     bq: bigquery.Client,
     bucket: storage.Bucket,
+    success_buffer: _SuccessBuffer | None = None,
 ) -> bool:
-    """Bucket-walk entry point. Reads metadata from staging blob, then parses.
-
-    Kept as a thin wrapper so the existing bucket-walk path is unchanged.
-    The shared parse logic now lives in process_blob_with_meta so the
-    archive-index-driven mode can pass metadata explicitly (archive blobs
-    don't carry the scraper's custom metadata).
-    """
+    """Bucket-walk entry point. Reads metadata from staging blob, then parses."""
     meta = _get_blob_metadata(bucket, blob)
-    return process_blob_with_meta(blob, meta, bq, bucket, delete_source_on_success=True)
+    return process_blob_with_meta(
+        blob, meta, bq, bucket,
+        delete_source_on_success=True,
+        success_buffer=success_buffer,
+    )
 
 
 def process_blob_with_meta(
@@ -406,6 +513,7 @@ def process_blob_with_meta(
     staging_bucket: storage.Bucket,
     *,
     delete_source_on_success: bool,
+    success_buffer: _SuccessBuffer | None = None,
 ) -> bool:
     """Parse one MRF blob and load its charges into BigQuery.
 
@@ -555,14 +663,16 @@ def process_blob_with_meta(
         load_charges_from_gcs(bq, staging_uri)
         logger.info("[%s] Loaded %d rows to hospital_charges", label, row_count)
 
-        mark_last_scraped(bq, mrf_url, scraped_at)
-
-        # Backfill NPI into hospital_directory if it was NULL (common on first scrape).
-        if hospital_npi:
-            update_hospital_npi(bq, mrf_url, hospital_npi)
-
-        update_archive_index_status(bq, mrf_url, "parsed")
-        update_archive_index_npi(bq, mrf_url, hospital_npi)
+        # Bookkeeping: buffer the success record if a buffer was provided; fall
+        # back to immediate per-row writes for single-task / test scenarios.
+        if success_buffer is not None:
+            success_buffer.record(mrf_url, hospital_npi, scraped_at)
+        else:
+            mark_last_scraped(bq, mrf_url, scraped_at)
+            if hospital_npi:
+                update_hospital_npi(bq, mrf_url, hospital_npi)
+            update_archive_index_status(bq, mrf_url, "parsed")
+            update_archive_index_npi(bq, mrf_url, hospital_npi)
 
         # Delete the source MRF blob only when it was the ephemeral staging
         # copy. Archive-bucket blobs are immutable forensic evidence and
@@ -849,6 +959,7 @@ def process_archive_index_pending(
     # the same gcs_uri could re-appear after our SQL-side GROUP BY (e.g., if
     # a concurrent process re-inserted a pending row mid-loop).
     seen_uris: set[str] = set()
+    buffer = _SuccessBuffer()
 
     succeeded = 0
     failed = 0
@@ -862,9 +973,6 @@ def process_archive_index_pending(
             blob = _blob_from_gcs_uri(gcs, gcs_uri)
             meta = {
                 "mrf_url": mrf_url,
-                # Archive-index has no hospital_name — derive a label from URL
-                # so logs are readable. The actual name lookup happens at
-                # report-generation time via hospital_directory join.
                 "hospital_name": mrf_url or gcs_uri,
                 "hospital_npi": str(row["hospital_npi"] or ""),
                 "state": "",
@@ -872,7 +980,8 @@ def process_archive_index_pending(
             }
             ok = process_blob_with_meta(
                 blob, meta, bq, staging_bucket,
-                delete_source_on_success=False,  # archive is immutable
+                delete_source_on_success=False,
+                success_buffer=buffer,
             )
             if ok:
                 succeeded += 1
@@ -887,6 +996,10 @@ def process_archive_index_pending(
                     error=f"archive_index_driver: {type(exc).__name__}: {exc}"[:1000],
                 )
 
+        if buffer.needs_flush():
+            buffer.flush(bq)
+
+    buffer.flush(bq)  # commit the final partial batch
     return succeeded, failed
 
 
@@ -1056,6 +1169,7 @@ def main() -> None:
     succeeded = 0
     failed = 0
     skipped_terminal = 0
+    buffer = _SuccessBuffer()
     for blob in blobs:
         # Cheap pre-flight: read blob metadata once. If its mrf_url is in
         # the skip-set, move on without download / sniff / index update.
@@ -1065,11 +1179,15 @@ def main() -> None:
             skipped_terminal += 1
             continue
 
-        if process_blob(blob, bq, bucket):
+        if process_blob(blob, bq, bucket, success_buffer=buffer):
             succeeded += 1
         else:
             failed += 1
 
+        if buffer.needs_flush():
+            buffer.flush(bq)
+
+    buffer.flush(bq)  # commit the final partial batch
     logger.info(
         "Parse complete: %d succeeded, %d failed, %d already-terminal (skipped pre-flight)",
         succeeded, failed, skipped_terminal,
