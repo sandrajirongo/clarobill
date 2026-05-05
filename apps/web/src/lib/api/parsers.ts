@@ -23,6 +23,7 @@ import {
   BillingErrorSchema,
   BillSchema,
   LineItemSchema,
+  PlanTypeSchema,
 } from '@clarobill/shared';
 import type { BillingError, AnalysisResult, Bill, LineItem } from '@clarobill/shared';
 
@@ -70,21 +71,26 @@ export const MembersListResponseSchema = z.object({
   members: z.array(z.unknown()),
 });
 
-// Mirrors the InsuranceCardExtraction interface in apps/web/src/app/api/
-// insurance-card/extract/route.ts. Validated at the consumer boundary so
-// engine-side schema drift fails loudly.
+// Mirrors the engine's InsuranceCardExtraction Pydantic model. Validated
+// at the consumer boundary so engine-side schema drift fails loudly.
+//
+// T3 (Phase 8.1): planType is the closed PlanType set, not an open string.
+// The AI returns one of the closed values OR null; null means "user picks
+// from the form" (do NOT silently default to 'commercial').
 export const InsuranceCardExtractionSchema = z.object({
   payerName: z.string().nullable(),
   planName: z.string().nullable(),
   memberId: z.string().nullable(),
   groupId: z.string().nullable(),
-  planType: z.string().nullable(),
+  planType: PlanTypeSchema.nullable(),
   rxBin: z.string().nullable(),
   rxPcn: z.string().nullable(),
   rxGroup: z.string().nullable(),
   confident: z.boolean(),
   note: z.string().nullable(),
 });
+
+export type InsuranceCardExtraction = z.infer<typeof InsuranceCardExtractionSchema>;
 
 /**
  * Parse a fetch Response's JSON body through a Zod schema. Returns the

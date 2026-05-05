@@ -1,20 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/supabase/server';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
+import { InsuranceCardExtractionSchema, parseJsonResponse } from '@/lib/api/parsers';
+import type { InsuranceCardExtraction } from '@/lib/api/parsers';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
-export interface InsuranceCardExtraction {
-  payerName:  string | null;
-  planName:   string | null;
-  memberId:   string | null;
-  groupId:    string | null;
-  planType:   string | null;
-  rxBin:      string | null;
-  rxPcn:      string | null;
-  rxGroup:    string | null;
-  confident:  boolean;
-  note:       string | null;
-}
+// T3+T4 (Phase 8.1): the engine emits camelCase via alias_generator and the
+// route parses through Zod rather than hand-translating each field. The old
+// `as Record<string, unknown>` cast plus snake_case key reads + the
+// silent `?? 'commercial'` default for plan_type all moved out — the
+// engine and this route now share one schema source of truth.
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -93,23 +88,18 @@ export async function POST(
     );
   }
 
-  // Engine returns snake_case — map to camelCase for the frontend
-  const raw = await engineResponse.json() as Record<string, unknown>;
-  const str = (key: string): string | null => {
-    const v = raw[key];
-    return typeof v === 'string' && v ? v : null;
-  };
-
-  return NextResponse.json({
-    payerName: str('payer_name'),
-    planName:  str('plan_name'),
-    memberId:  str('member_id'),
-    groupId:   str('group_id'),
-    planType:  str('plan_type') ?? 'commercial',
-    rxBin:     str('rx_bin'),
-    rxPcn:     str('rx_pcn'),
-    rxGroup:   str('rx_group'),
-    confident: Boolean(raw['confident']),
-    note:      str('note'),
-  } satisfies InsuranceCardExtraction);
+  // Engine emits camelCase + closed-set planType via Pydantic
+  // alias_generator. Parse through Zod so any drift (engine adds a field,
+  // changes a nullability) fails loudly here, not later in the form.
+  let parsed: InsuranceCardExtraction;
+  try {
+    parsed = await parseJsonResponse(engineResponse, InsuranceCardExtractionSchema);
+  } catch (err) {
+    console.error('[insurance-card] Engine response shape drift:', err);
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Could not parse card data. Please try again.', step: 'extract' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 502 }
+    );
+  }
+  return NextResponse.json(parsed);
 }

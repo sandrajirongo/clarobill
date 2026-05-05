@@ -12,7 +12,7 @@ import {
   TRICARE_PLAN_TYPES,
 } from '@/lib/utils/insurance-constants';
 import { CardScanner } from '@/components/card-scanner';
-import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
+import type { InsuranceCardExtraction } from '@/lib/api/parsers';
 import { CameraIcon, PencilIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 

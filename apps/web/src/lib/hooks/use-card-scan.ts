@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
+import type { InsuranceCardExtraction } from '@/lib/api/parsers';
 import {
   ErrorResponseSchema,
   InsuranceCardExtractionSchema,

@@ -14,16 +14,18 @@ import asyncio
 import base64
 import json
 import logging
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
 
 import anthropic
 from anthropic.types import TextBlock
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 from vertexai.generative_models import GenerativeModel, Part
 
 from app.core.config import settings
 from app.core.posthog_client import posthog_client
+from app.models.bill import PlanType
 
 router = APIRouter(prefix="/insurance-card", tags=["insurance-card"])
 logger = logging.getLogger(__name__)
@@ -50,15 +52,28 @@ Return only the JSON object. No markdown, no explanation."""
 
 
 class InsuranceCardExtraction(BaseModel):
-    """Structured fields extracted from an insurance card."""
+    """Structured fields extracted from an insurance card.
 
-    model_config = ConfigDict(strict=True)
+    T3 + T4 (Phase 8.1): plan_type is a closed set; the engine emits
+    camelCase via alias_generator so the web layer can parse via Zod
+    rather than hand-translating each field.
+    """
+
+    model_config = ConfigDict(
+        strict=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     payer_name: str | None
     plan_name: str | None
     member_id: str | None
     group_id: str | None
-    plan_type: str | None
+    # strict=False on the field allows raw strings to coerce into the
+    # PlanType StrEnum at construction time. The model-level strict=True
+    # still applies to every other field. Mirrors the AnalyzeRequest
+    # pattern from H10.
+    plan_type: Annotated[PlanType, Field(strict=False)] | None
     rx_bin: str | None
     rx_pcn: str | None
     rx_group: str | None
@@ -158,12 +173,22 @@ async def extract_insurance_card(
         val = data.get(key)
         return str(val) if val else None
 
+    # T3 fix (Phase 8.1): plan_type is a closed set. If the AI returned a
+    # value outside PlanType (e.g. "PPO", "Choice POS I"), pass None so
+    # the user picks from the closed set in the UI rather than silently
+    # defaulting to "commercial" (which routed wrong rule benchmarks).
+    raw_plan_type = _str("plan_type")
+    valid_plan_types = {pt.value for pt in PlanType}
+    plan_type_value: PlanType | None = (
+        PlanType(raw_plan_type) if raw_plan_type in valid_plan_types else None
+    )
+
     result = InsuranceCardExtraction(
         payer_name=_str("payer_name"),
         plan_name=_str("plan_name"),
         member_id=_str("member_id"),
         group_id=_str("group_id"),
-        plan_type=_str("plan_type") or "commercial",
+        plan_type=plan_type_value,
         rx_bin=_str("rx_bin"),
         rx_pcn=_str("rx_pcn"),
         rx_group=_str("rx_group"),

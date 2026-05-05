@@ -6,7 +6,7 @@ import { LogoWithMark } from '@/components/logo';
 import { US_STATES } from '@/lib/utils/county-data';
 import { saveOnboarding } from '@/lib/i18n/actions';
 import { CardScanner } from '@/components/card-scanner';
-import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
+import type { InsuranceCardExtraction } from '@/lib/api/parsers';
 import s from './onboarding.module.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────

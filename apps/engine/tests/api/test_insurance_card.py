@@ -182,9 +182,9 @@ class TestExtractEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["payer_name"] == "Anthem Blue Cross"
-        assert data["member_id"] == "ABC12345"
-        assert data["plan_type"] == "commercial"
+        assert data["payerName"] == "Anthem Blue Cross"
+        assert data["memberId"] == "ABC12345"
+        assert data["planType"] == "commercial"
         assert data["confident"] is True
         # Claude must NOT be called when Gemini succeeds.
         claude_mock.assert_not_called()
@@ -203,7 +203,7 @@ class TestExtractEndpoint:
                 files={"image": ("card.png", _png_bytes(), "image/png")},
             )
         assert response.status_code == 200
-        assert response.json()["payer_name"] == "UnitedHealthcare"
+        assert response.json()["payerName"] == "UnitedHealthcare"
 
     # ── Fallback path (Gemini fails → Claude succeeds) ─────────────────────────
 
@@ -223,7 +223,7 @@ class TestExtractEndpoint:
             )
         assert response.status_code == 200
         assert claude_mock.called, "Expected Claude fallback to fire when Gemini failed"
-        assert response.json()["payer_name"] == "Anthem Blue Cross"
+        assert response.json()["payerName"] == "Anthem Blue Cross"
 
     def test_both_providers_fail_returns_502(
         self, client: TestClient,
@@ -266,12 +266,12 @@ class TestExtractEndpoint:
 
     # ── Field-level normalization ──────────────────────────────────────────────
 
-    def test_plan_type_defaults_to_commercial_when_null(
+    def test_plan_type_returns_null_when_ai_returns_null(
         self, client: TestClient,
     ) -> None:
-        """Missing/null plan_type must default to 'commercial' — the rules engine
-        downstream uses plan_type to pick rate multipliers; a None here would
-        crash the price-outlier rule."""
+        """T3 (Phase 8.1): Missing/null plan_type returns null, not silently
+        defaulted to 'commercial'. The user picks from the closed set in the
+        UI rather than getting a wrong rule benchmark routed by accident."""
         async def _no_plan_type(_bytes: bytes, _mime: str) -> str:
             return _gemini_response(plan_type=None)
 
@@ -283,7 +283,27 @@ class TestExtractEndpoint:
                 files={"image": ("card.png", _png_bytes(), "image/png")},
             )
         assert response.status_code == 200
-        assert response.json()["plan_type"] == "commercial"
+        assert response.json()["planType"] is None
+
+    def test_plan_type_returns_null_for_invalid_ai_value(
+        self, client: TestClient,
+    ) -> None:
+        """T3 regression net: AI returns a value outside the closed PlanType
+        set (e.g. 'PPO', 'Choice POS I' — common confusion between plan TYPE
+        and plan NAME). Pre-T3 this silently became 'commercial'; post-T3
+        it becomes null and the user picks correctly."""
+        async def _bogus_plan(_bytes: bytes, _mime: str) -> str:
+            return _gemini_response(plan_type="PPO")
+
+        with patch(
+            "app.api.insurance_card._extract_via_gemini", new=_bogus_plan,
+        ):
+            response = client.post(
+                "/api/v1/insurance-card/extract",
+                files={"image": ("card.png", _png_bytes(), "image/png")},
+            )
+        assert response.status_code == 200
+        assert response.json()["planType"] is None
 
     def test_empty_string_fields_normalize_to_none(
         self, client: TestClient,
@@ -301,8 +321,8 @@ class TestExtractEndpoint:
                 files={"image": ("card.png", _png_bytes(), "image/png")},
             )
         data = response.json()
-        assert data["group_id"] is None
-        assert data["rx_bin"] is None
+        assert data["groupId"] is None
+        assert data["rxBin"] is None
         assert data["note"] is None
 
     # ── PostHog telemetry contract ────────────────────────────────────────────

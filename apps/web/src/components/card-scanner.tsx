@@ -1,8 +1,9 @@
 'use client';
 
 import { useRef, useState, useEffect, useCallback } from 'react';
-import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
+import type { InsuranceCardExtraction } from '@/lib/api/parsers';
 import { InsuranceCardExtractionSchema, parseJsonResponse } from '@/lib/api/parsers';
+import type { PlanType } from '@clarobill/shared';
 import s from './card-scanner.module.css';
 
 export interface CardScannerLabels {
@@ -153,7 +154,7 @@ function ConfirmStep({ result, labels, onConfirm, onRetake, onClose }: ConfirmSt
   const [planName,  setPlanName]  = useState(result.planName  ?? '');
   const [memberId,  setMemberId]  = useState(result.memberId  ?? '');
   const [groupId,   setGroupId]   = useState(result.groupId   ?? '');
-  const [planType,  setPlanType]  = useState(result.planType  ?? 'commercial');
+  const [planType,  setPlanType]  = useState<PlanType>(result.planType ?? 'commercial');
   const [rxBin,     setRxBin]     = useState(result.rxBin     ?? '');
 
   function handleConfirm(): void {
@@ -196,7 +197,7 @@ function ConfirmStep({ result, labels, onConfirm, onRetake, onClose }: ConfirmSt
           </dd>
           <dt>{labels.confirmPlanType}</dt>
           <dd>
-            <select className={s.confirmInput} value={planType} onChange={(e) => setPlanType(e.target.value)}>
+            <select className={s.confirmInput} value={planType} onChange={(e) => setPlanType(e.target.value as PlanType)}>
               {PLAN_TYPE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
