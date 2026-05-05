@@ -261,6 +261,98 @@ class TestPlacesClientBudgetEnforcement:
         assert m.running_usd == COST_PER_TEXT_SEARCH
 
 
+class TestCostBookingOnNetworkErrors:
+    """H4 fix (2026-05-04): the cost meter must NOT increment on
+    connection-level failures (DNS / TLS / connect-refused) because the
+    request never reached Google's LB and is therefore never billed by
+    Google. Pre-fix, the meter was incremented BEFORE every HTTP request,
+    overcounting Sandra's recorded budget by the network-error rate.
+
+    Per https://developers.google.com/maps/documentation/places/web-service/usage-and-billing
+    only requests Google actually receives (2xx + 5xx) count against quota.
+    Authentication failures and connection-level errors are not billed."""
+
+    def test_text_search_connection_error_does_not_book(self):
+        """ConnectionError = never reached Google = no charge."""
+        import requests as _requests
+
+        m = CostMeter(budget_usd=10.0)
+        c = PlacesClient(api_key="fake", cost_meter=m, min_interval=0)
+
+        with patch.object(
+            c._session, "post",
+            side_effect=_requests.ConnectionError("dns failed"),
+        ):
+            candidates = c._text_search("Mayo Clinic", "MN", "Rochester")
+
+        assert candidates == []
+        assert m.text_search_calls == 0
+        assert m.running_usd == 0.0
+
+    def test_text_search_timeout_books_defensively(self):
+        """Timeout could be connect-timeout (no charge) or read-timeout
+        (Google may have served the request). Conservative: book."""
+        import requests as _requests
+
+        m = CostMeter(budget_usd=10.0)
+        c = PlacesClient(api_key="fake", cost_meter=m, min_interval=0)
+
+        with patch.object(c._session, "post", side_effect=_requests.Timeout("read timeout")):
+            candidates = c._text_search("Mayo Clinic", "MN", "Rochester")
+
+        assert candidates == []
+        assert m.text_search_calls == 1  # booked defensively
+        assert m.running_usd == COST_PER_TEXT_SEARCH
+
+    def test_text_search_4xx_response_still_books(self):
+        """A 4xx response means Google received the request — book the cost
+        even though we treat it as a no-result. Conservative re Google's
+        billing docs (4xx is mixed; some count, some don't)."""
+        m = CostMeter(budget_usd=10.0)
+        c = PlacesClient(api_key="fake", cost_meter=m, min_interval=0)
+
+        import requests as _requests
+
+        resp = MagicMock()
+        resp.status_code = 400
+        resp.raise_for_status.side_effect = _requests.HTTPError("bad request")
+        with patch.object(c._session, "post", return_value=resp):
+            candidates = c._text_search("Mayo Clinic", "MN", "Rochester")
+
+        assert candidates == []
+        assert m.text_search_calls == 1
+        assert m.running_usd == COST_PER_TEXT_SEARCH
+
+    def test_place_details_connection_error_does_not_book(self):
+        import requests as _requests
+
+        m = CostMeter(budget_usd=10.0)
+        c = PlacesClient(api_key="fake", cost_meter=m, min_interval=0)
+
+        with patch.object(
+            c._session, "get",
+            side_effect=_requests.ConnectionError("dns failed"),
+        ):
+            details = c._place_details("ChIJabc")
+
+        assert details == {}
+        assert m.details_calls == 0
+        assert m.running_usd == 0.0
+
+    def test_place_details_timeout_books_defensively(self):
+        import requests as _requests
+
+        m = CostMeter(budget_usd=10.0)
+        c = PlacesClient(api_key="fake", cost_meter=m, min_interval=0)
+
+        with patch.object(c._session, "get", side_effect=_requests.Timeout("read timeout")):
+            details = c._place_details("ChIJabc")
+
+        assert details == {}
+        assert m.details_calls == 1
+        assert m.running_usd == COST_PER_PLACE_DETAILS
+
+
 class TestCacheHitWritesCorrectly:
     def test_no_result_caches(self):
         m = CostMeter(budget_usd=10.0)

@@ -261,8 +261,18 @@ class PlacesClient:
     def _text_search(
         self, hospital_name: str, state: str, city: str | None,
     ) -> list[_PlaceCandidate]:
-        """One Text Search call. Books cost via cost_meter."""
-        self.cost_meter.book_text_search()
+        """One Text Search call. Books cost via cost_meter when the request
+        reached Google's servers (so Google may have billed us).
+
+        H4 fix (2026-05-04): pre-fix, the cost meter was incremented BEFORE
+        the HTTP request — every ConnectionError, DNS fail, or TLS handshake
+        failure inflated Sandra's recorded budget without Google having
+        charged anything. Per
+        https://developers.google.com/maps/documentation/places/web-service/usage-and-billing
+        Google only bills requests that reach their LB; connection-level
+        failures are never billed. Book the cost AFTER we've established
+        contact, refund pre-flight failures.
+        """
         self._rate_limit()
 
         # Construct a focused query. Adding "hospital" as a term improves
@@ -285,6 +295,31 @@ class PlacesClient:
                 PLACES_TEXT_SEARCH_URL, json=body, headers=headers,
                 timeout=self.timeout,
             )
+        except requests.ConnectionError as exc:
+            # Never reached Google — no charge incurred. Don't book.
+            logger.warning(
+                "Places Text Search did not reach Google for %r/%r — not booking cost: %s",
+                hospital_name, state, type(exc).__name__,
+            )
+            return []
+        except requests.Timeout as exc:
+            # Timeouts split into connect-timeout (no charge) and read-timeout
+            # (Google may have served the request). requests doesn't expose a
+            # clean way to tell them apart, so book defensively — preserve
+            # spend visibility at the cost of a small over-count.
+            self.cost_meter.book_text_search()
+            logger.warning(
+                "Places Text Search timed out for %r/%r — booking cost defensively: %s",
+                hospital_name, state, type(exc).__name__,
+            )
+            return []
+
+        # Got a response from Google — book the cost regardless of status.
+        # 2xx and 5xx both count against quota per Google's billing docs;
+        # 4xx is mixed but conservative-book is the safer default.
+        self.cost_meter.book_text_search()
+
+        try:
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as exc:
@@ -308,8 +343,8 @@ class PlacesClient:
         return candidates
 
     def _place_details(self, place_id: str) -> dict:
-        """One Place Details call. Books cost via cost_meter."""
-        self.cost_meter.book_details()
+        """One Place Details call. Books cost via cost_meter when Google
+        actually received the request (see _text_search docstring for H4)."""
         self._rate_limit()
 
         url = PLACES_DETAILS_URL_TEMPLATE.format(place_id=place_id)
@@ -319,6 +354,23 @@ class PlacesClient:
         }
         try:
             resp = self._session.get(url, headers=headers, timeout=self.timeout)
+        except requests.ConnectionError as exc:
+            logger.warning(
+                "Places Details did not reach Google for place_id=%s — not booking cost: %s",
+                place_id, type(exc).__name__,
+            )
+            return {}
+        except requests.Timeout as exc:
+            self.cost_meter.book_details()
+            logger.warning(
+                "Places Details timed out for place_id=%s — booking cost defensively: %s",
+                place_id, type(exc).__name__,
+            )
+            return {}
+
+        self.cost_meter.book_details()
+
+        try:
             resp.raise_for_status()
             return resp.json()
         except (requests.RequestException, ValueError) as exc:
