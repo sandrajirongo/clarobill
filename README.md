@@ -209,17 +209,89 @@ not set. All Supabase-backed rules still run.
 
 ### Running tests
 
+CI runs on every push to `main` and every PR opened against `main` (see
+`.github/workflows/ci.yml`). To avoid round-tripping through CI to find a
+broken test, run the same gate locally before opening a PR.
+
+#### Quick command — run the full local gate
+
 ```bash
-# Engine (111 tests)
-cd apps/engine && python -m pytest tests/ -v
+# From the repo root, in two terminals (engine + web run independently):
 
-# Type checking
-cd apps/engine && python -m mypy app/ --strict
-cd apps/web && npm run typecheck
+# Terminal 1 — engine (ruff + mypy strict + pytest, ~10s)
+cd apps/engine && \
+  python -m ruff check app/ && \
+  python -m mypy app/ --strict && \
+  python -m pytest tests/ -v
 
-# Frontend
-cd apps/web && npm run test
+# Terminal 2 — web (typecheck + lint + vitest + build, ~30s)
+cd apps/web && \
+  npm run typecheck && \
+  npm run lint && \
+  npm run test && \
+  npm run build
 ```
+
+If all six commands return clean, the GitHub Actions checks will pass too —
+they run the exact same commands.
+
+#### Per-tool reference
+
+| Layer | Command | What it catches |
+|---|---|---|
+| Engine | `python -m pytest tests/ -v` | Logic + integration regressions (638 tests) |
+| Engine | `python -m mypy app/ --strict` | Type errors (no `any`, no unchecked imports) |
+| Engine | `python -m ruff check app/` | Lint (security, conventions, unused imports) |
+| Engine | `python -m pytest tests/ --cov=app --cov-report=term` | Coverage (currently 86%) |
+| Web | `npm run test` | Vitest — components + lib (115 tests) |
+| Web | `npm run typecheck` | `tsc --noEmit` |
+| Web | `npm run lint` | `next lint` (ESLint) |
+| Web | `npm run build` | Production build smoke-test |
+| Boundary | (runs as part of engine pytest) | `test_billing_error_fixture_export.py` writes the Pydantic fixture; web `engine-boundary.contract.test.ts` parses it via Zod. Catches Pydantic↔TypeScript schema drift. |
+
+#### Targeted re-runs
+
+```bash
+# Engine: just one file
+cd apps/engine && python -m pytest tests/services/test_rules_engine.py -v
+
+# Engine: just one test by node-id
+cd apps/engine && python -m pytest tests/integration/test_full_pipeline.py::TestFullPipeline::test_bill_status_is_complete_at_end -v
+
+# Engine: stop on first failure (fastest fail-iterate cycle)
+cd apps/engine && python -m pytest tests/ -x
+
+# Web: just one file
+cd apps/web && npx vitest run src/components/__tests__/bill-results-view.test.tsx
+
+# Web: watch mode while iterating on a single file
+cd apps/web && npm run test:watch -- src/components/__tests__/bill-results-view.test.tsx
+```
+
+#### When tests fire automatically (GitHub Actions)
+
+| Trigger | Workflows that run |
+|---|---|
+| `git push origin main` (direct push) | `ci.yml` — engine + web + boundary contract |
+| PR opened or new commits pushed to PR branch | `ci.yml` — same four checks |
+| PR diff touches `supabase/migrations/**` | Adds `migration-check.yml` — applies + reverses every changed migration against a fresh local Postgres |
+| Local `git commit` | Nothing — there are no pre-commit hooks. Run the local gate yourself. |
+
+Concurrency is keyed by ref, so rapid follow-up pushes cancel the
+in-flight run on the same branch automatically.
+
+#### Local gotchas
+
+- **DejaVu fonts.** The 6 PDF tests in `tests/services/test_report_generator.py`
+  skip locally unless `fonts-dejavu-core` (Linux) or `matplotlib` (any OS) is
+  installed. CI installs `fonts-dejavu-core` via apt before pytest, so
+  these tests always run there.
+- **Engine venv shebang.** If `python -m pytest` complains about a missing
+  interpreter after a folder rename, recreate the venv:
+  `rm -rf apps/engine/.venv && python -m venv apps/engine/.venv && source apps/engine/.venv/bin/activate && pip install -e "apps/engine[dev]"`.
+- **No real network calls.** All tests run with mocked Supabase, BigQuery,
+  Vision, Gemini, Anthropic, and Stripe. You never need real credentials
+  to run the suite — placeholder values in conftest are sufficient.
 
 ### Environment Variables
 
