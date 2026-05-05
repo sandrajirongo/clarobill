@@ -19,7 +19,8 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **5** | Medium-severity (M3, M4, M5, M6) | ✅ done 2026-05-04 | `587ef04` `ac49324` `8f80207` |
 | **6** | Type-truth migration (M7-M13) | ✅ done 2026-05-04 | `107b4b4` `79211f9` `0244166` `c60ea3b` `026e7e1` |
 | **7.1** | Coverage gap inventory (read-only — sets up Phase 7 implementation work) | ✅ done 2026-05-04 | `docs/archive/2026-05-04-test-coverage-gaps.md` |
-| **7** | Universal coverage audit (Rule 8) — engine 86% / web 115 tests | ✅ done 2026-05-05 | _this commit_ |
+| **7** | Universal coverage audit (Rule 8) — engine 86% / web 115 tests | ✅ done 2026-05-05 | `9c611c7` |
+| **8** | Post-coverage audit findings (62 new) | 📋 backlog 2026-05-05 | _pending_ |
 
 ---
 
@@ -129,6 +130,77 @@ target on the engine side; web tests grew from 41 → 115.
 | End of Phase 6 | 538 (engine) + 100 (mrf_discovery scripts) | 41 |
 | End of Phase 7.1 (coverage inventory) | 538 (engine, 55% line cov) + 100 (mrf scripts) | 41 (1.22% line cov) |
 | End of Phase 7 (universal coverage) | 638 (engine, 86% line cov) + 100 (mrf scripts) | 115 |
+
+---
+
+## Phase 8 backlog — post-coverage audit (2026-05-05)
+
+A second multi-agent audit ran on 2026-05-05 (post-Phase-7) using the
+3-agent fan-out pattern from [agent-review.md](agent-review.md):
+`pr-review-toolkit:code-reviewer`, `silent-failure-hunter`, and
+`type-design-analyzer`. Results: **62 new findings** (5 stop-the-line,
+14 high, 24 medium, 19 low). Tags use the agent's prefix (S, H, M, L
+from code-reviewer; SF from silent-failure-hunter; T from
+type-design-analyzer).
+
+Full agent reports are saved in the session transcript at
+`~/.claude/projects/-Users-sandrajirongo-Projects-ClaroBill/<session_id>/`.
+Summary headlines below; the full per-finding detail is in those transcripts.
+
+### Phase 8 — STOP-THE-LINE (5)
+
+| Tag | One-line description | Source agent |
+|---|---|---|
+| S6 | Re-analyze flips a bill from COMPLETE to FAILED via `analysis_results.bill_id` UNIQUE collision | code-reviewer |
+| S7 | Re-analyze re-runs every BQ + Gemini call before discovering an existing analysis_results row | code-reviewer |
+| SF1 | `parse_status='skipped'` rows in `mrf_archive_index` will never re-run when CSV parser ships | silent-failure-hunter |
+| SF2 | BQ loaders return `{}` on transient outage; engine emits zero hospital findings while UI shows "clean bill" | silent-failure-hunter |
+| SF3 | `_strip_bom` + `seek(0)` re-exposes BOM bytes to ijson on alt-key retry; UTF-8-BOM MRFs return zero rows | silent-failure-hunter |
+
+### Phase 8 — HIGH (14)
+
+- **H12** — `generate_bill_summary` is the un-sanitized prompt-injection sibling that M6 left open
+- **H13** — Sync supabase calls block the asyncio event loop in `_run_analysis_pipeline`
+- **H14** — `_resolve_payer_aliases` bidirectional CONTAINS_SUBSTR with no length floor → wrong-payer matches
+- **H15** — `_filter_npis_with_charges` returns `[]` on exception, silently widening the NPI search to a wrong hospital
+- **H16** — `_parse_ai_response` IndexError on malformed code fence → 500 (not 502) to caller
+- **H17** — REDUNDANT_CLINICAL_PAIR + pricing-rule double-counting in savings dedup
+- **H18** — MUE_EXCEEDED with `mue_value=0` over-counts savings on repeated codes
+- **SF4** — `insert_rows_json` partial-batch errors logged truncated; row counts overstated
+- **SF5** — M13's `run_dml_with_count` not used at 13+ DML sites outside Stage 3 Tier 1 + Stage 4
+- **SF6** — `update_archive_index_status` swallows DML errors → infinite re-parse + duplicate charges
+- **SF7** — `stage2_pos_file` pagination loop has no MAX_PAGES (the H6 pattern alive in Stage 2A)
+- **SF8** — Stage 2C Wikidata SPARQL has no retry, no fallback cache; outage = annual coverage loss
+- **SF9** — `verify_hospital_in_page` lacks Content-Length cap (S5 pattern)
+- **SF10** — Stage 4 intermediate flush failures recorded but exit code 0; alerts don't fire
+
+### Phase 8 — TYPE-DESIGN (highest 4 from T-series)
+
+- **T1** — `Bill` interface missing `hospital_city/state/zip` columns added by migration 22
+- **T2** — Pydantic↔Zod parity test silently skips Bill (no Pydantic Bill model exists)
+- **T3** — `InsuranceCardExtraction.plan_type` is open `str` instead of closed `PlanType` (H10 regression vector)
+- **T4** — Insurance-card route still uses `as Record<string, unknown>` (M12 missed this 12th cast)
+- **T10** — `BillingError.medicareBenchmarkRate` is overloaded across 6+ rule codes; field name lies for HOSPITAL/NEGOTIATED/OPPS rules
+
+### Phase 8 plan
+
+The triage decision (which findings to address first, in what commit
+order) hasn't been made yet. The campaign tracker will update with
+phase boundaries as the work progresses, mirroring Phases 0-7.
+
+Suggested kick-off commit order (highest blast radius first):
+
+1. **S6 + S7** — re-analyze idempotency + early-return (one commit)
+2. **SF2 cluster (a-e)** — BQ loader `BENCHMARK_UNAVAILABLE` propagation
+3. **SF5** — `run_dml_with_count` rollout to 13+ sites
+4. **T3** — close the `plan_type` regression vector
+5. **T1 + T2** — add Bill to parity test + add hospital_city/state/zip
+6. **T10** — rename `medicareBenchmarkRate` → `benchmarkRate` + `benchmarkSource`
+
+Full per-finding detail — including file/line refs, suggested fixes, and
+severity rationale — lives in the session transcripts. Look up the
+session ID via `ls ~/.claude/projects/-Users-sandrajirongo-Projects-ClaroBill/`
+and grep the JSONL files for the tag (e.g. `grep "SF1" *.jsonl`).
 
 ---
 
