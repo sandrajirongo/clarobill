@@ -14,9 +14,11 @@ from pydantic import ValidationError
 
 from app.models.bill import (
     AnalysisResult,
+    AnalyzeRequest,
     BillingError,
     BillingErrorCode,
     ErrorSeverity,
+    PlanType,
 )
 
 
@@ -204,6 +206,70 @@ def test_analysis_result_serializes_decimals_as_floats(
     assert isinstance(snake_dumped["total_charges"], float)
     assert isinstance(snake_dumped["estimated_fair_value"], float)
     assert isinstance(snake_dumped["total_potential_savings"], float)
+
+
+# ─── AnalyzeRequest validators (H10) ──────────────────────────────────────────
+
+_VALID_REQUEST_BASE: dict[str, object] = {
+    "bill_id": "b-1",
+    "file_path": "u-1/b-1/bill.pdf",
+    "user_id": "u-1",
+}
+
+
+def test_analyze_request_accepts_minimal_valid_input() -> None:
+    """All optional fields can be omitted — engine falls back to national defaults."""
+    req = AnalyzeRequest.model_validate(_VALID_REQUEST_BASE)
+    assert req.state is None
+    assert req.zip_code is None
+    assert req.plan_type is None
+
+
+def test_analyze_request_accepts_well_formed_optional_fields() -> None:
+    req = AnalyzeRequest.model_validate({
+        **_VALID_REQUEST_BASE,
+        "state": "CALIFORNIA",
+        "county": "LOS ANGELES",
+        "zip_code": "94143",
+        "payer_name": "Aetna",
+        "plan_name": "PPO",
+        "plan_type": "commercial",
+    })
+    assert req.state == "CALIFORNIA"
+    assert req.zip_code == "94143"
+    assert req.plan_type is PlanType.COMMERCIAL
+
+
+def test_analyze_request_rejects_lowercase_state() -> None:
+    """The engine downstream expects uppercase CMS state names — validate at the boundary."""
+    with pytest.raises(ValidationError):
+        AnalyzeRequest.model_validate({**_VALID_REQUEST_BASE, "state": "california"})
+
+
+def test_analyze_request_rejects_zip_with_letters() -> None:
+    with pytest.raises(ValidationError):
+        AnalyzeRequest.model_validate({**_VALID_REQUEST_BASE, "zip_code": "9414X"})
+
+
+def test_analyze_request_rejects_short_zip() -> None:
+    with pytest.raises(ValidationError):
+        AnalyzeRequest.model_validate({**_VALID_REQUEST_BASE, "zip_code": "9414"})
+
+
+def test_analyze_request_rejects_zip_with_extension() -> None:
+    """ZIP+4 ('94143-1234') is not accepted — engine only uses the 5-digit prefix."""
+    with pytest.raises(ValidationError):
+        AnalyzeRequest.model_validate({**_VALID_REQUEST_BASE, "zip_code": "94143-1234"})
+
+
+def test_analyze_request_rejects_unknown_plan_type() -> None:
+    with pytest.raises(ValidationError):
+        AnalyzeRequest.model_validate({**_VALID_REQUEST_BASE, "plan_type": "platinum"})
+
+
+def test_analyze_request_rejects_empty_payer_name() -> None:
+    with pytest.raises(ValidationError):
+        AnalyzeRequest.model_validate({**_VALID_REQUEST_BASE, "payer_name": ""})
 
 
 def test_analysis_result_dumps_camel_case(sample_analysis: AnalysisResult) -> None:

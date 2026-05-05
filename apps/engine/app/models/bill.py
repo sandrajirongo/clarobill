@@ -7,7 +7,7 @@ When either changes, update both.
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from pydantic.alias_generators import to_camel
@@ -25,6 +25,21 @@ class ErrorSeverity(StrEnum):
     CRITICAL = "critical"
     WARNING = "warning"
     INFO = "info"
+
+
+class PlanType(StrEnum):
+    """Insurance programme type — mirrors PlanType in packages/shared/src/types/bill.ts.
+
+    Controls which NCCI edit set the rules engine loads (medicare vs. medicaid)
+    and which PRICE_OUTLIER threshold applies (commercial = 1.8x, medicare = 1.05x,
+    self_pay/tricare = 1.2x).
+    """
+
+    COMMERCIAL = "commercial"
+    MEDICARE = "medicare"
+    MEDICAID = "medicaid"
+    TRICARE = "tricare"
+    SELF_PAY = "self_pay"
 
 
 class BillingErrorCode(StrEnum):
@@ -144,17 +159,25 @@ class AnalyzeRequest(BaseModel):
     # state: uppercase CMS state name (e.g. "CALIFORNIA")
     # county: county name without "County" suffix (e.g. "LOS ANGELES")
     # zip_code: 5-digit ZIP code used for ambulance rural/urban indicator lookup
-    state: str | None = None
-    county: str | None = None
-    zip_code: str | None = None
+    #
+    # Constraints (H10 fix, 2026-05-04): the engine downstream of this request
+    # type-checks state ∈ uppercase CMS names, ZIP ∈ 5 digits, plan_type ∈ a
+    # closed set. Pre-fix, ANY string passed validation and silently routed to
+    # NCCI / PRICE_OUTLIER paths that produced wrong findings.
+    state: Annotated[str, Field(pattern=r"^[A-Z][A-Z\s]{1,49}$")] | None = None
+    county: Annotated[str, Field(min_length=1, max_length=80)] | None = None
+    zip_code: Annotated[str, Field(pattern=r"^\d{5}$")] | None = None
     # Insurance plan confirmed by user at verification time.
     # Used to query the hospital's MRF for the exact negotiated rate per CPT code.
     # Both must be provided to enable NEGOTIATED_RATE_EXCEEDED detection.
-    payer_name: str | None = None
-    plan_name: str | None = None
+    payer_name: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    plan_name: Annotated[str, Field(min_length=1, max_length=200)] | None = None
     # Insurance programme type — controls which NCCI edit set is loaded.
-    # Values: 'medicare' | 'medicaid' | 'commercial' | 'tricare' | 'self_pay' | None
-    plan_type: str | None = None
+    # `strict=False` per-field allows the JSON string ("commercial") to coerce
+    # into the StrEnum value at the FastAPI request boundary; the model-level
+    # strict=True still applies to every other field. Without this, FastAPI
+    # would reject every legitimate analyze request.
+    plan_type: Annotated[PlanType, Field(strict=False)] | None = None
 
 
 class AnalyzeAccepted(BaseModel):
