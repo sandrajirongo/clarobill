@@ -63,7 +63,14 @@ class BillingErrorCode(StrEnum):
 
 
 class LineItem(BaseModel):
-    model_config = ConfigDict(strict=True)
+    # Matches BillingError + AnalysisResult: alias_generator = camelCase to
+    # align with the TS LineItem contract. populate_by_name lets engine code
+    # construct via snake_case Python field names.
+    model_config = ConfigDict(
+        strict=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     bill_id: str
