@@ -942,12 +942,16 @@ def _persist_results(  # noqa: C901
             "_persist_results: starting checkpoint update (%d rows)",
             len(rows_to_update),
         )
-        # Run-id sanitization: BigQuery table names allow [a-zA-Z0-9_], so
-        # strip everything else (e.g. the `T` separator in the ISO timestamp
-        # is fine but the leading underscore for `_stage4_*` is reserved
-        # only for system tables — our prefix is `_stage4_` which IS allowed
-        # for application tables).
-        staging_table = f"{project}.{dataset}._stage4_staging_{run_id.replace('-', '_')}"
+        # Run-id sanitization: BigQuery table names allow [a-zA-Z0-9_].
+        # H5 fix (2026-05-04): the table name no longer starts with an
+        # underscore. BQ allows leading underscores in DML CREATE statements
+        # but treats `_*` as anonymous/temporary in default listings, so
+        # debugging a stuck staging table required `bq ls --all`. Naming it
+        # `stage4_staging_*` keeps the table visible in the standard listings
+        # while still being scoped per-run via the run_id suffix.
+        # BQ table renames are a free metadata operation
+        # (https://cloud.google.com/bigquery/docs/managing-tables#renametable).
+        staging_table = f"{project}.{dataset}.stage4_staging_{run_id.replace('-', '_')}"
         load_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             schema=[

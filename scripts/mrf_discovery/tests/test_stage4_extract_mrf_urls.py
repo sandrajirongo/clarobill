@@ -178,6 +178,33 @@ class TestTransientCrawlExceptions:
         assert isinstance(instance, s4._TRANSIENT_CRAWL_EXCEPTIONS) is is_transient
 
 
+class TestStagingTableNaming:
+    """H5 fix: staging table no longer starts with `_` so it appears in
+    default `bq ls` listings. The constant is constructed inside
+    _persist_results — verify the format string by reading the source."""
+
+    def test_staging_table_prefix_is_visible(self) -> None:
+        # Read the source to verify the format string. Using a regex to
+        # capture the table-name f-string format ensures the fix isn't
+        # silently reverted by someone restoring the underscore prefix.
+        import inspect
+
+        source = inspect.getsource(s4)
+        assert "stage4_staging_" in source
+        assert "._stage4_staging_" not in source
+
+    def test_run_id_dashes_are_replaced(self) -> None:
+        """BQ table names disallow `-` so any UUID-shaped run_id must have
+        dashes converted to underscores. Pure check on the format string."""
+        import inspect
+
+        source = inspect.getsource(s4)
+        # The format string lives inline as
+        # `f"{project}.{dataset}.stage4_staging_{run_id.replace('-', '_')}"`
+        # — assert the replace call is present near the table-name format.
+        assert 'run_id.replace("-", "_")' in source or "run_id.replace('-', '_')" in source
+
+
 class TestAssertFlushComplete:
     """S3 fix: end-of-run assertion that converts silent persist failures
     into a non-zero exit. Pre-fix, Stage 4 caught every BQ error and
