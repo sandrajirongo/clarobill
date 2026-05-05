@@ -299,6 +299,35 @@ class TestAmbulanceMileageParsing:
         assert items[0].quantity == 8
         assert items[0].total_charge == 74.64
 
+    def test_mileage_unit_charge_reconciles_with_total(self, parser: BillParser) -> None:
+        """H2 fix (2026-05-04): pre-fix, round(charge/miles, 2) lost precision
+        on non-divisible amounts. The rules engine downstream computes
+        overcharge = (unit_charge - benchmark) * quantity, so a $0.0033 drift
+        per mile × 100 miles = $0.33 wrong on the patient-facing report.
+
+        Reconciliation contract: quantity * unit_charge ≈ total_charge within $0.01."""
+        # 7 miles for $15.00 — non-divisible (15 / 7 = 2.142857...)
+        text = "A0425  Ground Mileage 7 miles  $15.00"
+        items = parser.parse(text)
+        assert len(items) == 1
+        item = items[0]
+        assert item.quantity == 7
+        # Pre-fix: round(15.00/7, 2) = 2.14 → 7 * 2.14 = 14.98 (off by $0.02)
+        # Post-fix: 15.00/7 = 2.142857... → 7 * 2.142857 ≈ 15.00
+        reconciled = item.quantity * item.unit_charge
+        assert abs(reconciled - item.total_charge) < 0.01
+
+    def test_mileage_large_distance_precision(self, parser: BillParser) -> None:
+        """100 miles × $1245.67: pre-fix unit was $12.46 (12.4567 rounded down),
+        100 × $12.46 = $1246.00 → off by $0.33."""
+        text = "A0425  Ground Mileage 100 miles  $1245.67"
+        items = parser.parse(text)
+        assert len(items) == 1
+        item = items[0]
+        assert item.quantity == 100
+        reconciled = item.quantity * item.unit_charge
+        assert abs(reconciled - item.total_charge) < 0.01
+
     def test_no_mileage_leaves_quantity_one(self, parser: BillParser) -> None:
         # Mileage not shown — quantity stays 1, unit_charge = total_charge
         text = "A0425  Ground Mileage  $111.96"

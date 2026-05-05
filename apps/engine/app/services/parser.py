@@ -11,6 +11,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +333,13 @@ class BillParser:
                 miles = self._find_mileage_quantity(lines, i)
                 if miles is not None and miles > 1:
                     quantity = miles
-                    unit_charge = round(charge / miles, 2)
+                    # H2 fix: full-precision Decimal division preserves the
+                    # cents that round(x/n, 2) lost. The rules engine
+                    # multiplies unit_charge by quantity to compute overcharge,
+                    # so a $0.02-per-mile drift × 100 miles = $2 wrong on the
+                    # patient-facing report. total_charge stays as the
+                    # source of truth from the bill.
+                    unit_charge = float(Decimal(str(charge)) / Decimal(miles))
 
             processed_line_indices.add(i)
             pending.append((i, ParsedLineItem(
@@ -464,7 +471,8 @@ class BillParser:
                 miles = self._find_mileage_quantity(lines, line_idx)
                 if miles is not None and miles > 1:
                     quantity = miles
-                    unit_charge = round(charge / miles, 2)
+                    # H2 fix: see the parallel call site above for rationale.
+                    unit_charge = float(Decimal(str(charge)) / Decimal(miles))
 
             result.append((line_idx, ParsedLineItem(
                 cpt_code=cpt_code,
