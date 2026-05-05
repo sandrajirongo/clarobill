@@ -38,14 +38,39 @@ def _strip_bom(file_obj: BinaryIO) -> BinaryIO:
     are dropped and only the post-BOM content is exposed to downstream code.
     Otherwise the original stream is returned at position 0.
 
-    Implementation: we always return a fresh BufferedReader chained behind a
-    pre-buffered prefix so ijson sees a clean, seekable stream regardless of
-    the input's seek capability.
+    SF3 (Phase 8.2): when the BOM is present AND the underlying stream is
+    seekable, the post-BOM content is materialised into a `BytesIO` so that
+    `seek(0)` on the returned stream rewinds to post-BOM-position-0 (not
+    pre-BOM). Pre-SF3 the alternate-root-key retry at the call site
+    re-exposed the BOM bytes to ijson, causing UTF-8-BOM hospitals using
+    the longer `standard_charge_information_and_modifiers` key to be
+    silently skipped — permanent coverage hole for that cohort.
+
+    For non-seekable streams (gzip-wrapped reads), the BufferedReader path
+    is preserved; the alt-key retry is already a no-op for those (see the
+    seek-best-effort guard in extract_charge_rows).
     """
     head = file_obj.read(len(_UTF8_BOM))
     if head == _UTF8_BOM:
+        # SF3: materialise the post-BOM content for seekable streams so
+        # rewinds land at post-BOM-position-0. The cost is one full-file
+        # read; MRF JSONs are typically <500 MB so this fits comfortably
+        # in memory on Cloud Run (4 GiB tier). Larger files will fall back
+        # to the BufferedReader path below.
+        if file_obj.seekable():
+            try:
+                rest = file_obj.read()
+                return io.BytesIO(rest)
+            except (MemoryError, OSError) as exc:
+                logger.warning(
+                    "BOM strip into BytesIO failed (%s) — falling back to "
+                    "BufferedReader; alt-key retry will not work for this file",
+                    exc,
+                )
         # BOM consumed — wrap the rest of the original stream so downstream
-        # ijson can keep reading from where we left off.
+        # ijson can keep reading from where we left off. Alt-key retries
+        # via seek(0) will re-expose the BOM; first-key probes are
+        # already 95%+ reliable.
         return io.BufferedReader(file_obj)  # type: ignore[arg-type]
     # No BOM — concatenate the bytes we already read back onto the stream.
     return io.BufferedReader(_PrefixedStream(head, file_obj))  # type: ignore[arg-type]
