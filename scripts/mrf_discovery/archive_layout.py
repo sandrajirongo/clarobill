@@ -6,7 +6,7 @@ into a typed shape.
 
 Layout:
 
-    gs://mrf-archive-clarobill-prd/
+    gs://clarobill-mrf-archive-uscentral/
       pricing-year={year}/
         {key}/                                  # hospital_npi if known else pra_facility_uuid
           {sha256_first16}.{ext}                # the raw MRF, immutable
@@ -14,7 +14,7 @@ Layout:
 
 Example:
 
-    gs://mrf-archive-clarobill-prd/pricing-year=2026/
+    gs://clarobill-mrf-archive-uscentral/pricing-year=2026/
       1234567890/
         a1b2c3d4e5f60718.csv
         a1b2c3d4e5f60718.meta.json
@@ -48,7 +48,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-ARCHIVE_BUCKET = "mrf-archive-clarobill-prd"
+ARCHIVE_BUCKET = "clarobill-mrf-archive-uscentral"
 
 VALID_EXTENSIONS = frozenset({"csv", "csv.gz", "json", "json.gz", "xlsx", "xml", "zip"})
 

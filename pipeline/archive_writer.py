@@ -17,7 +17,7 @@ inconsistently:
      same key, same sha256), we skip the upload. Saves bandwidth on weekly
      re-scrapes of unchanged hospital MRFs.
 
-The archive bucket is `mrf-archive-clarobill-prd` (Standard storage class
+The archive bucket is `clarobill-mrf-archive-uscentral` (Standard storage class
 as of 2026-05-03 — was Coldline, but the parser actively re-reads the
 bucket so retrieval fees + Class B op rates were burning ~$100/day; see
 docs/postmortem/2026-05-03-mrf-pipeline-postmortem.md). Versioning is
@@ -73,7 +73,7 @@ from mrf_discovery import archive_layout  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ARCHIVE_BUCKET = "mrf-archive-clarobill-prd"
+DEFAULT_ARCHIVE_BUCKET = "clarobill-mrf-archive-uscentral"
 UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16 MiB; matches existing scraper
 
 
@@ -81,7 +81,7 @@ UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16 MiB; matches existing scraper
 class ArchiveResult:
     """Summary of one archive write."""
 
-    gcs_uri: str          # gs://mrf-archive-clarobill-prd/pricing-year=Y/.../sha.csv
+    gcs_uri: str          # gs://clarobill-mrf-archive-uscentral/pricing-year=Y/.../sha.csv
     meta_uri: str         # sibling meta.json
     sha256: str           # full hex digest
     file_size_bytes: int

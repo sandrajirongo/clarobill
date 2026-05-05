@@ -36,9 +36,9 @@ class TestBlobFromGcsUri:
         gcs.bucket.return_value = bucket
         bucket.blob.return_value = blob
         result = _blob_from_gcs_uri(
-            gcs, "gs://mrf-archive-clarobill-prd/pricing-year=2026/1234567890/abc.json.gz"
+            gcs, "gs://clarobill-mrf-archive-uscentral/pricing-year=2026/1234567890/abc.json.gz"
         )
-        gcs.bucket.assert_called_once_with("mrf-archive-clarobill-prd")
+        gcs.bucket.assert_called_once_with("clarobill-mrf-archive-uscentral")
         bucket.blob.assert_called_once_with("pricing-year=2026/1234567890/abc.json.gz")
         assert result is blob
 
@@ -113,7 +113,7 @@ class TestArchiveIndexDriver:
         bq.query.return_value.result.return_value = iter([
             {
                 "source_mrf_url": "https://hosp.org/charges.json",
-                "gcs_uri": "gs://mrf-archive-clarobill-prd/pricing-year=2026/1234567890/abc.json",
+                "gcs_uri": "gs://clarobill-mrf-archive-uscentral/pricing-year=2026/1234567890/abc.json",
                 "hospital_npi": "1234567890",
                 "ccn": None,
                 "mrf_last_modified_header": None,
@@ -142,7 +142,7 @@ class TestArchiveIndexDriver:
         bq.query.return_value.result.return_value = iter([
             {
                 "source_mrf_url": "https://hosp.org/charges.json",
-                "gcs_uri": "gs://mrf-archive-clarobill-prd/x/y.json",
+                "gcs_uri": "gs://clarobill-mrf-archive-uscentral/x/y.json",
                 "hospital_npi": "",
                 "ccn": None,
                 "mrf_last_modified_header": None,
@@ -186,7 +186,7 @@ class TestArchiveIndexDriver:
         bq = MagicMock()
         gcs = MagicMock()
         staging_bucket = MagicMock()
-        same_uri = "gs://mrf-archive-clarobill-prd/x/y.json"
+        same_uri = "gs://clarobill-mrf-archive-uscentral/x/y.json"
         bq.query.return_value.result.return_value = iter([
             {"source_mrf_url": "https://hosp.org/c.json", "gcs_uri": same_uri,
              "hospital_npi": "1234567890", "ccn": None, "mrf_last_modified_header": None},
@@ -281,7 +281,7 @@ class TestArchiveIndexDriver:
         bq.query.return_value.result.return_value = iter([
             {
                 "source_mrf_url": "https://providence.org/charges.json",
-                "gcs_uri": "gs://mrf-archive-clarobill-prd/x/y.json.gz",
+                "gcs_uri": "gs://clarobill-mrf-archive-uscentral/x/y.json.gz",
                 "hospital_npi": "1508937947",
                 "ccn": None,
                 "mrf_last_modified_header": "Mon, 01 Jan 2026 00:00:00 GMT",

@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_BUCKET = "mrf-staging"
 CACHE_OBJECT = "places-api-cache.json"
-ARCHIVE_BUCKET = "mrf-archive-clarobill-prd"
+ARCHIVE_BUCKET = "clarobill-mrf-archive-uscentral"
 ARCHIVE_OBJECT_TEMPLATE = "places-api-cache-snapshots/{year}.json"
 
 DEFAULT_BUDGET = 450.0

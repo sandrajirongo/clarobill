@@ -36,7 +36,7 @@ Cache
 -----
 Per-hospital results cached in memory; the orchestrator persists to GCS at
 gs://mrf-staging/places-api-cache.json every 200 lookups + at end of run.
-Annual immutable snapshot at gs://mrf-archive-clarobill-prd/places-api-cache-snapshots/{year}.json.
+Annual immutable snapshot at gs://clarobill-mrf-archive-uscentral/places-api-cache-snapshots/{year}.json.
 """
 
 from __future__ import annotations

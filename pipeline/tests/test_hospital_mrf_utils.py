@@ -74,7 +74,7 @@ def _all_rows(stream: io.BytesIO) -> list[ChargeRow]:
         stream, hospital_npi="1234567890", pricing_effective_year=2026,
         scraped_at="2026-04-29T00:00:00Z",
         source_mrf_url="https://example.com/test.json",
-        source_gcs_uri="gs://mrf-archive-clarobill-prd/pricing-year=2026/1234567890/abc.json",
+        source_gcs_uri="gs://clarobill-mrf-archive-uscentral/pricing-year=2026/1234567890/abc.json",
     ))
 
 

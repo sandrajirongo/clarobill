@@ -95,7 +95,7 @@ gcloud run jobs create "${JOB_NAME}" \
   --cpu 2 \
   --command "python,/app/scripts/discover_mrf_pipeline.py" \
   --args "--project,${PROJECT}" \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral" \
   --project "${PROJECT}" \
   2>/dev/null || \
 gcloud run jobs update "${JOB_NAME}" \
@@ -108,7 +108,7 @@ gcloud run jobs update "${JOB_NAME}" \
   --cpu 2 \
   --command "python,/app/scripts/discover_mrf_pipeline.py" \
   --args "--project,${PROJECT}" \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive-clarobill-prd" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral" \
   --project "${PROJECT}"
 
 echo "==> Granting scheduler SA permission to invoke the discovery job..."

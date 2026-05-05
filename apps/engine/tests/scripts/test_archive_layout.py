@@ -123,7 +123,7 @@ class TestParseObjectUri:
 
     def test_rejects_unknown_layout(self):
         with pytest.raises(ValueError, match="does not match archive layout"):
-            parse_object_uri("gs://mrf-archive-clarobill-prd/some/random/path.csv")
+            parse_object_uri("gs://clarobill-mrf-archive-uscentral/some/random/path.csv")
 
 
 class TestArchiveMeta:

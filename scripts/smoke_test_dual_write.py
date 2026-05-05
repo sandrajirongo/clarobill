@@ -4,7 +4,7 @@ Runs the new scraper code against a small slice of `hospital_directory`,
 verifies that:
 
   1. Each hospital's MRF is downloaded to mrf-staging (legacy parser path).
-  2. Each is also archived to mrf-archive-clarobill-prd with sibling .meta.json.
+  2. Each is also archived to clarobill-mrf-archive-uscentral with sibling .meta.json.
   3. mrf_archive_index gets a row per hospital with parse_status='pending'.
   4. The new scraper's last_modified blob metadata is populated for the parser.
 
@@ -20,7 +20,7 @@ Usage:
     python scripts/smoke_test_dual_write.py --hospital-npis 1234567890,9876543210
 
 Safety:
-    - Reads/writes the real `mrf-staging` and `mrf-archive-clarobill-prd`
+    - Reads/writes the real `mrf-staging` and `clarobill-mrf-archive-uscentral`
       buckets, plus real BigQuery tables. Idempotent: archive_writer skips
       duplicates; archive_index inserts are pre-checked.
     - Defaults to 10 hospitals to keep blast radius small.
@@ -54,7 +54,7 @@ logger = logging.getLogger("smoke_test")
 PROJECT = os.environ.get("GCP_PROJECT_ID", "clarobill-prd")
 DATASET = os.environ.get("BIGQUERY_DATASET", "hospital_prices")
 STAGING_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
-ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive-clarobill-prd")
+ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "clarobill-mrf-archive-uscentral")
 
 
 def _pick_hospitals(

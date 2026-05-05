@@ -127,7 +127,7 @@ class ChargeRow:
 
     Phase 4 schema: day-level effective_date is gone — pricing_effective_year
     is the date dimension. source_mrf_url + source_gcs_uri provide row-level
-    provenance back to the immutable archive blob in mrf-archive-clarobill-prd.
+    provenance back to the immutable archive blob in clarobill-mrf-archive-uscentral.
     """
 
     pricing_effective_year: int
