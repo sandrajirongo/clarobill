@@ -16,7 +16,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **2** | S2 NCCI modifier-59 per-line | ✅ done 2026-05-04 | `41412c1` |
 | **3** | High-severity engine (H1, H2, H3, H8, H9, H10) | ✅ done 2026-05-04 | `be0c76a` `0010f73` `98f51c5` `d5ffd8b` `d3147ac` `45682cc` |
 | **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ✅ done 2026-05-04 | `062d8dd` `9bf138c` `073f1a1` `d7ba465` `a446c62` `5dbe5a0` `fffda05` |
-| **5** | Medium-severity (M3, M4, M5, M6) | ⏳ next | — |
+| **5** | Medium-severity (M3, M4, M5, M6) | ✅ done 2026-05-04 | `587ef04` `ac49324` `8f80207` |
 | **6** | Type-truth migration (M7-M13) | pending | — |
 | **7** | Universal coverage audit (Rule 8) | pending | — |
 
@@ -61,19 +61,14 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 |---|---|---|
 | **M1** | Web vitest configured but no `jsdom` and zero test files | `29583da` |
 | **M2** | Ruff N806 on two function-scope constants | `5b232b6` |
+| **M3** | Anesthesia time pattern over-matched "5 min" in unrelated text | `587ef04` |
+| **M4** | Severity sort key used `.lower()` against what should be a typed enum | `587ef04` |
+| **M5** | Charge regex picked up date fragments like `03.05` | `ac49324` |
+| **M6** | Prompt injection vector via OCR'd description fields in AI dispute letter | `8f80207` |
 
 ---
 
 ## Findings open
-
-### Medium (Phase 5)
-
-| Tag | Description |
-|---|---|
-| **M3** | Anesthesia time pattern over-matches "5 min" in unrelated text |
-| **M4** | Severity sort key uses `.lower()` against what should be typed enum |
-| **M5** | Charge regex picks up date fragments like `03.05` |
-| **M6** | Prompt injection vector via OCR'd description fields in AI dispute letter |
 
 ### Type-truth migration (Phase 6)
 
@@ -106,6 +101,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | End of Phase 3 | 502 passed, 10 skipped | 24 |
 | End of CI setup (PR #8) | 502 | 24 |
 | End of Phase 4 | 510 (engine) + 94 (mrf_discovery scripts) | 24 |
+| End of Phase 5 | 529 (engine) + 94 (mrf_discovery scripts) | 24 |
 
 ---
 
