@@ -17,7 +17,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **3** | High-severity engine (H1, H2, H3, H8, H9, H10) | ✅ done 2026-05-04 | `be0c76a` `0010f73` `98f51c5` `d5ffd8b` `d3147ac` `45682cc` |
 | **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ✅ done 2026-05-04 | `062d8dd` `9bf138c` `073f1a1` `d7ba465` `a446c62` `5dbe5a0` `fffda05` |
 | **5** | Medium-severity (M3, M4, M5, M6) | ✅ done 2026-05-04 | `587ef04` `ac49324` `8f80207` |
-| **6** | Type-truth migration (M7-M13) | ✅ done 2026-05-04 (M10 deferred) | `107b4b4` `79211f9` `0244166` `c60ea3b` |
+| **6** | Type-truth migration (M7-M13) | ✅ done 2026-05-04 | `107b4b4` `79211f9` `0244166` `c60ea3b` `026e7e1` |
 | **6** | Type-truth migration (M7-M13) | pending | — |
 | **7** | Universal coverage audit (Rule 8) | pending | — |
 
@@ -69,6 +69,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **M7** | Bill mapper duplicated character-for-character across 2 files | `107b4b4` |
 | **M8** | Shape clusters duplicated across Pydantic + shared TS + inline TS | closed via Zod schemas (Phase 1) + Pydantic↔Zod parity test (`c60ea3b`) |
 | **M9** | LineItem Pydantic field names were snake_case while TS expects camelCase | `c60ea3b` (caught by parity test) |
+| **M10** | ProfileMember + InsurancePlan snake_case redeclarations consolidated to shared camelCase | `026e7e1` |
 | **M11** | Bill/LineItem mappers extracted to single source | `107b4b4` |
 | **M12** | 11 unsafe `as` casts replaced with Zod `parseJsonResponse` | `79211f9` |
 | **M13** | BQ DML row-count verification helper + applied at 3 MERGE sites | `0244166` |
@@ -76,12 +77,6 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 ---
 
 ## Findings open
-
-### Deferred to follow-up
-
-| Tag | Description | Why deferred |
-|---|---|---|
-| **M10** | `ProfileMember` + `InsurancePlan` redeclared in snake_case in `bill-verification.tsx` + `members-panel.tsx` | Requires aligning the API routes that produce these responses — higher blast-radius cleanup. The Zod boundary (M12) gates the unsafe-cast surface in the meantime. |
 
 ### Universal coverage (Phase 7)
 
