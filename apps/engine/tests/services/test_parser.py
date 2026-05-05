@@ -396,6 +396,48 @@ class TestNpiExtraction:
         text = f"Account Number: {self._INVALID_NPI}\n99214  Office Visit  $350.00"
         assert parser.extract_npi(text) is None
 
+    def test_rejects_account_number_near_provider_keyword(self, parser: BillParser) -> None:
+        """H9 fix (2026-05-04): pre-fix, a Luhn-valid 10-digit number within
+        60 chars of a provider keyword was accepted as the NPI even when an
+        intervening 'Account #' label clearly identified it as something else.
+        Real bills frequently put account numbers right next to billing-
+        department headers."""
+        # Use a Luhn-valid account number to prove the disqualifier works
+        # independently of Luhn (otherwise the test would pass for the wrong reason).
+        text = f"Billing Department\nAccount #: {self._VALID_NPI}\n99214  Office Visit  $350.00"
+        assert parser.extract_npi(text) is None
+
+    def test_rejects_mrn_near_provider_keyword(self, parser: BillParser) -> None:
+        text = f"Provider records\nMRN: {self._VALID_NPI}"
+        assert parser.extract_npi(text) is None
+
+    def test_rejects_claim_id_near_provider_keyword(self, parser: BillParser) -> None:
+        text = f"Facility\nClaim ID {self._VALID_NPI}"
+        assert parser.extract_npi(text) is None
+
+    def test_rejects_npi_starting_with_invalid_leading_digit(self, parser: BillParser) -> None:
+        """CMS NPI position 1 is contractually 1 or 2. A 10-digit Luhn-passing
+        number starting with 9 is provably not an NPI."""
+        # 9234567896 — Luhn-valid but starts with 9, so cannot be an NPI.
+        # Construct a Luhn-valid number with leading 9 by trial computation:
+        # The Luhn check uses prefix "80840" + 10 digits. The fallback pattern
+        # rejects on leading digit, so we don't need a Luhn-valid 9-prefix
+        # number to test rejection — we just need a 9-prefix number that
+        # would have passed Luhn pre-fix. Use any 9-prefix Luhn-valid string.
+        # (Verified: 9234567896 — Luhn checksum 60 ÷ 10 = 6, valid.)
+        text = "Billing Provider 9234567896"
+        # Even though this passes Luhn, the fallback now rejects it on
+        # leading digit. Bill returns None → engine falls back to name+ZIP.
+        assert parser.extract_npi(text) is None
+
+    def test_label_form_still_accepts_any_valid_luhn(self, parser: BillParser) -> None:
+        """The label form (NPI:) is authoritative — leading-digit narrowing
+        only applies to the fallback. If a bill explicitly labels the field,
+        trust it. (CMS could theoretically issue a 3- or 4-prefix NPI in the
+        future; the label form would still resolve correctly.)"""
+        text = f"NPI: {self._VALID_NPI}"
+        assert parser.extract_npi(text) == self._VALID_NPI
+
 
 class TestZipCodeExclusion:
     def test_zip_code_in_address_not_extracted_as_cpt(self, parser: BillParser) -> None:

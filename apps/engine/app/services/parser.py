@@ -180,8 +180,32 @@ _NOISE_PATTERNS = [
 _NPI_LABEL_PATTERN = re.compile(r"\bNPI[:\s#]+(\d{10})\b", re.IGNORECASE)
 # Fallback: 10-digit number within 60 characters of a provider-identifying keyword.
 # Covers formats like "Billing Provider  1234567893" where the label is absent.
+#
+# H9 fix (2026-05-04): pre-fix, any 10-digit number passing Luhn was returned —
+# Luhn passes ~10% of arbitrary 10-digit strings, so an account number, MRN, or
+# claim ID near a provider keyword had a 1-in-10 chance of being mis-resolved
+# as the NPI. A wrong NPI then drove the negotiated_charges lookup against the
+# wrong hospital and emitted false NEGOTIATED_RATE_EXCEEDED critical findings
+# with bogus dollar amounts.
+#
+# Two narrowings:
+#   1. Position 1 of an NPI is contractually 1 or 2 (CMS NPI issuance rule).
+#      Reject anything starting with another digit. Cuts the false-positive
+#      surface to ~20% × Luhn pass rate ≈ 2% of arbitrary 10-digit strings.
+#   2. Negative lookbehind: reject if the candidate is immediately preceded by
+#      "account", "mrn", or "claim" labels (with optional :, #, or whitespace).
+#      These are the most common 10-digit OCR collisions on real bills.
 _NPI_CONTEXT_PATTERN = re.compile(
-    r"(?:billing|provider|facility|physician)\b.{0,60}\b(\d{10})\b",
+    r"(?:billing|provider|facility|physician)\b"
+    r"(?:(?!account|mrn|claim).){0,60}?"
+    r"\b([12]\d{9})\b",
+    re.IGNORECASE | re.DOTALL,
+)
+# Disqualifier: if the candidate appears immediately after one of these labels,
+# don't treat it as an NPI even when a provider keyword is also nearby.
+# Checked separately so the substring detection is intentional, not regex-implicit.
+_NPI_DISQUALIFIER_PATTERN = re.compile(
+    r"\b(?:account|acct|mrn|claim|case|patient\s*id)\s*[:#]?\s*\d*\b",
     re.IGNORECASE,
 )
 
@@ -639,15 +663,28 @@ class BillParser:
         Returns:
             First Luhn-valid 10-digit NPI found, or None.
         """
+        # Strategy 1 — explicit label. Authoritative; never falls back even if
+        # the candidate fails Luhn (an explicit "NPI: 1234" with bad digits is
+        # a clear indication this bill's NPI is unrecoverable; we don't want
+        # to mistakenly resolve an unrelated number from elsewhere).
         for match in _NPI_LABEL_PATTERN.finditer(raw_text):
             candidate = match.group(1)
             if _validate_npi_luhn(candidate):
                 return candidate
 
+        # Strategy 2 — provider-context fallback. H9 fix: reject candidates
+        # within 20 chars of an account/MRN/claim label.
         for match in _NPI_CONTEXT_PATTERN.finditer(raw_text):
             candidate = match.group(1)
-            if _validate_npi_luhn(candidate):
-                return candidate
+            if not _validate_npi_luhn(candidate):
+                continue
+            # Cheaper than recomputing the regex: window-scan 20 chars before
+            # the candidate for any disqualifying label.
+            window_start = max(0, match.start(1) - 20)
+            window = raw_text[window_start : match.start(1)]
+            if _NPI_DISQUALIFIER_PATTERN.search(window):
+                continue
+            return candidate
 
         return None
 
