@@ -35,6 +35,9 @@ _MUTED = (107, 124, 106)
 _RULE = (220, 220, 215)
 _GRAY = (140, 140, 140)
 
+# Severity order: critical first, warning next, info / anything else last.
+_SEVERITY_DESC = {"critical": 0, "warning": 1, "info": 2}
+
 # DejaVu Sans is a free Unicode TTF font that covers the full range of
 # characters Claude may output. fonts-dejavu-core installs it to the
 # standard Debian path; the matplotlib fallback covers local dev machines.
@@ -80,9 +83,7 @@ class ReportGenerator:
         descending within each severity. The patient sees the worst issues
         first when they open the report.
         """
-        # Severity order: critical first, warning next, info / anything else last.
         # Within a severity bucket, larger overcharges come first.
-        _SEVERITY_DESC = {"critical": 0, "warning": 1, "info": 2}
         errors = sorted(
             errors,
             key=lambda e: (_SEVERITY_DESC.get(e.severity.lower(), 9), -float(e.estimated_overcharge)),

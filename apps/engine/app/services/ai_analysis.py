@@ -34,6 +34,18 @@ logger = logging.getLogger(__name__)
 
 _GEMINI_MODEL = "gemini-2.0-flash-001"
 
+# max_tokens=4096: gives the model generous headroom for a 10-error
+# letter with full provider/patient blocks, a real opening, ~250 tok
+# per dispute paragraph, closing, and signature. Gemini 2.0 Flash
+# supports up to 8192 output tokens, so 4096 is safe.
+# 2500 was the prior value but Sandra hit a mid-Dispute-4 cutoff on a
+# 4-error letter (~700 tokens of actual output) — the issue was not
+# the cap but Gemini stopping early without setting finish_reason=STOP.
+# `_call_gemini` now raises on non-STOP finishes so the Claude
+# fallback handles those cases; this ceiling is the guaranteed-budget
+# for clean Gemini runs.
+_LETTER_MAX_TOKENS = 4096
+
 
 def _build_recipient_block(
     hospital_name: str | None,
@@ -294,18 +306,6 @@ class AiAnalysisService:
             f"Billing errors found:\n{error_list}\n\n"
             f"Line items on the bill:\n{line_item_summary}"
         )
-
-        # max_tokens=4096: gives the model generous headroom for a 10-error
-        # letter with full provider/patient blocks, a real opening, ~250 tok
-        # per dispute paragraph, closing, and signature. Gemini 2.0 Flash
-        # supports up to 8192 output tokens, so 4096 is safe.
-        # 2500 was the prior value but Sandra hit a mid-Dispute-4 cutoff on a
-        # 4-error letter (~700 tokens of actual output) — the issue was not
-        # the cap but Gemini stopping early without setting finish_reason=STOP.
-        # `_call_gemini` now raises on non-STOP finishes so the Claude
-        # fallback handles those cases; this ceiling is the guaranteed-budget
-        # for clean Gemini runs.
-        _LETTER_MAX_TOKENS = 4096
 
         # Primary: Gemini
         try:
