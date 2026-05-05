@@ -42,14 +42,18 @@ After `link`, the CLI knows which cloud project this repo targets, and you can r
 
 ## GitHub Actions secrets (one-time)
 
-Add these at **GitHub repo → Settings → Secrets and variables → Actions**:
+Add these as **Repository secrets** at **GitHub repo → Settings → Secrets and variables → Actions → New repository secret**.
 
-| Secret name | Value | Used by |
+(Don't use Environment secrets unless you later want approval gates or per-env tokens; don't use Organization secrets — this is a single-repo setup.)
+
+| Secret name | How to obtain | Used by |
 |---|---|---|
-| `SUPABASE_ACCESS_TOKEN` | from `~/.supabase/access-token` after `supabase login` | migration-check.yml (so the CLI can authenticate against the registry that pulls Postgres images) |
-| `SUPABASE_PROJECT_REF` | `kqecgxxxvvkffjwxxuwp` | future preview-DB workflows |
+| `SUPABASE_ACCESS_TOKEN` | macOS: `security find-generic-password -s "Supabase CLI" -w` (the CLI stores the token in Keychain, not on disk). OR generate a fresh CI-scoped token at <https://supabase.com/dashboard/account/tokens>. | migration-check.yml (CLI auth in future preview-DB iterations) |
+| `SUPABASE_PROJECT_REF` | Literal value: `kqecgxxxvvkffjwxxuwp` (the project URL prefix). | future preview-DB workflows |
 
 The secrets are referenced in the workflows via `${{ secrets.SUPABASE_ACCESS_TOKEN }}`. They are NOT logged.
+
+> **Recommendation:** generate a fresh dashboard token rather than reusing the CLI's local one. The dashboard token is scoped to CI, can be named (e.g. `github-actions-clarobill`), and revoked independently of your local CLI session — so a credential leak in one place doesn't compromise the other.
 
 > **Note:** The current workflows DON'T require either secret yet — `supabase db start` boots locally via Docker and doesn't touch the cloud project. The secrets are pre-staged for the next iteration which adds preview-DB-per-PR (Supabase Branching).
 
