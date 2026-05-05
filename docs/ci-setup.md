@@ -83,7 +83,22 @@ Steps:
 4. Set the migration directory to `supabase/migrations/`
 5. Save
 
-Costs (per Rule 16, verified 2026-05-04 from supabase.com/pricing): preview branches are billed per branch-day. The Pro plan includes 1 free preview branch slot; subsequent slots are $0.32 GB/day for storage and $0.01344/hour for compute (~$0.32/day for the smallest instance). Beta-volume PRs spend <$1/month here. Source: <https://supabase.com/pricing> (verify before relying on these numbers — pricing changes).
+### Cost (per Rule 16, sources verified 2026-05-04)
+
+> "There is no fixed fee for a Preview branch. You only pay for the usage it incurs. A branch running on the default Micro Compute size starts at $0.01344 per hour."
+> — <https://supabase.com/pricing> ("Branching" section)
+
+In practice that's:
+
+| Component | Rate | Note |
+|---|---|---|
+| Compute (Micro, default) | $0.01344 / hour | $0.32/day if a branch is left running for 24 h |
+| Database storage | metered against your project's included disk + paid overage | only the branch's own diff counts; cloning is COW |
+| Egress | metered against your project's included egress | usually negligible for branch-internal queries |
+
+A branch that lives for the duration of a PR (typically <2 hours of compute time before merge or close) costs ~$0.03. At 5 PR/week with auto-cleanup that's ~$0.60/month for the Database Branching feature itself. Your overall Supabase spend stays anchored to your existing Pro plan; preview branches add a small variable cost on top.
+
+> Always re-check current pricing at <https://supabase.com/pricing> before relying on these numbers — Supabase changes them periodically.
 
 ## Verifying CI works
 
