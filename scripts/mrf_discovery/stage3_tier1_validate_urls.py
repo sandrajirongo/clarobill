@@ -267,9 +267,21 @@ def apply_validations(
             if errors:
                 raise RuntimeError(f"Stage 3 Tier 1 staging insert failed at batch {i}: {errors[:3]}")
 
-        # Two MERGEs: one for valid (set website_found_at + maybe update URL),
-        # one for invalid (record reason in error_message). We do them as a
-        # single combined MERGE for atomicity.
+        # H7 fix (2026-05-04): when validation fails, NULL out hospital_website
+        # AFTER N=3 consecutive failures so Tier 2/3 (which query
+        # `WHERE hospital_website IS NULL`) take over and try a different
+        # discovery path. Pre-fix, invalid URLs accumulated consecutive_failures
+        # but kept their bad URL in hospital_website, so Tier 2/3 never picked
+        # them up — ~300 zombie hospitals re-validated the same dead URL on
+        # every quarterly run forever. After 3 strikes we declare the URL
+        # permanently dead by clearing it AND advance error_stage so the row
+        # is auditable. The first 2 failures still record the reason but
+        # leave the URL in place (transient blips shouldn't immediately
+        # demote a Wikidata-sourced URL that may recover).
+        #
+        # The valid-path branch is unchanged: a successful re-validation
+        # advances website_found_at and clears the failure trail via
+        # hospital_website = COALESCE(...).
         merge_sql = f"""
         MERGE `{checkpoint_table}` T
         USING `{staging_table}` S
@@ -279,6 +291,14 @@ def apply_validations(
             website_found_at = S.website_found_at,
             hospital_website = COALESCE(S.final_url, T.hospital_website),
             last_updated_at  = S.website_found_at
+        WHEN MATCHED AND NOT S.valid AND COALESCE(T.consecutive_failures, 0) + 1 >= 3 THEN
+          UPDATE SET
+            hospital_website = NULL,
+            website_source   = NULL,
+            error_stage      = 'tier1_url_dead',
+            error_message    = CONCAT('cleared after 3 failures: ', S.rejection_reason),
+            consecutive_failures = COALESCE(T.consecutive_failures, 0) + 1,
+            last_updated_at = CURRENT_TIMESTAMP()
         WHEN MATCHED AND NOT S.valid THEN
           UPDATE SET
             error_stage   = 'website_found',
