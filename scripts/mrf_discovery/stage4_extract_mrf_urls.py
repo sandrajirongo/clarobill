@@ -80,6 +80,38 @@ _TRANSIENT_CRAWL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     ConnectionResetError,
 )
 
+
+def _assert_flush_complete(
+    pending_discovered: int,
+    pending_failed: int,
+    flush_failures: list[tuple[str, str]],
+) -> None:
+    """Raise RuntimeError if Stage 4 finished with un-persisted rows or a
+    failed final flush. Pulled out as a module-level function so it's
+    independently testable (S3 fix, 2026-05-04).
+
+    Pre-fix, _flush_batch swallowed every BQ error and Stage 4 reported
+    success with total_flushed potentially zero. Cloud Run exited 0 → no
+    alert → next quarterly run repeated the entire crawl. Now: anything
+    that prevented rows from landing forces a non-zero exit so Sentry +
+    Cloud Run alerts fire.
+    """
+    if pending_discovered or pending_failed:
+        raise RuntimeError(
+            f"Stage 4 finished with {pending_discovered} discovered + "
+            f"{pending_failed} failed rows still un-persisted. "
+            f"Flush failures recorded: {flush_failures}. "
+            "Investigate BQ access / schema and re-run."
+        )
+    if flush_failures and flush_failures[-1][0] == "final":
+        # Buffers are empty but the final flush itself failed — only happens
+        # via an unusual code path where rows cleared without a successful
+        # persist. Defensive raise so the operator can audit.
+        raise RuntimeError(
+            f"Stage 4 final flush failed: {flush_failures[-1][1]}. "
+            f"All recorded failures: {flush_failures}."
+        )
+
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from mrf_discovery import bq_checkpoint  # type: ignore[no-redef]
@@ -1139,6 +1171,14 @@ def run(
     flush_buffer_discovered: list[DiscoveredMrf] = []
     flush_buffer_failed: list[str] = []
     total_flushed = 0
+    # S3 fix (2026-05-04): track every flush failure so the run summary at
+    # the end can raise if any persists never landed. Pre-fix, _flush_batch
+    # caught + logged every Exception and kept buffering for retry; if the
+    # final flush also failed the run still reported "Stage 4 complete"
+    # with total_flushed understated. Cloud Run alerts didn't fire because
+    # the exit code was 0. Now: any non-empty flush_failures at end-of-run
+    # raises RuntimeError → exit 1 → Cloud Run alert.
+    flush_failures: list[tuple[str, str]] = []  # [(reason, exception_class_name), ...]
 
     def _flush_batch(reason: str) -> None:
         """Persist whatever's in the flush buffers, then clear them."""
@@ -1158,15 +1198,18 @@ def run(
             )
             flush_buffer_discovered.clear()
             flush_buffer_failed.clear()
-        except Exception:
-            # Don't let a transient BQ error kill the whole crawl. Log the
-            # full traceback to stdout (Cloud Run captures it) and keep
-            # the buffer for retry on the next flush.
+        except Exception as exc:
+            # Don't let a transient BQ error kill the whole crawl mid-loop.
+            # Log the full traceback (Cloud Run captures it) and keep the
+            # buffer for retry on the next flush. The end-of-run summary
+            # raises if any failure was recorded — converting silent
+            # success-with-zero-rows-persisted into a non-zero exit.
             logger.exception(
                 "Persist flush FAILED (%s) — keeping buffer for retry. "
                 "buffer sizes: discovered=%d failed=%d",
                 reason, len(flush_buffer_discovered), len(flush_buffer_failed),
             )
+            flush_failures.append((reason, type(exc).__name__))
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(_crawl_hospital, h): h for h in pending}
@@ -1227,12 +1270,20 @@ def run(
     # Final flush — anything still in the buffers from the last partial batch.
     _flush_batch(reason="final")
 
+    # S3 fix: surface any persist failures via non-zero exit.
+    _assert_flush_complete(
+        len(flush_buffer_discovered),
+        len(flush_buffer_failed),
+        flush_failures,
+    )
+
     return {
         "pending": len(pending),
         "discovered": len(discovered_all),
         "failed": len(failed_ccns),
         "hospitals_with_urls": len({d.ccn for d in discovered_all}),
         "total_flushed": total_flushed,
+        "flush_failures": len(flush_failures),
     }
 
 

@@ -178,6 +178,46 @@ class TestTransientCrawlExceptions:
         assert isinstance(instance, s4._TRANSIENT_CRAWL_EXCEPTIONS) is is_transient
 
 
+class TestAssertFlushComplete:
+    """S3 fix: end-of-run assertion that converts silent persist failures
+    into a non-zero exit. Pre-fix, Stage 4 caught every BQ error and
+    reported "complete" even when total_flushed was zero — Cloud Run
+    alerts never fired because exit code was 0."""
+
+    def test_clean_finish_does_not_raise(self) -> None:
+        """Empty buffers, no recorded failures → success."""
+        s4._assert_flush_complete(0, 0, [])
+
+    def test_unflushed_discovered_rows_raise(self) -> None:
+        with pytest.raises(RuntimeError, match="42 discovered"):
+            s4._assert_flush_complete(42, 0, [("some_batch", "BadRequest")])
+
+    def test_unflushed_failed_rows_raise(self) -> None:
+        with pytest.raises(RuntimeError, match="17 failed"):
+            s4._assert_flush_complete(0, 17, [])
+
+    def test_both_buffers_pending_lists_both_counts(self) -> None:
+        try:
+            s4._assert_flush_complete(5, 3, [])
+        except RuntimeError as exc:
+            assert "5 discovered" in str(exc)
+            assert "3 failed" in str(exc)
+        else:
+            pytest.fail("expected RuntimeError")
+
+    def test_final_flush_failure_raises_even_with_empty_buffers(self) -> None:
+        # Buffers cleared via some path but the recorded last failure was on
+        # the final flush — defensive raise so the failure isn't lost.
+        with pytest.raises(RuntimeError, match="final flush failed"):
+            s4._assert_flush_complete(0, 0, [("intermediate", "BadRequest"), ("final", "Forbidden")])
+
+    def test_only_intermediate_failures_recovered_does_not_raise(self) -> None:
+        # An intermediate flush failed but a later flush (or the final)
+        # successfully persisted everything — exit cleanly. The recorded
+        # failure list is informational; what matters is the buffer state.
+        s4._assert_flush_complete(0, 0, [("intermediate-1", "Timeout")])
+
+
 def test_toc_filename_regex() -> None:
     assert s4._TOC_FILENAME_RE.search("standard-charges-toc.json")
     assert s4._TOC_FILENAME_RE.search("toc-standard-charges.json")
