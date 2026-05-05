@@ -694,10 +694,18 @@ class RulesEngine:
 
                 overcharge = Decimal(str(redundant_item.total_charge))
 
+                # H17 (Phase 8.3): emit the redundant index ONLY (not the
+                # union a_indices + b_indices). The bills.py savings dedup
+                # groups findings by the tuple of affected_line_item_ids;
+                # a 2-index tuple here vs single-index tuples on
+                # NEGOTIATED_RATE_EXCEEDED / HOSPITAL_CHARGE_OUTLIER
+                # produced distinct dedup keys → both contributed to
+                # total_potential_savings → same dollar counted twice.
+                # Mirrors H3's col2-only convention for NCCI.
                 errors.append(DetectedError(
                     code="REDUNDANT_CLINICAL_PAIR",
                     severity="warning",
-                    affected_indices=tuple(dict.fromkeys(a_indices + b_indices)),
+                    affected_indices=(redundant_index,),
                     description=(
                         f"CPT {pair.code_a} and CPT {pair.code_b} were both billed on "
                         f"{service_date}. {pair.rationale} {pair.payer_policy_note} "
@@ -709,9 +717,6 @@ class RulesEngine:
                     benchmark_rate=self._medicare_rates.get(redundant_item.cpt_code),
                     benchmark_source="medicare",
                 ))
-                # Reference unused-variable to keep linters quiet; the index
-                # is captured for future use (e.g., per-line UI highlighting).
-                _ = redundant_index
 
         return errors
 
@@ -1223,21 +1228,43 @@ class RulesEngine:
 
             mue_value, adj_indicator = limit
             if mue_value == 0:
-                # mue_value of 0 means "not separately payable" — flag every occurrence.
+                # mue_value of 0 means "not separately payable".
                 # Skip if NON_PAYABLE_CODE already covers this code (proc_stat B codes
                 # frequently have MUE=0 in the same dataset — one finding is enough).
                 if item.cpt_code in self._non_payable_codes:
                     continue
+                # H18 (Phase 8.3): emit ONE finding per (cpt_code, date)
+                # aggregating ALL instances, instead of one finding per
+                # instance. Pre-H18 a code repeated N times produced N
+                # findings each with affected_line_item_ids=(single,) →
+                # bills.py savings dedup grouped them separately → same
+                # dollar counted N× in total_potential_savings. Realistic
+                # case: a bundled-only J-code on every line of an
+                # infusion bill (5-10 lines) inflated savings by 5-10×.
+                key = (item.cpt_code, str(item.service_date))
+                if key in already_flagged:
+                    continue
+                already_flagged.add(key)
+                all_indices = code_date_indices[key]
+                aggregate_overcharge = sum(
+                    (Decimal(str(line_items[i].total_charge)) for i in all_indices),
+                    start=Decimal(0),
+                )
+                count_label = (
+                    f"{len(all_indices)} times" if len(all_indices) > 1 else "once"
+                )
                 errors.append(DetectedError(
                     code="MUE_EXCEEDED",
                     severity="critical",
-                    affected_indices=(index,),
+                    affected_indices=tuple(all_indices),
                     description=(
                         f"CPT {item.cpt_code} has a CMS MUE value of 0, meaning it is "
                         f"not separately payable under any circumstances. "
+                        f"This bill includes the code {count_label} on {item.service_date} "
+                        f"for a total of ${float(aggregate_overcharge):.2f}. "
                         f"Billing this code is considered improper."
                     ),
-                    estimated_overcharge=Decimal(str(item.total_charge)),
+                    estimated_overcharge=aggregate_overcharge,
                     benchmark_rate=None,
                 ))
                 continue
