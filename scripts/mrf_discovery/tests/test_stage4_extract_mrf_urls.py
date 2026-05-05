@@ -127,6 +127,57 @@ class TestReadCapped:
         assert "invalid utf-8" in result
 
 
+class TestTransientCrawlExceptions:
+    """S4 fix: distinguish transient (retryable) crawl errors from permanent
+    (terminal) ones so the hospital's checkpoint state isn't poisoned by
+    a network blip. Pre-fix, every exception was treated identically and
+    the hospital was permanently marked 'no MRF found'."""
+
+    def test_module_exposes_transient_set(self) -> None:
+        """The set is module-scoped so the catch site can reference it without
+        re-importing the requests/socket modules. If this test fails,
+        someone removed the module-level constant."""
+        import socket as stdlib_socket
+
+        import requests as stdlib_requests
+
+        assert stdlib_requests.Timeout in s4._TRANSIENT_CRAWL_EXCEPTIONS
+        assert stdlib_requests.ConnectionError in s4._TRANSIENT_CRAWL_EXCEPTIONS
+        assert stdlib_socket.timeout in s4._TRANSIENT_CRAWL_EXCEPTIONS
+        assert ConnectionResetError in s4._TRANSIENT_CRAWL_EXCEPTIONS
+
+    @pytest.mark.parametrize(
+        "exc_type,is_transient",
+        [
+            (__import__("requests").Timeout, True),
+            (__import__("requests").ConnectionError, True),
+            (__import__("socket").timeout, True),
+            (ConnectionResetError, True),
+            # Permanent: anything outside the explicit transient set
+            (ValueError, False),
+            (KeyError, False),
+            (AttributeError, False),
+            (RuntimeError, False),
+            # ParseError-like: a downstream regex.error or json.JSONDecodeError
+            # is permanent — the page content itself is broken, retrying won't help.
+            (json.JSONDecodeError, False),
+        ],
+    )
+    def test_classification(self, exc_type: type[BaseException], is_transient: bool) -> None:
+        """Pure classification check — does isinstance against the module's
+        TRANSIENT set behave the way the catch site expects?"""
+        # Construct a dummy instance and check whether
+        # isinstance(e, _TRANSIENT_CRAWL_EXCEPTIONS) matches our intent.
+        if exc_type is json.JSONDecodeError:
+            instance: BaseException = json.JSONDecodeError("msg", "", 0)
+        else:
+            try:
+                instance = exc_type("msg")
+            except TypeError:
+                instance = exc_type()
+        assert isinstance(instance, s4._TRANSIENT_CRAWL_EXCEPTIONS) is is_transient
+
+
 def test_toc_filename_regex() -> None:
     assert s4._TOC_FILENAME_RE.search("standard-charges-toc.json")
     assert s4._TOC_FILENAME_RE.search("toc-standard-charges.json")

@@ -53,6 +53,7 @@ import argparse
 import json
 import logging
 import re
+import socket
 import sys
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -63,6 +64,21 @@ from typing import Any, Iterable
 
 import requests
 from google.cloud import bigquery
+
+
+# S4 fix (2026-05-04): transient crawl errors must not permanently mark a
+# hospital as "no MRF found". A timeout, dropped connection, or 5xx blip
+# during the crawl tells us nothing about whether the hospital actually has
+# a price-transparency file — only that this attempt didn't reach it. Pre-fix,
+# every exception type was caught the same way and the hospital was added to
+# failed_ccns, terminating future re-attempts. Defining this set explicitly
+# at module scope so the catch-site below can re-classify cleanly.
+_TRANSIENT_CRAWL_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    requests.Timeout,
+    requests.ConnectionError,
+    socket.timeout,
+    ConnectionResetError,
+)
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -1155,18 +1171,38 @@ def run(
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(_crawl_hospital, h): h for h in pending}
         completed = 0
+        transient_crashes = 0
+        permanent_crashes = 0
         for fut in as_completed(futures):
             hospital = futures[fut]
             ccn = hospital.get("ccn") or ""
+            result: list[DiscoveredMrf] = []
+            crashed_transient = False
             try:
                 result = fut.result()
-            except Exception as exc:
-                logger.warning("[%s] crawler crashed: %s", ccn, exc)
-                result = []
+            except _TRANSIENT_CRAWL_EXCEPTIONS:
+                # S4 fix: transient — log full traceback, leave the
+                # hospital's checkpoint row unchanged so the next run
+                # picks it back up. NOT added to failed_ccns.
+                logger.exception(
+                    "[%s] transient crawler error — leaving hospital unmarked for retry next run",
+                    ccn,
+                )
+                crashed_transient = True
+                transient_crashes += 1
+            except Exception:
+                # Permanent — log full traceback (logger.exception, not warning,
+                # so the trace appears in Cloud Logging) and route to failed_ccns
+                # via the empty-result path below.
+                logger.exception("[%s] crawler crashed (permanent failure)", ccn)
+                permanent_crashes += 1
             if result:
                 discovered_all.extend(result)
                 flush_buffer_discovered.extend(result)
-            else:
+            elif not crashed_transient:
+                # Empty result OR permanent crash — mark failed so future runs
+                # don't repeat the same crawl. Transient crashes skip this so
+                # the hospital is retried next quarterly run.
                 failed_ccns.append(ccn)
                 flush_buffer_failed.append(ccn)
             completed += 1
@@ -1179,10 +1215,13 @@ def run(
                 _flush_batch(reason=f"every-{flush_every} at completed={completed}")
 
     logger.info(
-        "Stage 4 crawl done: %d hospitals → %d MRF URLs (%d hospitals had ≥1 URL)",
+        "Stage 4 crawl done: %d hospitals → %d MRF URLs "
+        "(%d hospitals had ≥1 URL, %d permanent crashes, %d transient crashes left for retry)",
         len(pending),
         len(discovered_all),
         len({d.ccn for d in discovered_all}),
+        permanent_crashes,
+        transient_crashes,
     )
 
     # Final flush — anything still in the buffers from the last partial batch.
