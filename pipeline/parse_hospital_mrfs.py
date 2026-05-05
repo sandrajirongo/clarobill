@@ -669,6 +669,51 @@ def _blob_from_gcs_uri(gcs: storage.Client, gcs_uri: str) -> storage.Blob:
     return gcs.bucket(bucket_name).blob(blob_name)
 
 
+def reset_skipped_to_pending(
+    bq: bigquery.Client,
+    error_pattern: str | None = None,
+) -> int:
+    """SF1 (Phase 8.2) companion to reset_failed_to_pending.
+
+    When the parser meets a CSV/XLSX/ZIP it currently writes parse_status
+    = 'skipped' to mrf_archive_index. The archive_index-driver picks up
+    only 'pending' rows, so once skipped a URL is permanently bypassed —
+    even when a future parser version adds support for that format. This
+    is a structural coverage hole: when CSV parser ships (Phase 5
+    backlog), the historical CSV cohort (~11k+1.9k blobs) won't get
+    re-evaluated by any current job.
+
+    The fix: this helper flips rows back to 'pending' just like
+    reset_failed_to_pending. Operators run it (via PARSER_RESET_SKIPPED=true
+    env var or a one-off script) AFTER deploying CSV parser support, so
+    the next archive_index-driven run picks them up.
+
+    Args:
+      error_pattern: SQL LIKE pattern to scope the reset (e.g.,
+                     'unsupported format%' to only retry CSV/XLSX/ZIP).
+                     None resets ALL 'skipped' rows.
+
+    Returns the number of rows reset.
+    """
+    where_clause = "parse_status = 'skipped'"
+    params: list[bigquery.ScalarQueryParameter] = []
+    if error_pattern:
+        where_clause += " AND parse_error LIKE @pattern"
+        params.append(bigquery.ScalarQueryParameter("pattern", "STRING", error_pattern))
+    sql = f"""
+        UPDATE `{ARCHIVE_INDEX_TABLE}`
+        SET parse_status = 'pending',
+            parsed_at = NULL,
+            parse_error = CONCAT('reset for retry (was skipped): ', IFNULL(parse_error, 'unknown'))
+        WHERE {where_clause}
+    """
+    job = bq.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params))
+    job.result()
+    n = int(job.num_dml_affected_rows or 0)
+    logger.info("Reset %d skipped rows to pending (pattern=%r)", n, error_pattern)
+    return n
+
+
 def reset_failed_to_pending(
     bq: bigquery.Client,
     error_pattern: str | None = None,
@@ -869,6 +914,20 @@ def main() -> None:
     if retry_pattern:
         n = reset_failed_to_pending(bq, retry_pattern)
         logger.info("Pre-run retry reset: %d rows", n)
+
+    # SF1 (Phase 8.2): PARSER_RESET_SKIPPED='true' (or a SQL LIKE pattern)
+    # flips 'skipped' rows back to 'pending'. Operators run this AFTER
+    # deploying support for a previously-skipped format (CSV, XLSX, ZIP)
+    # so the next archive_index-driven run re-evaluates the cohort.
+    # Without this helper the historical 'skipped' rows stay permanently
+    # skipped — see SF1 in docs/playbooks/bug-fix-campaign.md.
+    reset_skipped = os.environ.get("PARSER_RESET_SKIPPED", "").strip()
+    if reset_skipped:
+        # 'true' / '1' resets all skipped rows; any other value is treated as
+        # a SQL LIKE pattern matched against parse_error.
+        pattern = None if reset_skipped.lower() in ("true", "1") else reset_skipped
+        n = reset_skipped_to_pending(bq, pattern)
+        logger.info("Pre-run skipped reset: %d rows (pattern=%r)", n, pattern)
 
     # PARSER_DRIVER selects how the parser sources work:
     #   bucket_walk    (default) — walk gs://mrf-staging/raw/ and skip rows
