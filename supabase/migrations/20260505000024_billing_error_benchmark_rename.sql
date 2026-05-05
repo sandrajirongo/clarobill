@@ -67,8 +67,8 @@ as $$
               -- TERMINATED_CODE_BILLED, NCCI_UNBUNDLING, etc.) get null.
               else 'null'::jsonb
             end
-        );
-    end;
+        )
+    end
 $$;
 
 -- ─── Apply the rewrite to every analysis_results.errors[] element ────────────
