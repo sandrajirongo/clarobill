@@ -345,17 +345,21 @@ async def _run_analysis_pipeline(
                 bq_unavailable_sources.append(name)
                 return {}
 
+        # Use the earliest service date year so we never compare against pricing
+        # published after the services were actually rendered.
+        service_year = min(item.service_date.year for item in parsed_items)
         hospital_charges = _safe_load(
             "hospital_gross",
             lambda: _load_hospital_charges(
-                bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+                bq, cpt_codes, hospital_npi, hospital_name, service_year,
+                hospital_state, hospital_zip,
             ),
         )
         negotiated_charges = _safe_load(
             "negotiated_rate",
             lambda: _load_negotiated_charges(
                 bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name,
-                hospital_state, hospital_zip,
+                service_year, hospital_state, hospital_zip,
             ),
         )
         # Load the hospital-wide ceiling rate as a fallback for codes where the
@@ -363,7 +367,8 @@ async def _run_analysis_pipeline(
         negotiated_ceiling = _safe_load(
             "negotiated_ceiling",
             lambda: _load_negotiated_ceiling(
-                bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+                bq, cpt_codes, hospital_npi, hospital_name, service_year,
+                hospital_state, hospital_zip,
             ),
         )
         engine = RulesEngine(
@@ -1258,12 +1263,13 @@ def _load_hospital_charges(
     cpt_codes: list[str],
     hospital_npi: str | None,
     hospital_name: str | None,
+    service_year: int,
     hospital_state: str | None = None,
     hospital_zip: str | None = None,
 ) -> dict[str, Decimal]:
     """Load the hospital's published gross charges for the CPT codes on the bill.
 
-    Queries BigQuery hospital_charges using:
+    Queries hospital_charges_latest using the closest pricing year <= service_year:
       1. NPI match (exact) — preferred; always unambiguous.
       2. Name match (progressive) — fallback when NPI unavailable. Uses state and
          zip (extracted from OCR bill header) to disambiguate same-name hospitals
@@ -1282,14 +1288,14 @@ def _load_hospital_charges(
     unique_codes = list(set(cpt_codes))
 
     if hospital_npi:
-        return _query_charges_by_npi(bq, dataset, unique_codes, hospital_npi)
+        return _query_charges_by_npi(bq, dataset, unique_codes, hospital_npi, service_year)
 
     if hospital_name is None:
         return {}
     npi = _resolve_npi_by_name(bq, dataset, hospital_name, hospital_state, hospital_zip)
     if npi is None:
         return {}
-    return _query_charges_by_npi(bq, dataset, unique_codes, npi)
+    return _query_charges_by_npi(bq, dataset, unique_codes, npi, service_year)
 
 
 def _query_charges_by_npi(
@@ -1297,11 +1303,12 @@ def _query_charges_by_npi(
     dataset: str,
     cpt_codes: list[str],
     hospital_npi: str,
+    service_year: int,
 ) -> dict[str, Decimal]:
-    """Query hospital_charges for a specific NPI, returning gross charge per CPT code.
+    """Query hospital_charges_latest for a specific NPI, returning gross charge per CPT code.
 
-    Takes the highest gross_charge per code when a hospital has multiple rows for
-    the same code (e.g. different settings or payer rows with different charges).
+    Selects the closest pricing year <= service_year via a window function, then takes
+    MAX(gross_charge) per code across all settings/payer rows for that year.
     The gross charge is the hospital's own maximum list price — billing above it
     is an unambiguous error regardless of which specific row was used for billing.
     """
@@ -1309,16 +1316,23 @@ def _query_charges_by_npi(
     # input. All user-provided values flow through ScalarQueryParameter below.
     query = f"""
         SELECT code, MAX(gross_charge) AS gross_charge
-        FROM `{dataset}.hospital_charges`
-        WHERE hospital_npi = @npi
-          AND code IN UNNEST(@codes)
-          AND gross_charge IS NOT NULL
-          AND gross_charge > 0
+        FROM (
+          SELECT code, gross_charge,
+            DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
+          FROM `{dataset}.hospital_charges_latest`
+          WHERE hospital_npi = @npi
+            AND code IN UNNEST(@codes)
+            AND pricing_effective_year <= @service_year
+            AND gross_charge IS NOT NULL
+            AND gross_charge > 0
+        )
+        WHERE yr_rank = 1
         GROUP BY code
     """  # noqa: S608
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("npi", "STRING", hospital_npi),
         bigquery.ArrayQueryParameter("codes", "STRING", cpt_codes),
+        bigquery.ScalarQueryParameter("service_year", "INT64", service_year),
     ])
     try:
         rows = list(bq.query(query, job_config=job_config).result())
@@ -1558,14 +1572,15 @@ def _load_negotiated_charges(
     hospital_name: str | None,
     payer_name: str | None,
     plan_name: str | None,
+    service_year: int,
     hospital_state: str | None = None,
     hospital_zip: str | None = None,
 ) -> dict[str, Decimal]:
     """Load the insurer-specific contracted rate for each CPT code on this bill.
 
-    Queries hospital_charges WHERE hospital_npi matches AND payer_name/plan_name
-    match the patient's confirmed insurance plan. Returns the MAX(negotiated_charge)
-    per code when multiple rows match (e.g. different settings or negotiated_type values).
+    Queries hospital_charges_latest with the closest pricing year <= service_year.
+    Returns MAX(negotiated_charge) per code when multiple rows match (e.g. different
+    settings or negotiated_type values for the same year).
 
     Returns empty dict when:
       - BigQuery not configured
@@ -1607,14 +1622,20 @@ def _load_negotiated_charges(
     if aliases:
         query = f"""
             SELECT code, MAX(negotiated_charge) AS negotiated_charge
-            FROM `{dataset}.hospital_charges`
-            WHERE hospital_npi = @npi
-              AND payer_name IN UNNEST(@payer_aliases)
-              AND CONTAINS_SUBSTR(plan_name, @plan_substr)
-              AND code IN UNNEST(@codes)
-              AND negotiated_charge IS NOT NULL
-              AND negotiated_charge > 0
-              AND negotiated_type IN ('negotiated', 'derived')
+            FROM (
+              SELECT code, negotiated_charge,
+                DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
+              FROM `{dataset}.hospital_charges_latest`
+              WHERE hospital_npi = @npi
+                AND payer_name IN UNNEST(@payer_aliases)
+                AND CONTAINS_SUBSTR(plan_name, @plan_substr)
+                AND code IN UNNEST(@codes)
+                AND pricing_effective_year <= @service_year
+                AND negotiated_charge IS NOT NULL
+                AND negotiated_charge > 0
+                AND negotiated_type IN ('negotiated', 'derived')
+            )
+            WHERE yr_rank = 1
             GROUP BY code
         """  # noqa: S608
         job_config = bigquery.QueryJobConfig(query_parameters=[
@@ -1622,6 +1643,7 @@ def _load_negotiated_charges(
             bigquery.ArrayQueryParameter("payer_aliases", "STRING", aliases),
             bigquery.ScalarQueryParameter("plan_substr", "STRING", plan_substr),
             bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+            bigquery.ScalarQueryParameter("service_year", "INT64", service_year),
         ])
     else:
         # Attempt 2: substring fallback when the payer_name_aliases table is empty
@@ -1629,14 +1651,20 @@ def _load_negotiated_charges(
         # case-insensitive and safe against LIKE metacharacters.
         query = f"""
             SELECT code, MAX(negotiated_charge) AS negotiated_charge
-            FROM `{dataset}.hospital_charges`
-            WHERE hospital_npi = @npi
-              AND CONTAINS_SUBSTR(payer_name, @payer_substr)
-              AND CONTAINS_SUBSTR(plan_name, @plan_substr)
-              AND code IN UNNEST(@codes)
-              AND negotiated_charge IS NOT NULL
-              AND negotiated_charge > 0
-              AND negotiated_type IN ('negotiated', 'derived')
+            FROM (
+              SELECT code, negotiated_charge,
+                DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
+              FROM `{dataset}.hospital_charges_latest`
+              WHERE hospital_npi = @npi
+                AND CONTAINS_SUBSTR(payer_name, @payer_substr)
+                AND CONTAINS_SUBSTR(plan_name, @plan_substr)
+                AND code IN UNNEST(@codes)
+                AND pricing_effective_year <= @service_year
+                AND negotiated_charge IS NOT NULL
+                AND negotiated_charge > 0
+                AND negotiated_type IN ('negotiated', 'derived')
+            )
+            WHERE yr_rank = 1
             GROUP BY code
         """  # noqa: S608
         job_config = bigquery.QueryJobConfig(query_parameters=[
@@ -1644,6 +1672,7 @@ def _load_negotiated_charges(
             bigquery.ScalarQueryParameter("payer_substr", "STRING", payer_substr),
             bigquery.ScalarQueryParameter("plan_substr", "STRING", plan_substr),
             bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+            bigquery.ScalarQueryParameter("service_year", "INT64", service_year),
         ])
     try:
         rows = list(bq.query(query, job_config=job_config).result())
@@ -1674,12 +1703,14 @@ def _load_negotiated_ceiling(
     cpt_codes: list[str],
     hospital_npi: str | None,
     hospital_name: str | None,
+    service_year: int,
     hospital_state: str | None = None,
     hospital_zip: str | None = None,
 ) -> dict[str, Decimal]:
     """Load the hospital-wide maximum negotiated rate per CPT code.
 
-    Queries MAX(max_negotiated) across all payers at this hospital for each code.
+    Queries MAX(max_negotiated) across all payers at this hospital for each code,
+    using the closest pricing year <= service_year via a window function.
     max_negotiated is extracted from the hospital's MRF standard_charges level —
     it represents the highest dollar amount any insurer has contracted to pay for
     that procedure at that facility.
@@ -1713,16 +1744,23 @@ def _load_negotiated_ceiling(
 
     query = f"""
         SELECT code, MAX(max_negotiated) AS ceiling_rate
-        FROM `{dataset}.hospital_charges`
-        WHERE hospital_npi = @npi
-          AND code IN UNNEST(@codes)
-          AND max_negotiated IS NOT NULL
-          AND max_negotiated > 0
+        FROM (
+          SELECT code, max_negotiated,
+            DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
+          FROM `{dataset}.hospital_charges_latest`
+          WHERE hospital_npi = @npi
+            AND code IN UNNEST(@codes)
+            AND pricing_effective_year <= @service_year
+            AND max_negotiated IS NOT NULL
+            AND max_negotiated > 0
+        )
+        WHERE yr_rank = 1
         GROUP BY code
     """  # noqa: S608
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("npi", "STRING", npi),
         bigquery.ArrayQueryParameter("codes", "STRING", unique_codes),
+        bigquery.ScalarQueryParameter("service_year", "INT64", service_year),
     ])
     try:
         rows = list(bq.query(query, job_config=job_config).result())

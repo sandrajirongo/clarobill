@@ -62,7 +62,7 @@ class TestQueryChargesByNpi:
             {"code": "99214", "gross_charge": 425.00},
             {"code": "85025", "gross_charge": 145.50},
         ]])
-        result = _query_charges_by_npi(bq, "proj.dataset", ["99214", "85025"], "1234567893")
+        result = _query_charges_by_npi(bq, "proj.dataset", ["99214", "85025"], "1234567893", 2026)
         assert result == {
             "99214": Decimal("425.00"),
             "85025": Decimal("145.50"),
@@ -73,13 +73,30 @@ class TestQueryChargesByNpi:
         bq = _bq_returning([[
             {"code": "99214", "gross_charge": 425.123456},
         ]])
-        result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893")
+        result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893", 2026)
         assert result["99214"] == Decimal("425.12")
 
     def test_returns_empty_on_query_exception(self) -> None:
         """Graceful failure: a transient BQ outage must not crash the pipeline."""
         bq = _bq_raising(RuntimeError("BQ timeout"))
-        result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893")
+        result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893", 2026)
+        assert result == {}
+
+    def test_closest_prior_year_when_exact_unavailable(self) -> None:
+        """service_year=2025 with only 2024 data → returns 2024 rates (not empty)."""
+        bq = _bq_returning([[{"code": "99214", "gross_charge": 395.00}]])
+        result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893", 2025)
+        assert result == {"99214": Decimal("395.00")}
+        # Verify the query uses hospital_charges_latest and references @service_year.
+        # (bigquery is fully mocked in tests so we inspect the query string directly.)
+        query_str = bq.query.call_args.args[0]
+        assert "hospital_charges_latest" in query_str
+        assert "@service_year" in query_str
+
+    def test_returns_empty_when_no_prior_year_data(self) -> None:
+        """service_year=2023 but hospital only has 2024+ pricing → empty result."""
+        bq = _bq_returning([[]])
+        result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893", 2023)
         assert result == {}
 
 
@@ -88,16 +105,16 @@ class TestQueryChargesByNpi:
 
 class TestLoadHospitalCharges:
     def test_returns_empty_when_bq_is_none(self) -> None:
-        result = _load_hospital_charges(None, ["99214"], "1234567893", None)
+        result = _load_hospital_charges(None, ["99214"], "1234567893", None, 2026)
         assert result == {}
 
     def test_returns_empty_when_no_cpt_codes(self) -> None:
-        result = _load_hospital_charges(MagicMock(), [], "1234567893", None)
+        result = _load_hospital_charges(MagicMock(), [], "1234567893", None, 2026)
         assert result == {}
 
     def test_returns_empty_when_no_hospital_identity(self) -> None:
         """No NPI and no name → no way to query hospital-specific data."""
-        result = _load_hospital_charges(MagicMock(), ["99214"], None, None)
+        result = _load_hospital_charges(MagicMock(), ["99214"], None, None, 2026)
         assert result == {}
 
     def test_uses_npi_directly_when_provided(self) -> None:
@@ -105,6 +122,7 @@ class TestLoadHospitalCharges:
         bq = _bq_returning([[{"code": "99214", "gross_charge": 425.00}]])
         result = _load_hospital_charges(
             bq, ["99214"], hospital_npi="1234567893", hospital_name="Cleveland Clinic",
+            service_year=2026,
         )
         assert result == {"99214": Decimal("425.00")}
         # Only one query — name resolution path was skipped.
@@ -122,7 +140,7 @@ class TestLoadHospitalCharges:
         ])
         result = _load_hospital_charges(
             bq, ["99214"], hospital_npi=None, hospital_name="Cleveland Clinic",
-            hospital_state="OH", hospital_zip="44195",
+            service_year=2026, hospital_state="OH", hospital_zip="44195",
         )
         assert result == {"99214": Decimal("425.00")}
 
@@ -131,7 +149,7 @@ class TestLoadHospitalCharges:
         bq = _bq_returning([[], [], []])  # All three name passes empty
         result = _load_hospital_charges(
             bq, ["99214"], hospital_npi=None, hospital_name="Nonexistent Hospital",
-            hospital_state="ZZ",
+            service_year=2026, hospital_state="ZZ",
         )
         assert result == {}
 
@@ -274,13 +292,13 @@ class TestResolvePayerAliases:
 class TestLoadNegotiatedCharges:
     def test_returns_empty_when_bq_is_none(self) -> None:
         result = _load_negotiated_charges(
-            None, ["99214"], "1234567893", None, "Anthem", "Choice POS I",
+            None, ["99214"], "1234567893", None, "Anthem", "Choice POS I", 2026,
         )
         assert result == {}
 
     def test_returns_empty_when_no_cpt_codes(self) -> None:
         result = _load_negotiated_charges(
-            MagicMock(), [], "1234567893", None, "Anthem", "Choice POS I",
+            MagicMock(), [], "1234567893", None, "Anthem", "Choice POS I", 2026,
         )
         assert result == {}
 
@@ -288,17 +306,17 @@ class TestLoadNegotiatedCharges:
         """Without payer+plan, the engine has no way to query the contract rate
         — returning empty disables NEGOTIATED_RATE_EXCEEDED rather than guessing."""
         result_no_payer = _load_negotiated_charges(
-            MagicMock(), ["99214"], "1234567893", None, None, "Choice POS I",
+            MagicMock(), ["99214"], "1234567893", None, None, "Choice POS I", 2026,
         )
         result_no_plan = _load_negotiated_charges(
-            MagicMock(), ["99214"], "1234567893", None, "Anthem", None,
+            MagicMock(), ["99214"], "1234567893", None, "Anthem", None, 2026,
         )
         assert result_no_payer == {}
         assert result_no_plan == {}
 
     def test_returns_empty_when_no_hospital_identity(self) -> None:
         result = _load_negotiated_charges(
-            MagicMock(), ["99214"], None, None, "Anthem", "Choice POS I",
+            MagicMock(), ["99214"], None, None, "Anthem", "Choice POS I", 2026,
         )
         assert result == {}
 
@@ -314,7 +332,7 @@ class TestLoadNegotiatedCharges:
         ])
         result = _load_negotiated_charges(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
-            payer_name="Anthem", plan_name="Choice POS I",
+            payer_name="Anthem", plan_name="Choice POS I", service_year=2026,
         )
         assert result == {"99214": Decimal("280.50")}
 
@@ -328,7 +346,7 @@ class TestLoadNegotiatedCharges:
         ])
         result = _load_negotiated_charges(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
-            payer_name="Some Niche Insurer", plan_name="HMO Plus",
+            payer_name="Some Niche Insurer", plan_name="HMO Plus", service_year=2026,
         )
         assert result == {"99214": Decimal("295.00")}
 
@@ -342,7 +360,7 @@ class TestLoadNegotiatedCharges:
         ])
         result = _load_negotiated_charges(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
-            payer_name="Anthem", plan_name="Choice POS I",
+            payer_name="Anthem", plan_name="Choice POS I", service_year=2026,
         )
         assert result == {}
 
@@ -358,7 +376,7 @@ class TestLoadNegotiatedCharges:
 
         result = _load_negotiated_charges(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
-            payer_name="Anthem", plan_name="Choice POS I",
+            payer_name="Anthem", plan_name="Choice POS I", service_year=2026,
         )
         assert result == {}
 
@@ -368,11 +386,11 @@ class TestLoadNegotiatedCharges:
 
 class TestLoadNegotiatedCeiling:
     def test_returns_empty_when_bq_is_none(self) -> None:
-        result = _load_negotiated_ceiling(None, ["99214"], "1234567893", None)
+        result = _load_negotiated_ceiling(None, ["99214"], "1234567893", None, 2026)
         assert result == {}
 
     def test_returns_empty_when_no_hospital_identity(self) -> None:
-        result = _load_negotiated_ceiling(MagicMock(), ["99214"], None, None)
+        result = _load_negotiated_ceiling(MagicMock(), ["99214"], None, None, 2026)
         assert result == {}
 
     def test_returns_max_negotiated_per_code_with_npi(self) -> None:
@@ -382,6 +400,7 @@ class TestLoadNegotiatedCeiling:
         ])
         result = _load_negotiated_ceiling(
             bq, ["99214", "85025"], hospital_npi="1234567893", hospital_name=None,
+            service_year=2026,
         )
         assert result == {
             "99214": Decimal("410.00"),
@@ -399,7 +418,7 @@ class TestLoadNegotiatedCeiling:
         ])
         result = _load_negotiated_ceiling(
             bq, ["99214"], hospital_npi=None,
-            hospital_name="Cleveland Clinic",
+            hospital_name="Cleveland Clinic", service_year=2026,
             hospital_state="OH", hospital_zip="44195",
         )
         assert result == {"99214": Decimal("410.00")}
@@ -408,7 +427,7 @@ class TestLoadNegotiatedCeiling:
         bq = _bq_returning([[], [], []])  # All passes fail
         result = _load_negotiated_ceiling(
             bq, ["99214"], hospital_npi=None, hospital_name="Nonexistent",
-            hospital_state="ZZ",
+            service_year=2026, hospital_state="ZZ",
         )
         assert result == {}
 
@@ -416,6 +435,7 @@ class TestLoadNegotiatedCeiling:
         bq = _bq_raising(RuntimeError("BQ down"))
         result = _load_negotiated_ceiling(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
+            service_year=2026,
         )
         assert result == {}
 
@@ -423,5 +443,17 @@ class TestLoadNegotiatedCeiling:
         bq = _bq_returning([[]])
         result = _load_negotiated_ceiling(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
+            service_year=2026,
         )
         assert result == {}
+
+    def test_uses_year_aware_query(self) -> None:
+        """Ceiling query must target hospital_charges_latest with @service_year filter."""
+        bq = _bq_returning([[{"code": "99214", "ceiling_rate": 410.00}]])
+        _load_negotiated_ceiling(
+            bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
+            service_year=2024,
+        )
+        query_str = bq.query.call_args.args[0]
+        assert "hospital_charges_latest" in query_str
+        assert "@service_year" in query_str
