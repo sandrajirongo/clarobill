@@ -125,6 +125,14 @@ def _mock_supabase_with_data(table_data: dict[str, list[dict[str, Any]]]) -> Mag
                 captured_calls["analysis_results_inserts"].append(payload)
             return query
 
+        def _upsert(payload: Any, on_conflict: str | None = None) -> MagicMock:
+            # S6 (Phase 8.2): analysis_results uses upsert to support
+            # idempotent re-runs. Captured under the same bucket as inserts
+            # since the test asserts on the wire-shape, not the SQL verb.
+            if table_name == "analysis_results":
+                captured_calls["analysis_results_inserts"].append(payload)
+            return query
+
         def _delete() -> MagicMock:
             if table_name == "line_items":
                 captured_calls["line_items_deletes"].append(True)
@@ -132,6 +140,7 @@ def _mock_supabase_with_data(table_data: dict[str, list[dict[str, Any]]]) -> Mag
 
         query.update.side_effect = _update
         query.insert.side_effect = _insert
+        query.upsert.side_effect = _upsert
         query.delete.side_effect = _delete
         return query
 
@@ -487,3 +496,55 @@ class TestFullPipeline:
         could double-count failures in the analytics dashboard."""
         events = [c.kwargs.get("event") for c in run_pipeline["posthog"].call_args_list]
         assert "bill analysis failed" not in events
+
+
+class TestS6S7Idempotency:
+    """S6 + S7 (Phase 8.2) regression nets.
+
+    Pre-S6: re-analyze of an already-COMPLETE bill flipped its status to
+    FAILED via a 23505 unique_violation on analysis_results.bill_id.
+    Pre-S7: re-analyze ran every BQ + Gemini call before discovering the
+    existing row. Both fixed by an early-return guard at the top of
+    _run_analysis_pipeline.
+    """
+
+    def test_skips_pipeline_when_analysis_results_already_exist(
+        self,
+        ai_service_test_mode: MagicMock,
+        ocr_mock: MagicMock,
+        posthog_capture: MagicMock,
+    ) -> None:
+        """When analysis_results already has a row for this bill_id, the
+        pipeline returns immediately — no OCR call, no BQ call, no AI call,
+        no insert — and emits a 'bill analysis skipped' telemetry event."""
+        # Configure the supabase mock so analysis_results query returns 1 row.
+        client = _mock_supabase_with_data(_table_data())
+        # Override analysis_results table to return an existing row.
+        original_table = client.table.side_effect
+        def _table(name: str) -> MagicMock:
+            query = original_table(name)  # type: ignore[misc]
+            if name == "analysis_results":
+                query.execute.return_value.data = [{"id": "existing-uuid"}]
+            return query
+        client.table.side_effect = _table
+
+        asyncio.run(_run_analysis_pipeline(
+            bill_id="bill-existing",
+            file_path="user/bill.pdf",
+            state="OH", county=None, zip_code="44195",
+            payer_name=None, plan_name=None, plan_type=None,
+            user_id="user-1",
+            supabase=client,
+        ))
+
+        # OCR was never called — early-return short-circuited.
+        ocr_mock.extract_text.assert_not_called()
+
+        # PostHog 'bill analysis skipped' event fires; 'started'/'completed' don't.
+        events = [c.kwargs.get("event") for c in posthog_capture.call_args_list]
+        assert "bill analysis skipped" in events
+        assert "bill analysis completed" not in events
+        assert "bill analysis failed" not in events
+
+        # No analysis_results write (insert OR upsert) happened.
+        assert client._captured["analysis_results_inserts"] == []

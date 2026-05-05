@@ -102,6 +102,41 @@ async def _run_analysis_pipeline(
     """
     logger.info("Processing bill %s for user %s", bill_id, user_id)
     try:
+        # S6+S7 (Phase 8.2): re-analyze idempotency.
+        #
+        # Pre-S6 the pipeline always did `analysis_results.insert(...)`. On a
+        # second analyze for the same bill_id, Postgres rejected with a
+        # 23505 unique_violation (analysis_results.bill_id is UNIQUE).
+        # Supabase-py raised, the broad except below caught it, and the bill
+        # was marked FAILED — destroying user-visible state for an analysis
+        # that had already succeeded.
+        #
+        # S7: even setting that aside, the prior pipeline ran every BQ +
+        # Gemini call before discovering the existing analysis_results row.
+        # A flapping retry could rack up real BQ on-demand spend + Vertex AI
+        # tokens on every iteration with zero idempotency gate.
+        #
+        # Early-return: if a COMPLETE analysis_results row already exists,
+        # log a 'bill analysis skipped' PostHog event and return without I/O.
+        existing = (
+            supabase.table("analysis_results")
+            .select("id")
+            .eq("bill_id", bill_id)
+            .limit(1)
+            .execute()
+        )
+        if as_rows(existing.data):
+            logger.info(
+                "Bill %s already has analysis_results — skipping pipeline (idempotency)",
+                bill_id,
+            )
+            posthog_client.capture(
+                distinct_id=user_id,
+                event="bill analysis skipped",
+                properties={"bill_id": bill_id, "reason": "already_complete"},
+            )
+            return
+
         # 1. Download file bytes from Storage
         file_response = supabase.storage.from_("bills").download(file_path)
         file_bytes: bytes = file_response
@@ -330,7 +365,12 @@ async def _run_analysis_pipeline(
         total_savings = sum(savings_groups.values(), Decimal("0"))
         estimated_fair = total_charges - total_savings
 
-        supabase.table("analysis_results").insert({
+        # S6 (Phase 8.2): upsert on bill_id so a force-re-analyze (operator
+        # script bypassing the early-return guard above by clearing prior
+        # analysis_results) doesn't fail the UNIQUE constraint. Each
+        # call replaces the row entirely; downstream consumers always see
+        # a single row per bill_id.
+        supabase.table("analysis_results").upsert({
             "id": str(uuid.uuid4()),
             "bill_id": bill_id,
             # by_alias=True emits camelCase keys to match the TS BillingError
@@ -342,7 +382,7 @@ async def _run_analysis_pipeline(
             "ai_summary": ai_summary,
             "dispute_letter_url": None,
             "report_url": None,
-        }).execute()
+        }, on_conflict="bill_id").execute()
 
         supabase.table("bills").update({"status": BillStatus.COMPLETE}).eq("id", bill_id).execute()
         logger.info("Analysis complete for bill %s — %d errors found", bill_id, len(billing_errors))
