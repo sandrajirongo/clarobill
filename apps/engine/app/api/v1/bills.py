@@ -155,6 +155,21 @@ async def _run_analysis_pipeline(
         parser = BillParser()
         parsed_items = parser.parse(raw_text, bill_date=date.today())
 
+        if not parsed_items:
+            # OCR extracted text but found no CPT line items. The document is
+            # likely a summary statement, an EOB, or a bill format the parser
+            # does not yet recognise. Mark as FAILED so the user is told to
+            # upload an itemised bill rather than seeing a misleading
+            # "no errors found" COMPLETE result.
+            logger.warning("Parser found 0 line items in bill %s — marking FAILED", bill_id)
+            supabase.table("bills").update({"status": BillStatus.FAILED}).eq("id", bill_id).execute()
+            posthog_client.capture(
+                distinct_id=user_id,
+                event="bill analysis failed",
+                properties={"bill_id": bill_id, "failure_reason": "no_line_items_parsed"},
+            )
+            return
+
         # Best-effort NPI, name, and address extraction for hospital charge lookup.
         # All are optional; the pipeline continues without them.
         # NPI is exact and unambiguous — used directly when present.
@@ -1740,7 +1755,7 @@ def _map_errors_to_line_items(
             description=error.description,
             estimated_overcharge=error.estimated_overcharge,
             benchmark_rate=error.benchmark_rate,
-            benchmark_source=error.benchmark_source,  # type: ignore[arg-type]
+            benchmark_source=error.benchmark_source,
         ))
     return result
 

@@ -97,6 +97,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from app.models.bill import BenchmarkSource
 from app.services.parser import ParsedLineItem
 
 logger = logging.getLogger(__name__)
@@ -139,11 +140,7 @@ class DetectedError:
     description: str
     estimated_overcharge: Decimal
     benchmark_rate: Decimal | None = None
-    # One of: 'medicare', 'hospital_gross', 'negotiated_rate',
-    # 'negotiated_ceiling', 'opps_cap', 'ambulance_fee_schedule', 'anesthesia'.
-    # None when no benchmark applies (DUPLICATE_CHARGE, MUE_EXCEEDED,
-    # REDUNDANT_CLINICAL_PAIR, NCCI_UNBUNDLING, etc.).
-    benchmark_source: str | None = None
+    benchmark_source: BenchmarkSource | None = None
 
 
 # CMS modifiers that override NCCI PTP edits. Modifier 59 was the original
@@ -1281,10 +1278,16 @@ class RulesEngine:
                 if total_qty <= mue_value:
                     continue
                 excess = total_qty - mue_value
-                avg_unit = sum(
-                    (Decimal(str(line_items[i].unit_charge)) for i in all_indices),
+                # Weighted average unit charge (by quantity) so that lines with
+                # different unit prices and quantities produce the correct
+                # per-unit cost for the excess. An unweighted average would
+                # over- or under-state the overcharge when unit prices differ.
+                total_billed = sum(
+                    (Decimal(str(line_items[i].unit_charge)) * line_items[i].quantity
+                     for i in all_indices),
                     start=Decimal(0),
-                ) / len(all_indices)
+                )
+                avg_unit = total_billed / total_qty
                 overcharge = avg_unit * excess
                 errors.append(DetectedError(
                     code="MUE_EXCEEDED",

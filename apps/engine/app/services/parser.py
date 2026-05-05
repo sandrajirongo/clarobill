@@ -588,11 +588,16 @@ class BillParser:
                 return minutes
 
         # 3. H:MM duration format (hours capped at 6 to avoid clock-time false positives)
+        # M24: apply the same 15-minute floor used by the explicit-minutes path.
+        # Without it, a procedure time like "6:30" (06:30 AM) near an anesthesia
+        # CPT code would be captured as 390 minutes and produce a false-critical
+        # ANESTHESIA_OUTLIER finding. The H<=6 cap blocks most clock times but
+        # not early-morning values in the 0–6 hour range.
         hm_match = _ANES_DURATION_HM_PATTERN.search(window)
         if hm_match:
             hours, mins = int(hm_match.group(1)), int(hm_match.group(2))
             total = hours * 60 + mins
-            if total > 0:
+            if 15 <= total <= 600:
                 return total
 
         return None
