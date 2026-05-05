@@ -122,8 +122,13 @@ _VALID_MODIFIERS: frozenset[str] = frozenset({
 # Mileage quantity — "12 miles", "12.0 mi", "8 MI" — searched near ambulance mileage codes
 _MILEAGE_PATTERN = re.compile(r"\b(\d{1,4}(?:\.\d)?)\s*(?:miles?|mi)\b", re.IGNORECASE)
 # Dollar amount: requires exactly 2 decimal places to avoid matching date fragments
-# (e.g. 11/14/25 would only match 11 without the decimal requirement)
-_AMOUNT_PATTERN = re.compile(r"\$?([\d,]+\.\d{2})\b")
+# (e.g. 11/14/25 would only match 11 without the decimal requirement). M5 fix
+# (2026-05-04): the `\b` boundary between the trailing digit and the next dot
+# in dotted dates like "03.05.2026" is satisfied (dot is not a word char), so
+# `03.05` was previously captured as $3.05. The negative lookahead below
+# rejects matches that are followed by another `.` or `/` or `-` plus digits
+# — which is what dates look like.
+_AMOUNT_PATTERN = re.compile(r"\$?([\d,]+\.\d{2})(?![./-]?\d)")
 _DATE_PATTERN = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
 # ISO 8601 format: YYYY-MM-DD — checked before the MM/DD pattern to avoid partial matches
 _ISO_DATE_PATTERN = re.compile(r"\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b")

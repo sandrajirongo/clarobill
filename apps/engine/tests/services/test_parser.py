@@ -715,6 +715,50 @@ class TestColumnInterleavedOcr:
         assert items[2].cpt_code == "36415"
 
 
+class TestAmountRegexExcludesDates:
+    """M5 fix: pre-fix, `03.05.2026` matched the amount regex as $3.05
+    because the `\\b` boundary after 5 was satisfied (dot isn't a word
+    char). A 2-decimal-place charge regex must reject anything followed
+    by another digit-separator-digit pattern."""
+
+    def test_dotted_date_not_extracted_as_charge(self, parser: BillParser) -> None:
+        text = (
+            "Service date 03.05.2026\n"
+            "99214  Office Visit  $350.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        # Only the legitimate $350.00 — not $3.05 from the date.
+        assert items[0].total_charge == 350.00
+
+    def test_dashed_date_not_extracted_as_charge(self, parser: BillParser) -> None:
+        # "08-12-2026" embeds "08.12" via the dash separator on some bill formats
+        # — the dash-version regex is separate, but the negative lookahead
+        # also covers `-\d` immediately after a 2dp amount.
+        text = (
+            "08-12-2026\n"
+            "99214  Office Visit  $250.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].total_charge == 250.00
+
+    def test_real_charge_followed_by_period_at_end_still_matches(self, parser: BillParser) -> None:
+        """A charge at end-of-line followed by a period (sentence terminator)
+        is rare but should still match — the negative lookahead requires a
+        digit AFTER the period, not just the period."""
+        text = "99214  Office Visit  $350.00."
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].total_charge == 350.00
+
+    def test_real_charge_at_end_of_line_unchanged(self, parser: BillParser) -> None:
+        text = "99214  Office Visit  $350.00\nNext line text"
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].total_charge == 350.00
+
+
 class TestAnesthesiaTimeExtraction:
     """M3 fix: anesthesia minute extraction has a 15-minute floor so
     incidental "5 min wait" / "10 min hold" mentions in the description
