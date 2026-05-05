@@ -561,10 +561,17 @@ class BillParser:
                 return duration
 
         # 2. Explicit minute value
+        # M3 fix (2026-05-04): real anesthesia events run 15+ minutes (induction
+        # alone takes ~5-10 min). Pre-fix lower bound of 1 minute matched
+        # incidental "5 min wait" or "30 min hold" tokens that happen to appear
+        # within _LOOKAHEAD_LINES of an anesthesia CPT code, attaching a bogus
+        # `time_units` to the line and corrupting the entire ANESTHESIA_OUTLIER
+        # calculation downstream. 15-minute floor preserves every realistic
+        # anesthesia case while filtering the noise.
         min_match = _ANES_MINUTES_PATTERN.search(window)
         if min_match:
             minutes = int(min_match.group(1))
-            if 1 <= minutes <= 600:  # 1 min – 10 hours: sane range
+            if 15 <= minutes <= 600:  # realistic anesthesia range
                 return minutes
 
         # 3. H:MM duration format (hours capped at 6 to avoid clock-time false positives)

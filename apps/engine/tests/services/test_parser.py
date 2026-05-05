@@ -715,6 +715,62 @@ class TestColumnInterleavedOcr:
         assert items[2].cpt_code == "36415"
 
 
+class TestAnesthesiaTimeExtraction:
+    """M3 fix: anesthesia minute extraction has a 15-minute floor so
+    incidental "5 min wait" / "10 min hold" mentions in the description
+    block don't get attached to the anesthesia CPT as `time_units`.
+    Pre-fix, the bogus value corrupted the entire ANESTHESIA_OUTLIER
+    calculation because it propagated through implied_total - time_units."""
+
+    def test_realistic_anesthesia_minutes_extracted(self, parser: BillParser) -> None:
+        text = "00540  Anesthesia for heart  130 min  $2,600.00"
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].cpt_code == "00540"
+        assert items[0].anesthesia_minutes == 130
+
+    def test_short_non_anesthesia_min_token_ignored(self, parser: BillParser) -> None:
+        """Pre-fix bug: '5 min wait' on a line right after the CPT code
+        attached time_units=5 to the anesthesia row — clearly wrong."""
+        text = (
+            "00540  Anesthesia for heart  $2,600.00\n"
+            "Patient waited 5 min before procedure\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        # No realistic anesthesia time was found — anesthesia_minutes should
+        # stay None rather than fall back to the bogus 5.
+        assert items[0].anesthesia_minutes is None
+
+    def test_15_minute_lower_bound(self, parser: BillParser) -> None:
+        """Anywhere from 1-14 min is filtered as too-short to be real anesthesia."""
+        for low_value in (1, 5, 10, 14):
+            text = f"00540  Anesthesia for heart  {low_value} min  $2,600.00"
+            items = parser.parse(text)
+            assert items[0].anesthesia_minutes is None, (
+                f"value {low_value} min should be filtered, got {items[0].anesthesia_minutes}"
+            )
+
+    def test_15_minutes_accepted_at_boundary(self, parser: BillParser) -> None:
+        text = "00540  Anesthesia for heart  15 min  $2,600.00"
+        items = parser.parse(text)
+        assert items[0].anesthesia_minutes == 15
+
+    def test_start_end_clock_pair_unchanged(self, parser: BillParser) -> None:
+        """The Start/End clock pair extractor runs first and is unaffected
+        by the minute-floor change. A 12-minute Start/End duration is still
+        legitimate context (no minute-keyword involved)."""
+        text = (
+            "00540  Anesthesia for heart\n"
+            "Start: 08:00  End: 08:12  $2,600.00\n"
+        )
+        items = parser.parse(text)
+        # 12 minutes is a duration computed from clock times — not a minutes-pattern
+        # match — so it's allowed through (anesthesia_minutes detector trusts the
+        # explicit Start/End block).
+        assert items[0].anesthesia_minutes == 12
+
+
 class TestNpiLuhnValidation:
     def test_known_valid_npi_passes(self) -> None:
         # CMS-documented valid NPI: 1234567893, checksum = 70

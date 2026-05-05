@@ -20,7 +20,7 @@ from pathlib import Path
 
 from fpdf import FPDF  # type: ignore[import-untyped]
 
-from app.models.bill import BillingError
+from app.models.bill import BillingError, ErrorSeverity
 from app.services.parser import ParsedLineItem
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,25 @@ _RULE = (220, 220, 215)
 _GRAY = (140, 140, 140)
 
 # Severity order: critical first, warning next, info / anything else last.
-_SEVERITY_DESC = {"critical": 0, "warning": 1, "info": 2}
+# M4 fix (2026-05-04): keyed on the ErrorSeverity StrEnum members rather than
+# raw lowercase strings. `_severity_rank` below resolves the input value
+# through the enum constructor so any non-conforming value buckets at 9
+# instead of silently colliding with a key the dict happens to contain.
+_SEVERITY_DESC: dict[ErrorSeverity, int] = {
+    ErrorSeverity.CRITICAL: 0,
+    ErrorSeverity.WARNING: 1,
+    ErrorSeverity.INFO: 2,
+}
+
+
+def _severity_rank(severity: ErrorSeverity | str) -> int:
+    """Return the sort rank for a severity value, regardless of whether
+    it arrives as an ErrorSeverity instance or a raw string. Unknown values
+    bucket last (rank 9) so they don't collide with known buckets."""
+    try:
+        return _SEVERITY_DESC[ErrorSeverity(severity)]
+    except (ValueError, KeyError):
+        return 9
 
 # DejaVu Sans is a free Unicode TTF font that covers the full range of
 # characters Claude may output. fonts-dejavu-core installs it to the
@@ -86,7 +104,7 @@ class ReportGenerator:
         # Within a severity bucket, larger overcharges come first.
         errors = sorted(
             errors,
-            key=lambda e: (_SEVERITY_DESC.get(e.severity.lower(), 9), -float(e.estimated_overcharge)),
+            key=lambda e: (_severity_rank(e.severity), -float(e.estimated_overcharge)),
         )
         total_charges = sum(Decimal(str(item.total_charge)) for item in line_items)
         # Headline savings is the per-line MAX (computed in bills.py and stored

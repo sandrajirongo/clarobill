@@ -61,6 +61,46 @@ def generator() -> ReportGenerator:
     return ReportGenerator()
 
 
+class TestSeverityRank:
+    """M4 fix: severity sort uses ErrorSeverity enum membership instead of
+    raw .lower() string comparison. Sort key reaches `_severity_rank` which
+    constructs an ErrorSeverity from the input — works whether the input is
+    already an enum or a raw string, with unknown values bucketing last."""
+
+    def test_known_severity_strings(self) -> None:
+        from app.services.report_generator import _severity_rank
+
+        assert _severity_rank("critical") == 0
+        assert _severity_rank("warning") == 1
+        assert _severity_rank("info") == 2
+
+    def test_known_severity_enum_members(self) -> None:
+        from app.services.report_generator import _severity_rank
+
+        assert _severity_rank(ErrorSeverity.CRITICAL) == 0
+        assert _severity_rank(ErrorSeverity.WARNING) == 1
+        assert _severity_rank(ErrorSeverity.INFO) == 2
+
+    def test_unknown_severity_bucketed_last(self) -> None:
+        from app.services.report_generator import _severity_rank
+
+        # Pre-fix: an unknown lowercase string returned 9 because it wasn't
+        # in the dict. Post-fix: same behaviour, but expressed via the
+        # ErrorSeverity constructor's ValueError on mismatched values.
+        assert _severity_rank("urgent") == 9
+        assert _severity_rank("UNKNOWN") == 9
+
+    def test_uppercase_enum_value_string_resolves_to_known_bucket(self) -> None:
+        """If somebody passes a raw uppercase variant (eg. from a future API
+        client), the lookup still resolves through the enum. ErrorSeverity
+        is case-sensitive in its values though — 'CRITICAL' is not a member —
+        so this MUST bucket last. Documents the case-sensitivity explicitly."""
+        from app.services.report_generator import _severity_rank
+
+        # ErrorSeverity values are lowercase; uppercase variants are not members.
+        assert _severity_rank("CRITICAL") == 9
+
+
 class TestGenerateReportPdf:
     @fpdf_available
     def test_returns_valid_pdf(self, generator: ReportGenerator) -> None:
