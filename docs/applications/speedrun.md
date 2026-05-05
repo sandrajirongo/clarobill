@@ -38,7 +38,7 @@ and milestones; Speedrun favours velocity and ambition).
 > the AI layer. End-to-end: scraped, parsed, year-partitioned, and
 > queryable in seconds. The rules engine cites every finding back to a
 > specific dollar in real published data. Live in public beta at
-> clarobill.com. Berkeley Haas alumna, building from Oakland — adjacent
+> clarobill.com. Minerva University alumna, building from Oakland — adjacent
 > to Kaiser HQ and a deep healthcare-tech talent pool.
 
 **Why this works:**
@@ -82,7 +82,7 @@ and milestones; Speedrun favours velocity and ambition).
 > buildout (month 2), growth/SEO operator (month 3-4).
 >
 > Advisors: in active conversation with Hubert Thieblot (Founders Inc)
-> following his open-DM invite this week; tapping the Berkeley Haas
+> following his open-DM invite this week; tapping the Minerva University
 > alumni network for product feedback and warm intros.
 
 **Why this works:**
@@ -293,4 +293,3 @@ voice and sequencing differ.
 
        H13 deferred with a note in the campaign tracker — mechanical refactor of ~30 supabase call sites; warrants a focused
   review session.  
-  

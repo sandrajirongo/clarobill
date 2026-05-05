@@ -665,7 +665,7 @@ def slide_12_team(c: canvas.Canvas) -> None:
 
     fill(c, GRAY_DARK)
     c.setFont("Fraunces-Italic", 16)
-    c.drawString(60, H - 200, "Founder. Engineer. Berkeley Haas alumna.")
+    c.drawString(60, H - 200, "Founder. Engineer. Minerva University alumna.")
 
     body_text = ("Built the data pipeline, OCR, rules engine, frontend, payment flow, "
                  "and AI-assisted dispute letters. Solo, in Oakland.")
