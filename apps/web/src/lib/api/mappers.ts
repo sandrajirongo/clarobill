@@ -37,6 +37,9 @@ type BillRow = {
   status: string;
   hospital_npi: string | null;
   hospital_name: string | null;
+  hospital_city?: string | null;
+  hospital_state?: string | null;
+  hospital_zip?: string | null;
   profile_member_id: string | null;
   payer_name: string | null;
   plan_name: string | null;
@@ -84,6 +87,9 @@ export function mapBillRow(row: BillRow): Bill {
     status: row.status as BillStatus,
     hospitalNpi: row.hospital_npi ?? null,
     hospitalName: row.hospital_name ?? null,
+    hospitalCity: row.hospital_city ?? null,
+    hospitalState: row.hospital_state ?? null,
+    hospitalZip: row.hospital_zip ?? null,
     profileMemberId: row.profile_member_id ?? null,
     payerName: row.payer_name ?? null,
     planName: row.plan_name ?? null,

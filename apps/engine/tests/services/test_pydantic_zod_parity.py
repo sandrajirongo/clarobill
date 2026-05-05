@@ -34,6 +34,7 @@ from app.models.bill import (
     AnalysisResult,
     AnalyzeAccepted,
     AnalyzeRequest,
+    Bill,
     BillingError,
     LineItem,
 )
@@ -109,6 +110,7 @@ def _zod_field_names_from_block(source: str, schema_name: str) -> set[str]:
 @pytest.mark.parametrize(
     "model_cls,zod_schema_name",
     [
+        (Bill, "Bill"),
         (BillingError, "BillingError"),
         (AnalysisResult, "AnalysisResult"),
         (LineItem, "LineItem"),
@@ -127,6 +129,7 @@ def test_pydantic_field_names_documented(model_cls, zod_schema_name) -> None:
 @pytest.mark.parametrize(
     "model_cls,zod_schema_name,allow_extra_in_zod",
     [
+        (Bill, "Bill", set()),
         (BillingError, "BillingError", set()),
         (LineItem, "LineItem", set()),
         # AnalysisResult — Zod's `errors` is array-of-BillingErrorSchema; the

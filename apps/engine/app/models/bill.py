@@ -62,6 +62,49 @@ class BillingErrorCode(StrEnum):
     REDUNDANT_CLINICAL_PAIR = "REDUNDANT_CLINICAL_PAIR"
 
 
+class Bill(BaseModel):
+    """Mirrors TypeScript `Bill` in packages/shared/src/types/bill.ts.
+
+    Phase 8 T2: introduced so the Pydantic↔Zod parity test can assert
+    that every field on the TS shape exists on the Pydantic side.
+    Pre-T2 the parity test silently skipped Bill — T1 (missing
+    hospital_city/state/zip) demonstrated the gap was real.
+    """
+
+    model_config = ConfigDict(
+        strict=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    id: str
+    user_id: str
+    # User-supplied label; falls back to file_name when null
+    display_name: str | None
+    file_name: str
+    file_path: str
+    file_size: int = Field(ge=0)
+    mime_type: Literal["application/pdf", "image/jpeg", "image/png"]
+    status: BillStatus
+    # OCR-extracted provider identity — confirmed during pre-analysis verification
+    hospital_npi: str | None
+    hospital_name: str | None
+    # OCR-extracted provider address (migration 20260430000022). Powers the
+    # dispute-letter recipient block + BigQuery hospital-name disambiguation.
+    hospital_city: str | None
+    hospital_state: str | None
+    hospital_zip: str | None
+    # Insurance confirmed by user at verification time — denormalized from insurance_plans
+    profile_member_id: str | None
+    payer_name: str | None
+    plan_name: str | None
+    plan_type: PlanType | None
+    # Timestamp when the user completed pre-analysis verification
+    confirmed_at: str | None
+    created_at: str
+    updated_at: str
+
+
 class LineItem(BaseModel):
     # Matches BillingError + AnalysisResult: alias_generator = camelCase to
     # align with the TS LineItem contract. populate_by_name lets engine code

@@ -20,6 +20,11 @@ export interface Bill {
   // OCR-extracted provider identity — confirmed during pre-analysis verification
   hospitalNpi: string | null;
   hospitalName: string | null;
+  // OCR-extracted provider address (migration 20260430000022). Powers the
+  // dispute-letter recipient block + BigQuery hospital-name disambiguation.
+  hospitalCity: string | null;
+  hospitalState: string | null;
+  hospitalZip: string | null;
   // Insurance confirmed by user at verification time — denormalized from insurance_plans
   profileMemberId: string | null;
   payerName: string | null;
