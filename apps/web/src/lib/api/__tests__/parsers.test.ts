@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { parseBillingErrors, safeCountErrors } from '../parsers';
+import {
+  AnalysisUrlsResponseSchema,
+  CheckoutResponseSchema,
+  ErrorResponseSchema,
+  InsuranceCardExtractionSchema,
+  MemberCreatedResponseSchema,
+  MembersListResponseSchema,
+  PlanCreatedResponseSchema,
+  StatusResponseSchema,
+  parseBillingErrors,
+  parseJsonResponse,
+  safeCountErrors,
+} from '../parsers';
 
 describe('parseBillingErrors', () => {
   it('parses camelCase array (current contract)', () => {
@@ -43,6 +55,73 @@ describe('parseBillingErrors', () => {
 
   it('returns [] for empty array', () => {
     expect(parseBillingErrors([])).toEqual([]);
+  });
+});
+
+describe('M12 response schemas', () => {
+  it('StatusResponseSchema accepts any status string', () => {
+    expect(StatusResponseSchema.parse({ status: 'complete' })).toEqual({ status: 'complete' });
+  });
+
+  it('StatusResponseSchema rejects missing status', () => {
+    expect(() => StatusResponseSchema.parse({})).toThrow();
+  });
+
+  it('CheckoutResponseSchema requires a URL', () => {
+    expect(() => CheckoutResponseSchema.parse({ checkoutUrl: 'not-a-url' })).toThrow();
+    expect(() => CheckoutResponseSchema.parse({ checkoutUrl: 'https://stripe.com/x' })).not.toThrow();
+  });
+
+  it('ErrorResponseSchema requires a detail message', () => {
+    expect(() => ErrorResponseSchema.parse({ error: {} })).toThrow();
+    expect(ErrorResponseSchema.parse({ error: { detail: 'why' } })).toEqual({
+      error: { detail: 'why' },
+    });
+  });
+
+  it('MemberCreatedResponseSchema picks out id', () => {
+    expect(MemberCreatedResponseSchema.parse({ member: { id: 'abc' } })).toEqual({
+      member: { id: 'abc' },
+    });
+  });
+
+  it('PlanCreatedResponseSchema picks out id', () => {
+    expect(PlanCreatedResponseSchema.parse({ plan: { id: 'xyz' } })).toEqual({
+      plan: { id: 'xyz' },
+    });
+  });
+
+  it('AnalysisUrlsResponseSchema accepts partial analysis', () => {
+    expect(AnalysisUrlsResponseSchema.parse({ analysis: { reportUrl: '/x' } }).analysis?.reportUrl).toBe('/x');
+    expect(AnalysisUrlsResponseSchema.parse({}).analysis).toBeUndefined();
+  });
+
+  it('MembersListResponseSchema validates wrapper but not inner element shape', () => {
+    expect(
+      MembersListResponseSchema.parse({ members: [{ anything: 'goes' }] }).members,
+    ).toHaveLength(1);
+    expect(() => MembersListResponseSchema.parse({})).toThrow();
+  });
+
+  it('InsuranceCardExtractionSchema requires every field', () => {
+    expect(() => InsuranceCardExtractionSchema.parse({ payerName: 'Aetna' })).toThrow();
+    const valid = {
+      payerName: 'Aetna', planName: 'PPO', memberId: 'M1', groupId: 'G1', planType: 'commercial',
+      rxBin: null, rxPcn: null, rxGroup: null, confident: true, note: null,
+    };
+    expect(InsuranceCardExtractionSchema.parse(valid)).toEqual(valid);
+  });
+});
+
+describe('parseJsonResponse', () => {
+  it('parses a JSON body through a schema', async () => {
+    const fakeRes = { json: async () => ({ status: 'ok' }) } as Response;
+    expect(await parseJsonResponse(fakeRes, StatusResponseSchema)).toEqual({ status: 'ok' });
+  });
+
+  it('throws on shape mismatch', async () => {
+    const fakeRes = { json: async () => ({ wrong: 'field' }) } as Response;
+    await expect(parseJsonResponse(fakeRes, StatusResponseSchema)).rejects.toThrow();
   });
 });
 

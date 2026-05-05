@@ -13,6 +13,14 @@ import {
   TRICARE_PLAN_TYPES,
 } from '@/lib/utils/insurance-constants';
 import { useCardScan } from '@/lib/hooks/use-card-scan';
+import {
+  ErrorResponseSchema,
+  MemberCreatedResponseSchema,
+  MembersListResponseSchema,
+  PlanCreatedResponseSchema,
+  StatusResponseSchema,
+  parseJsonResponse,
+} from '@/lib/api/parsers';
 import { CameraIcon } from '@/components/icons';
 import s from './bill-verification.module.css';
 
@@ -93,7 +101,11 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   const loadMembers = useCallback(async (): Promise<void> => {
     const res = await fetch('/api/profile/members');
     if (!res.ok) { setLoadingMembers(false); return; }
-    const { members: data } = await res.json() as { members: ProfileMember[] };
+    const { members: rawMembers } = await parseJsonResponse(res, MembersListResponseSchema);
+    // Inner shape is locally-typed snake_case ProfileMember (M10 territory:
+    // converting to camelCase happens in a later commit alongside the API
+    // route that produces the response).
+    const data = rawMembers as ProfileMember[];
     setMembers(data);
     setLoadingMembers(false);
 
@@ -159,7 +171,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
     });
     setAddingMember(false);
     if (!res.ok) { setFormError('Could not save member. Try again.'); return; }
-    const { member } = await res.json() as { member: { id: string } };
+    const { member } = await parseJsonResponse(res, MemberCreatedResponseSchema);
     setNewName(''); setNewDob(''); setNewState(''); setNewCounty(''); setNewZip('');
     setShowAddMember(false);
     await loadMembers();
@@ -218,7 +230,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
     });
     setAddingPlan(false);
     if (!res.ok) { setFormError('Could not save plan. Try again.'); return; }
-    const { plan } = await res.json() as { plan: { id: string } };
+    const { plan } = await parseJsonResponse(res, PlanCreatedResponseSchema);
     setNewPayer(''); setNewPlan(''); setNewPlanType('commercial'); setNewMemberId('');
     setNewMedicaidType(''); setNewMedicaidMCO('');
     setNewMedicareType(''); setNewMedicareMAName('');
@@ -244,7 +256,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
         try {
           const res = await fetch(`/api/bills/${billId}`);
           if (!res.ok) return;
-          const { status } = await res.json() as { status: string };
+          const { status } = await parseJsonResponse(res, StatusResponseSchema);
           if (status === 'complete') { clearInterval(id); router.push(`/dashboard/bills/${billId}`); resolve(); }
           else if (status === 'failed') {
             clearInterval(id);
@@ -271,7 +283,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
       }),
     });
     if (!res.ok) {
-      const { error } = await res.json() as { error: { detail: string } };
+      const { error } = await parseJsonResponse(res, ErrorResponseSchema);
       setPhase('error'); setErrorMsg(error?.detail ?? 'Something went wrong. Please try again.');
       return;
     }

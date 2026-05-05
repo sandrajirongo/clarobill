@@ -7,6 +7,12 @@ import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/sh
 import { getPriceTier } from '@/lib/pricing';
 import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import { DownloadButton } from '@/components/download-button';
+import {
+  AnalysisUrlsResponseSchema,
+  CheckoutResponseSchema,
+  StatusResponseSchema,
+  parseJsonResponse,
+} from '@/lib/api/parsers';
 import s from './bill-results-view.module.css';
 
 interface BillResultsViewProps {
@@ -34,7 +40,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
       try {
         const res = await fetch(`/api/bills/${bill.id}`);
         if (!res.ok || cancelled) return;
-        const { status } = await res.json() as { status: string };
+        const { status } = await parseJsonResponse(res, StatusResponseSchema);
         if (status === 'complete' || status === 'failed') {
           clearInterval(interval);
           if (!cancelled) router.refresh(); // re-run Server Component to get results
@@ -84,7 +90,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
       try {
         const res = await fetch(`/api/bills/${billId}/analysis`);
         if (!res.ok) return;
-        const data = await res.json() as { analysis?: { reportUrl?: string | null; disputeLetterUrl?: string | null } };
+        const data = await parseJsonResponse(res, AnalysisUrlsResponseSchema);
         if (data.analysis?.reportUrl || data.analysis?.disputeLetterUrl) {
           clearInterval(interval);
           router.refresh();
@@ -166,7 +172,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         setCheckoutError('Could not start checkout. Please try again.');
         return;
       }
-      const { checkoutUrl } = await res.json() as { checkoutUrl: string };
+      const { checkoutUrl } = await parseJsonResponse(res, CheckoutResponseSchema);
       window.location.href = checkoutUrl;
     } finally {
       setIsStartingCheckout(false);

@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
+import { InsuranceCardExtractionSchema, parseJsonResponse } from '@/lib/api/parsers';
 import s from './card-scanner.module.css';
 
 export interface CardScannerLabels {
@@ -274,7 +275,9 @@ export function CardScanner({ onExtracted, onClose, labels: labelOverrides }: Ca
         setState({ phase: 'error', message });
         return;
       }
-      const result = await res.json() as InsuranceCardExtraction;
+      const result: InsuranceCardExtraction = await parseJsonResponse(
+        res, InsuranceCardExtractionSchema,
+      );
       // Stop the camera stream while the user reviews extracted details
       streamRef.current?.getTracks().forEach((t) => t.stop());
       setState({ phase: 'confirming', result });

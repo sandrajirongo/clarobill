@@ -2,6 +2,11 @@
 
 import { useRef, useState } from 'react';
 import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/route';
+import {
+  ErrorResponseSchema,
+  InsuranceCardExtractionSchema,
+  parseJsonResponse,
+} from '@/lib/api/parsers';
 
 export type CardScanState =
   | { status: 'idle' }
@@ -30,12 +35,14 @@ export function useCardScan() {
       });
 
       if (!res.ok) {
-        const { error } = await res.json() as { error: { detail: string } };
+        const { error } = await parseJsonResponse(res, ErrorResponseSchema);
         setScanState({ status: 'error', message: error?.detail ?? 'Could not read the card. Try again or fill in manually.' });
         return;
       }
 
-      const result = await res.json() as InsuranceCardExtraction;
+      const result: InsuranceCardExtraction = await parseJsonResponse(
+        res, InsuranceCardExtractionSchema,
+      );
       setScanState({ status: 'done', result });
     } catch {
       setScanState({ status: 'error', message: 'Network error. Please try again.' });
