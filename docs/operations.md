@@ -204,6 +204,40 @@ When a data source is found to be wrong or untrusted (e.g. the legacy Payerset-s
 
 ---
 
+## Running migrations locally
+
+The Supabase CLI's local Docker stack mirrors the prod schema, so it's the right place to verify a migration before applying it to prod.
+
+```bash
+# One-time per machine — boots Postgres + Auth + Storage in Docker.
+supabase db start
+
+# Iterate: edit migration files, then re-apply against the local stack.
+supabase db reset       # tears down the local DB, re-applies every migration in order
+
+# When you're satisfied, push to prod (the CLI checks schema_migrations and
+# only sends migrations not yet recorded as applied).
+supabase db push
+```
+
+### Migration-check CI
+
+Every PR that touches `supabase/migrations/**` triggers `.github/workflows/migration-check.yml`, which boots a fresh local Postgres on the GitHub runner, applies every migration in lex order, runs the down-migration sibling for every up-migration touched in the PR, then re-applies the up. A red migration-check almost always means one of:
+
+- A new migration assumes a dashboard-enabled extension. Wrap the call in the `do $$ if exists ... end $$` guard from CLAUDE.md Rule 7.
+- A new `.down.sql` sibling is missing or doesn't actually reverse the up. The CI logs the failing `psql -f` line.
+- The PR added an up migration but didn't add a down sibling. CI emits a `::warning::` rather than failing for this — the workflow allows reversibility-untested migrations through, so don't ignore the warning.
+
+### Down migrations
+
+Down siblings live in `supabase/migrations_down/<version>_<name>.down.sql` (mirror of the up filename). They're never auto-applied — they exist solely for the reversibility test and for the rare case where Sandra needs to manually roll back a migration (in which case: run the down via SQL editor, then `supabase migration repair --status reverted <version>` to update the cloud's tracking table).
+
+### One-time history repair (2026-05-04)
+
+The `schema_migrations` table on the cloud project carried duplicate rows for several pre-CLI migrations because the SQL-editor-applied history was never reconciled. The fix was a one-time `supabase migration repair --status applied <version> ...` covering all 23 versions. After repair, `supabase migration list` returns clean local↔remote pairs with no phantoms. If the cloud DB ever shows phantoms again, the dedup query at `docs/ci-setup.md` collapses them safely (system table, no application data risk).
+
+---
+
 ## Automation roadmap
 
 The current state is "Sandra runs manual `python3 scripts/...` commands." Production-grade is "the pipeline runs itself on Cloud Run + Cloud Scheduler and pages an engineer only on failure." Roadmap:

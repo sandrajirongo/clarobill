@@ -1,0 +1,130 @@
+# Bug-fix campaign progress (2026-05-04 → ongoing)
+
+Plan: `~/.claude/plans/vectorized-mapping-waffle.md` (Sandra-local, not in repo).
+
+Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-line, 11 high-severity, 13 medium. Plus 3 regression-gate breakages that were repaired in Phase 0.
+
+---
+
+## Status snapshot
+
+| Phase | Scope | Status | Commits |
+|---|---|---|---|
+| **0** | Regression gate green | ✅ done 2026-05-04 | `5b232b6` `29583da` `e294ee7` |
+| **1** | Boundary contract (S1) | ✅ done 2026-05-04 | `1c883af` `a0fd6b3` `1264f6b` `ba94306` `009ea70` |
+| **CI** | GitHub Actions + Supabase migration-check | ✅ done 2026-05-04 | `8f1d3c8` `f236283` `0624ad9` `694de6a` `5b1ea62` (PR #8 merged) |
+| **2** | S2 NCCI modifier-59 per-line | ✅ done 2026-05-04 | `41412c1` |
+| **3** | High-severity engine (H1, H2, H3, H8, H9, H10) | ✅ done 2026-05-04 | `be0c76a` `0010f73` `98f51c5` `d5ffd8b` `d3147ac` `45682cc` |
+| **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ⏳ next | — |
+| **5** | Medium-severity (M3, M4, M5, M6) | pending | — |
+| **6** | Type-truth migration (M7-M13) | pending | — |
+| **7** | Universal coverage audit (Rule 8) | pending | — |
+
+---
+
+## Findings closed
+
+### Stop-the-line
+
+| Tag | Description | Commits |
+|---|---|---|
+| **S1** | BillingError snake/camel mismatch — patient report would crash on first real finding | Zod schemas (`1c883af`), engine alias_generator (`a0fd6b3`), web `.parse()` boundary (`1264f6b`), SQL backfill (`ba94306`), boundary contract test (`009ea70`) |
+| **S2** | NCCI modifier-59 override applied per CPT instead of per line — masked unbundled siblings | `41412c1` |
+
+### High-severity
+
+| Tag | Description | Commit |
+|---|---|---|
+| **H1** | Comma-less ZIP captured as CPT (`Cleveland OH 44195`) | `98f51c5` |
+| **H2** | Mileage `unit_charge` rounding lost cents — `qty × unit ≠ total` | `d5ffd8b` |
+| **H3** | NCCI `affected_line_item_ids` covered both col1 + col2 — leaked into savings dedup keys | `45682cc` |
+| **H8** | `AnalysisResult.total_charges` Decimal → JSON string instead of float | `be0c76a` |
+| **H9** | NPI fallback regex accepted account/MRN/claim labels (Luhn alone = 10% false positive rate) | `d3147ac` |
+| **H10** | `AnalyzeRequest` accepted any string for `state`/`zip_code`/`plan_type` | `0010f73` |
+| **H11** | Stale `.venv` shebang from MedScan rename → mypy/ruff/pytest broken locally | Phase 0 (env fix) + `e294ee7` (typed Supabase row helpers, 210 mypy errors fixed) |
+
+### Medium
+
+| Tag | Description | Commit |
+|---|---|---|
+| **M1** | Web vitest configured but no `jsdom` and zero test files | `29583da` |
+| **M2** | Ruff N806 on two function-scope constants | `5b232b6` |
+
+---
+
+## Findings open
+
+### MRF pipeline (Phase 4)
+
+| Tag | Description |
+|---|---|
+| **S3** | Stage 4 `_persist_results` flush failure silently retains buffer + reports success |
+| **S4** | Stage 4 `_crawl_hospital` brands transient errors as permanent (no traceback, no retry) |
+| **S5** | Stage 4 `resp.text` unbounded — single 500MB response can OOM the worker |
+| **H4** | Tier 3 Places API books cost meter BEFORE the request — phantom charges on network errors |
+| **H5** | Stage 4 staging table prefix `_stage4_*` may be invalid in BQ (leading underscore reserved) |
+| **H6** | Stage 1 CMS pagination has no hard cap — runaway loop on bad `count` response |
+| **H7** | Tier 1 invalid-URL rows get permanently stuck (Tiers 2/3 never re-process) |
+
+### Medium (Phase 5)
+
+| Tag | Description |
+|---|---|
+| **M3** | Anesthesia time pattern over-matches "5 min" in unrelated text |
+| **M4** | Severity sort key uses `.lower()` against what should be typed enum |
+| **M5** | Charge regex picks up date fragments like `03.05` |
+| **M6** | Prompt injection vector via OCR'd description fields in AI dispute letter |
+
+### Type-truth migration (Phase 6)
+
+| Tag | Description |
+|---|---|
+| **M7** | Bill mapper duplicated character-for-character across 2 files |
+| **M8-M9** | 9 distinct shape clusters across Pydantic + shared TS + inline TS |
+| **M10** | `ProfileMember` + `InsurancePlan` redeclared in snake_case in components |
+| **M11** | 13 unsafe `as` casts in frontend bypassing Zod (which is installed and unused) |
+| **M12** | Pydantic ↔ Zod parity check missing |
+| **M13** | BQ writes lack `num_dml_affected_rows` verification |
+
+### Universal coverage (Phase 7)
+
+| Tag | Description |
+|---|---|
+| **Rule 8** | Every untested service function gets tests; engine 80% coverage threshold; web first-test scaffolding done in M1 |
+| **End-to-end smoke** | `apps/engine/tests/integration/test_full_pipeline.py` covering OCR → parser → rules → AI → report |
+
+---
+
+## Test counts (running total)
+
+| Date | Engine pytest | Web vitest |
+|---|---|---|
+| Pre-campaign baseline (audit found stale) | "421" (collection broken) | 0 (no test files) |
+| End of Phase 0 | 469 passed, 10 skipped | 1 passing (sanity) |
+| End of Phase 1 | 480 passed, 10 skipped | 24 passing |
+| End of Phase 2 | 482 | 24 |
+| End of Phase 3 | 502 passed, 10 skipped | 24 |
+| End of CI setup (PR #8) | 502 | 24 |
+
+---
+
+## CI gate state
+
+All four checks required for merge-readiness; branch protection adds them as required after first run:
+
+- **Engine (Python)** — ruff, mypy `--strict`, pytest
+- **Web (Next.js)** — typecheck, lint, vitest, build
+- **Engine to web boundary contract** — Pydantic fixture export ↔ Zod parse ↔ git-diff drift check
+- **Apply, verify, reverse migrations** (only on PRs touching `supabase/migrations/**`) — fresh local Postgres, every migration applied + reversed for every changed up-migration
+
+---
+
+## Cost-related decisions (Rule 16)
+
+| Decision | Verified | Source |
+|---|---|---|
+| Supabase Pro database compute included; backfill migration cost ~$0 | 2026-05-04 | Sandra's plan baseline |
+| Supabase preview branches — no fixed fee, $0.01344/hr Micro Compute, ~$0.60/month at beta volume | 2026-05-04 | <https://supabase.com/pricing> |
+| GitHub Actions — public repo free; private repo 2,000-3,000 min/month included; CI cost ~750 min/month at 5 PR/day × 3 reruns | 2026-05-04 | <https://github.com/pricing> |
+| BQ table rename (H5, future) — free metadata operation | TBD when fix lands | <https://cloud.google.com/bigquery/docs> |
+| Places API cost-meter fix (H4, future) — needs research before implementing | TBD when fix lands | requires WebSearch per Rule 16 |

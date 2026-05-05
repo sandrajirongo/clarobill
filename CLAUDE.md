@@ -187,10 +187,11 @@ const data = BillAnalysisSchema.parse(raw);  // Zod validates at runtime
 **Data integrity is non-negotiable:**
 
 1. **All schema changes go through migrations.** Use `supabase migration new <name>` to create migration files. Never use the Supabase dashboard to modify the schema directly.
-2. **Migrations are additive and reversible.** Every migration file includes both `up` and `down` logic. If a migration can't be reversed cleanly, document why.
-3. **Never delete data columns in production.** Deprecate them first (stop writing to them), then remove reads, then drop in a later migration.
-4. **All queries use parameterized inputs.** No string interpolation in SQL. No exceptions.
-5. **Foreign keys and constraints are enforced at the database level,** not just in application code. If a line_item must belong to a bill, that's a foreign key constraint, not just a validation rule.
+2. **Migrations are additive and reversible.** Every migration file includes both `up` and `down` logic. **Up migrations live in `supabase/migrations/`; down siblings live in `supabase/migrations_down/<filename>.down.sql`** — the Supabase CLI scans `migrations/` indiscriminately, so co-locating down files there pollutes `migration list` with phantom rows. The `migration-check.yml` CI workflow looks for the down sibling at the `migrations_down/` path and runs the reversibility test against it.
+3. **Dashboard-enabled extensions need a guard in migrations.** `pg_cron`, `pg_net`, `vector`, etc. are enabled per-project via the Supabase dashboard, not by `CREATE EXTENSION` in a migration (the local Docker stack ships the files but doesn't load them by default). Wrap any call to a dashboard-enabled extension in a `do $$ if exists (select 1 from pg_extension where extname = 'X') then ... else raise notice ... end if; end $$` block. Without the guard, `supabase db start` fails locally on every fresh boot and CI's `Apply, verify, reverse migrations` job goes red.
+4. **Never delete data columns in production.** Deprecate them first (stop writing to them), then remove reads, then drop in a later migration.
+5. **All queries use parameterized inputs.** No string interpolation in SQL. No exceptions.
+6. **Foreign keys and constraints are enforced at the database level,** not just in application code. If a line_item must belong to a bill, that's a foreign key constraint, not just a validation rule.
 
 ---
 
