@@ -58,6 +58,13 @@ USER_AGENT = (
 )
 PAGE_SIZE = 500
 REQUEST_TIMEOUT = 60
+# H6 fix (2026-05-04): hard cap on the pagination loop so a misreported
+# `count` field on the CMS API response (or a bug that causes the API to
+# echo the same `next` cursor) can't run away into millions of requests.
+# CMS Hospital General Information has ~6,000 rows; doubling that twice
+# leaves comfortable headroom for unexpected growth without tolerating
+# a runaway loop. Beyond MAX_PAGES * PAGE_SIZE rows, raise.
+MAX_PAGES = 200
 
 
 def fetch_all_hospitals(
@@ -84,7 +91,18 @@ def fetch_all_hospitals(
     logger.info("Total hospitals reported by CMS: %d (got %d on page 1)", total, len(rows))
 
     offset = page_size
+    pages_fetched = 1  # the first page above counts
     while offset < total:
+        if pages_fetched >= MAX_PAGES:
+            # H6 fix: protects against a runaway pagination caused by a
+            # misreported `count`. CMS has ~6,000 hospitals (12 pages at
+            # PAGE_SIZE=500). Hitting 200 pages means something is wrong;
+            # raise rather than blast millions of requests.
+            raise RuntimeError(
+                f"Stage 1 pagination exceeded MAX_PAGES={MAX_PAGES} "
+                f"(reported total={total}, fetched_so_far={len(rows)}). "
+                "Investigate CMS API response — likely a bad `count` field."
+            )
         page_url = f"{api_url}?format=json&limit={page_size}&offset={offset}"
         logger.info("  page offset=%d", offset)
         page_resp = requests.get(page_url, headers=headers, timeout=REQUEST_TIMEOUT)
@@ -95,6 +113,7 @@ def fetch_all_hospitals(
             break
         rows.extend(page_rows)
         offset += page_size
+        pages_fetched += 1
         time.sleep(0.25)  # polite even though no documented rate limit
 
     logger.info("Fetched %d hospitals total", len(rows))

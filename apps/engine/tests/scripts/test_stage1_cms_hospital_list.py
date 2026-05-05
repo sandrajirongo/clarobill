@@ -16,9 +16,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from mrf_discovery import stage1_cms_hospital_list as s1  # noqa: E402
 from mrf_discovery.stage1_cms_hospital_list import (  # noqa: E402
     _clean_str,
     _parse_int,
+    fetch_all_hospitals,
     normalise_row,
 )
 
@@ -158,3 +160,95 @@ class TestNormaliseRow:
         out = normalise_row(self._full_row(hospital_type="Acute Care Hospitals"))
         assert out is not None
         assert out["hospital_type"] == "Acute Care Hospitals"
+
+
+class TestPaginationCap:
+    """H6 fix: Stage 1 pagination loop now raises after MAX_PAGES iterations
+    instead of running away into millions of requests on a misreported
+    `count` field. CMS has ~6,000 hospitals; the cap (200 pages × 500/page
+    = 100k rows) leaves comfortable headroom for growth without tolerating
+    a runaway loop."""
+
+    @staticmethod
+    def _make_response(payload: dict):
+        """Build a minimal stand-in for a successful requests.get() response."""
+
+        class _R:
+            status_code = 200
+
+            def __init__(self, p: dict) -> None:
+                self._p = p
+
+            def raise_for_status(self) -> None:
+                pass
+
+            def json(self) -> dict:
+                return self._p
+
+        return _R(payload)
+
+    def test_caps_runaway_pagination(self, monkeypatch):
+        """A misreported total of 999_999_999 must NOT spin millions of
+        requests — the loop bails after MAX_PAGES."""
+        full_page = {"results": [{"facility_id": "X", "facility_name": "Y"}] * 500}
+        first_page = {"count": 999_999_999, "results": full_page["results"]}
+        call_count = {"n": 0}
+
+        def fake_get(url, headers, timeout):  # noqa: ARG001
+            call_count["n"] += 1
+            return self._make_response(first_page if call_count["n"] == 1 else full_page)
+
+        monkeypatch.setattr(s1.requests, "get", fake_get)
+        monkeypatch.setattr(s1.time, "sleep", lambda _s: None)
+
+        with pytest.raises(RuntimeError, match="MAX_PAGES"):
+            fetch_all_hospitals()
+
+        assert call_count["n"] <= s1.MAX_PAGES + 1, (
+            f"expected ≤{s1.MAX_PAGES + 1} requests, got {call_count['n']}"
+        )
+
+    def test_normal_pagination_under_cap_succeeds(self, monkeypatch):
+        """A realistic CMS payload (~6k rows, 12 pages) must complete cleanly."""
+        rows_total = 1500  # 3 pages at PAGE_SIZE=500
+        first = {
+            "count": rows_total,
+            "results": [{"facility_id": str(i), "facility_name": "X"} for i in range(500)],
+        }
+        page2 = {"results": [{"facility_id": str(i), "facility_name": "X"} for i in range(500, 1000)]}
+        page3 = {"results": [{"facility_id": str(i), "facility_name": "X"} for i in range(1000, 1500)]}
+        pages = [first, page2, page3]
+        idx = {"n": 0}
+
+        def fake_get(url, headers, timeout):  # noqa: ARG001
+            page = pages[idx["n"]]
+            idx["n"] += 1
+            return self._make_response(page)
+
+        monkeypatch.setattr(s1.requests, "get", fake_get)
+        monkeypatch.setattr(s1.time, "sleep", lambda _s: None)
+
+        rows = fetch_all_hospitals()
+        assert len(rows) == rows_total
+
+    def test_empty_page_short_circuits_without_raising(self, monkeypatch):
+        """Existing behavior preserved: when a page returns no results, the
+        loop stops cleanly (CMS may report a stale count after deletions)."""
+        first = {
+            "count": 1500,
+            "results": [{"facility_id": str(i), "facility_name": "X"} for i in range(500)],
+        }
+        empty = {"results": []}
+        pages = [first, empty]
+        idx = {"n": 0}
+
+        def fake_get(url, headers, timeout):  # noqa: ARG001
+            page = pages[idx["n"]]
+            idx["n"] += 1
+            return self._make_response(page)
+
+        monkeypatch.setattr(s1.requests, "get", fake_get)
+        monkeypatch.setattr(s1.time, "sleep", lambda _s: None)
+
+        rows = fetch_all_hospitals()
+        assert len(rows) == 500
