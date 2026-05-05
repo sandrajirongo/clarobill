@@ -12,6 +12,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Mirror tsconfig.json's "paths" so vitest can resolve the workspace
+      // package without requiring a build step. Next.js + tsc honor tsconfig
+      // paths natively; vitest does not.
+      '@clarobill/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },
 });
