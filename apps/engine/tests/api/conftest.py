@@ -57,9 +57,17 @@ for _attr in ("bigquery", "vision", "vision_v1"):
         setattr(_gcloud, _attr, sys.modules.get(f"google.cloud.{_attr}", MagicMock()))
 
 # ── 3. Optional runtime-only packages ─────────────────────────────────────────
-# fpdf2, python-docx, and slowapi are not installed in the test venv.
-# Stub them so that module-level imports in bills.py and report_generator.py
-# do not crash during test collection.
-for _opt_pkg in ("fpdf", "docx", "docx.shared", "slowapi", "slowapi.util", "slowapi.errors"):
+# fpdf2 and python-docx are not installed in the test venv. Stub them so that
+# module-level imports in bills.py and report_generator.py do not crash during
+# test collection.
+#
+# slowapi IS installed and must remain real — its `@limiter.limit` decorator
+# preserves the wrapped handler's signature, which FastAPI introspects when
+# building the request schema. A MagicMock stub replaces the signature with
+# (*args, **kwargs) and every TestClient request to a rate-limited route 422s.
+for _opt_pkg in ("fpdf", "docx", "docx.shared"):
     if _opt_pkg not in sys.modules:
-        sys.modules[_opt_pkg] = MagicMock()
+        try:
+            importlib.import_module(_opt_pkg)
+        except ImportError:
+            sys.modules[_opt_pkg] = MagicMock()

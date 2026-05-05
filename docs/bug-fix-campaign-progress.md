@@ -18,8 +18,8 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ✅ done 2026-05-04 | `062d8dd` `9bf138c` `073f1a1` `d7ba465` `a446c62` `5dbe5a0` `fffda05` |
 | **5** | Medium-severity (M3, M4, M5, M6) | ✅ done 2026-05-04 | `587ef04` `ac49324` `8f80207` |
 | **6** | Type-truth migration (M7-M13) | ✅ done 2026-05-04 | `107b4b4` `79211f9` `0244166` `c60ea3b` `026e7e1` |
-| **6** | Type-truth migration (M7-M13) | pending | — |
-| **7** | Universal coverage audit (Rule 8) | pending | — |
+| **7.1** | Coverage gap inventory (read-only — sets up Phase 7 implementation work) | ✅ done 2026-05-04 | `docs/test-coverage-gaps-2026-05-04.md` |
+| **7** | Universal coverage audit (Rule 8) — engine 86% / web 115 tests | ✅ done 2026-05-05 | _this commit_ |
 
 ---
 
@@ -78,12 +78,39 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 
 ## Findings open
 
-### Universal coverage (Phase 7)
+### Universal coverage (Phase 7) — closed 2026-05-05
 
-| Tag | Description |
-|---|---|
-| **Rule 8** | Every untested service function gets tests; engine 80% coverage threshold; web first-test scaffolding done in M1 |
-| **End-to-end smoke** | `apps/engine/tests/integration/test_full_pipeline.py` covering OCR → parser → rules → AI → report |
+Closed in a single session against the inventory at
+`docs/test-coverage-gaps-2026-05-04.md`. Final numbers exceeded every
+target on the engine side; web tests grew from 41 → 115.
+
+| Module | Pre-Phase 7 | Target | Final |
+|---|---:|---:|---:|
+| `app/api/v1/bills.py` | 28% | 70% | **82%** |
+| `app/api/insurance_card.py` | 0% | 80% | **87%** |
+| `app/services/report_generator.py` | 13% | 60% | **95%** |
+| Engine TOTAL | 55% | n/a | **86%** |
+| Web tests | 41 | n/a | **115** |
+
+#### Files added
+
+| File | Tests | Purpose |
+|---|---:|---|
+| `apps/engine/tests/integration/test_full_pipeline.py` | 17 | End-to-end OCR → parser → rules → AI → DB write. Single comprehensive fixture bill. Regression net for S1 (camelCase boundary), H2 (mileage cents), H8 (Decimal float serialization), H9 (NPI label) |
+| `apps/engine/tests/api/test_insurance_card.py` | 21 | MIME validation, size cap, Gemini happy path, Claude fallback, 502 paths, JSON-fence stripping, plan_type defaulting, PostHog event-name asserts |
+| `apps/engine/tests/api/test_bills_endpoints.py` | 16 | `/analyze` + `/report` route handlers; `_do_generate_report` background task (PDF/DOCX upload + email send) |
+| `apps/engine/tests/api/test_bq_loaders.py` | 36 | BigQuery-backed `_load_hospital_charges`, `_load_negotiated_charges`, `_load_negotiated_ceiling`, `_resolve_npi_by_name`, `_filter_npis_with_charges`, `_resolve_payer_aliases` — happy paths + graceful-empty fallbacks |
+| `apps/web/src/lib/__tests__/pricing.test.ts` | 16 | Tier boundary cuts (off-by-one regression net on $20/$21, $100/$101, etc.); tier-coverage invariants |
+| `apps/web/src/lib/__tests__/beta.test.ts` | 13 | `isBetaMode()` default-true behaviour; `buildTweetIntentUrl` URL encoding |
+| `apps/web/src/lib/utils/__tests__/insurance-constants.test.ts` | 15 | `getMedicaidBrandName` lookups + fallback; MCO list invariants |
+| `apps/web/src/components/__tests__/bill-results-view.test.tsx` | 20 | Paywall visibility logic; per-finding rendering (the S1-protected surface); post-payment download buttons; loading state |
+| `apps/web/src/components/__tests__/bill-verification.test.tsx` | 10 | `loadMembers` → auto-select primary member + primary plan; OCR hospital-name passthrough |
+
+#### Infra changes
+
+- **CI:** `.github/workflows/ci.yml` now installs `fonts-dejavu-core` via apt before pytest, enabling the previously-skipped 6 PDF tests in `test_report_generator.py`. The Cloud Run image already has these fonts via the production Dockerfile — CI matches.
+- **Conftest cleanup:** `tests/api/conftest.py` and `tests/integration/conftest.py` no longer stub `slowapi` (which IS installed) — the MagicMock stub was replacing FastAPI handler signatures with `(*args, **kwargs)` and breaking every TestClient request to a rate-limited route.
+- **`fpdf_available` gate:** widened to also check that DejaVu TTFs are reachable on disk, so the test marker correctly skips on dev machines without `fonts-dejavu` AND `matplotlib`.
 
 ---
 
@@ -100,6 +127,8 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | End of Phase 4 | 510 (engine) + 94 (mrf_discovery scripts) | 24 |
 | End of Phase 5 | 529 (engine) + 94 (mrf_discovery scripts) | 24 |
 | End of Phase 6 | 538 (engine) + 100 (mrf_discovery scripts) | 41 |
+| End of Phase 7.1 (coverage inventory) | 538 (engine, 55% line cov) + 100 (mrf scripts) | 41 (1.22% line cov) |
+| End of Phase 7 (universal coverage) | 638 (engine, 86% line cov) + 100 (mrf scripts) | 115 |
 
 ---
 

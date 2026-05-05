@@ -38,6 +38,14 @@ jobs:
           cache: "pip"
           cache-dependency-path: apps/engine/pyproject.toml
 
+      # DejaVu fonts are required by report_generator's PDF path. The Cloud
+      # Run image installs them via apt; CI installs them the same way so
+      # the report-generator PDF tests run instead of skipping. Without this
+      # step the gate at tests/services/test_report_generator.py is silently
+      # bypassed and ~250 lines of PDF rendering go untested.
+      - name: Install DejaVu fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
       - name: Install dependencies
         run: pip install -e ".[dev]"
 

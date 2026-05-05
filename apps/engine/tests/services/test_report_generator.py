@@ -16,16 +16,30 @@ from app.services.parser import ParsedLineItem
 
 
 def _fpdf_available() -> bool:
+    """PDF rendering needs fpdf2 AND the DejaVu Sans font on the filesystem.
+
+    fpdf2 is installed in the local venv, but DejaVu fonts ship only on the
+    Cloud Run container (apt fonts-dejavu-core). The DOCX-only tests below
+    use a separate _python_docx_available gate.
+    """
     try:
         from fpdf import FPDF  # noqa: PLC0415
-        return isinstance(FPDF, type)  # MagicMock stubs are not real classes
+        if not isinstance(FPDF, type):
+            return False
+        from app.services.report_generator import _dejavu  # noqa: PLC0415
+        try:
+            _dejavu("DejaVuSans.ttf")
+            _dejavu("DejaVuSans-Bold.ttf")
+        except FileNotFoundError:
+            return False
+        return True
     except ImportError:
         return False
 
 
 fpdf_available = pytest.mark.skipif(
     not _fpdf_available(),
-    reason="fpdf2 not installed (requires container environment)",
+    reason="fpdf2 + DejaVu fonts required (Cloud Run container env)",
 )
 
 
@@ -142,9 +156,18 @@ class TestGenerateReportPdf:
 
 
 def _python_docx_available() -> bool:
+    """python-docx exposes Document as a factory function, not a class.
+
+    The MagicMock stub returns MagicMock() when called — its bool()
+    is True. The real Document() returns a Document instance whose
+    .add_paragraph() exists. Distinguish via attribute introspection.
+    """
     try:
         from docx import Document  # noqa: PLC0415
-        return isinstance(Document, type)  # MagicMock stubs are not real classes
+        from unittest.mock import MagicMock  # noqa: PLC0415
+        if isinstance(Document, MagicMock):
+            return False
+        return callable(Document)
     except ImportError:
         return False
 
