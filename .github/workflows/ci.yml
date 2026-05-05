@@ -1,0 +1,141 @@
+name: CI
+
+# Runs the full regression gate on every push to main and every pull request.
+# Must stay green for the campaign-level "no new bugs or gaps" guarantee
+# (CLAUDE.md Rule 13). Mirrors the local gate at .claude/plans/vectorized-mapping-waffle.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs for the same ref when a newer commit arrives.
+# Saves Actions minutes on rapid push sequences.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default permissions: read-only — workflows do not push, comment, or create
+# resources. Override per-job if any future step needs write access.
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: apps/engine/pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff
+        run: python -m ruff check app/
+
+      - name: Mypy --strict
+        run: python -m mypy app/ --strict
+
+      - name: Pytest
+        run: python -m pytest tests/ -v
+        env:
+          # Real keys are never used in CI — these placeholders satisfy
+          # the conftest.py fixture that asserts the env var is set.
+          SUPABASE_URL: "http://localhost:54321"
+          SUPABASE_SERVICE_ROLE_KEY: "ci-placeholder-key"
+          ANTHROPIC_API_KEY: "ci-placeholder-key"
+          SENDGRID_API_KEY: "ci-placeholder-key"
+          SENDGRID_FROM_EMAIL: "ci@clarobill.com"
+
+  web:
+    name: Web (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: cd apps/web && npm run typecheck
+
+      - name: Lint
+        run: cd apps/web && npm run lint
+
+      - name: Vitest
+        run: cd apps/web && npm run test
+
+      - name: Build
+        run: cd apps/web && npm run build
+        env:
+          # Build needs *some* value for env vars referenced in middleware/
+          # server components, but they're not exercised in CI.
+          NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "ci-placeholder-key"
+          NEXT_PUBLIC_BETA_MODE: "true"
+
+  boundary:
+    name: Engine to web boundary contract
+    runs-on: ubuntu-latest
+    needs: [engine, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      # The contract test is the single mechanism that catches Pydantic↔Zod
+      # drift across deployments. It runs on BOTH sides — engine pytest writes
+      # the fixture, web vitest parses it. If anything diverged, one of the
+      # gate jobs above already failed; this job is a final belt-and-braces
+      # check that re-runs both sides explicitly.
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: apps/engine/pyproject.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install engine
+        run: cd apps/engine && pip install -e ".[dev]"
+
+      - name: Install web
+        run: npm ci
+
+      - name: Engine fixture export
+        run: cd apps/engine && python -m pytest tests/services/test_billing_error_fixture_export.py -v
+        env:
+          SUPABASE_URL: "http://localhost:54321"
+          SUPABASE_SERVICE_ROLE_KEY: "ci-placeholder-key"
+          ANTHROPIC_API_KEY: "ci-placeholder-key"
+          SENDGRID_API_KEY: "ci-placeholder-key"
+          SENDGRID_FROM_EMAIL: "ci@clarobill.com"
+
+      - name: Web boundary parse
+        run: cd apps/web && npm run test -- engine-boundary.contract
+
+      - name: Fail if fixture diverged from on-disk
+        run: |
+          if ! git diff --exit-code apps/web/src/lib/__tests__/fixtures/engine-billing-error.json; then
+            echo "::error::Boundary fixture changed at runtime — engine BillingError shape diverged from the checked-in fixture. Regenerate locally and commit."
+            exit 1
+          fi

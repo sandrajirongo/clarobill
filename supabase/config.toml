@@ -1,0 +1,60 @@
+# Supabase CLI config for local development.
+#
+# `project_id` is the local Docker stack identifier — NOT the cloud project ref.
+# The cloud project ref (kqecgxxxvvkffjwxxuwp) is set per-developer via
+# `supabase link --project-ref ...` and lives in .supabase/ which is gitignored.
+project_id = "clarobill"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+schema_paths = []
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+# Email auth — disabled in local CI; production uses Supabase Auth as configured
+# in the cloud dashboard.
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = false
+enable_confirmations = false
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[edge_runtime]
+enabled = true
+inspector_port = 8083
+policy = "oneshot"
