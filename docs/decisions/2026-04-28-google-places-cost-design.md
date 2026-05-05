@@ -135,7 +135,7 @@ Text Search field mask is narrow (`places.id,places.displayName.text`, Essential
 - Working cache (mutable): `gs://mrf-staging/places-api-cache.json`
 - Year snapshots (immutable): `gs://mrf-archive-clarobill-prd/places-api-cache-snapshots/{year}.json`
 - The annual discovery run reads the working cache, processes only hospitals not present in cache, updates the working cache, snapshots to the year-stamped immutable copy at run completion.
-- This pattern is documented in `docs/operations.md` under "Automation roadmap" and "Backup and historical-record policy."
+- This pattern is documented in `docs/operations/pipeline-runbook.md` under "Automation roadmap" and "Backup and historical-record policy."
 
 ### Decision 5 — API key managed via Secret Manager, not env var
 - Key created on `clarobill-prd` (steps below)
@@ -340,7 +340,7 @@ OpenStreetMap Nominatim has POI tags including `website=*`, but coverage is patc
 1. **Verification, not discovery.** Use Mapbox/OSM (free) to confirm a Google-resolved hospital's lat/lng matches our address-on-file, instead of paying for a second Google Place Details call.
 2. **Last-resort fallback** if Google ever sunsets the free $200/mo credit or raises Essentials SKU pricing materially.
 
-Both are deferred until measured spend justifies the engineering work. Filed at `docs/future_improvements/places-api-cost-optimisation.md` (to be created if we revisit).
+Both are deferred until measured spend justifies the engineering work. Filed at `docs/future-improvements/places-api-cost-optimisation.md` (to be created if we revisit).
 
 ---
 
@@ -353,7 +353,7 @@ When Stage 3 Tier 3 ships, the following must all be true:
 - [ ] `--cost-preview` produced a projection that Sandra reviewed and approved
 - [ ] API key is in Secret Manager, not env var, not log lines
 - [ ] Pipeline halts cleanly at $450 ceiling — verified by integration test
-- [ ] Annual snapshot bucket path is documented in `docs/operations.md`
+- [ ] Annual snapshot bucket path is documented in `docs/operations/pipeline-runbook.md`
 
 If any of these isn't green, the pipeline doesn't run against production data.
 

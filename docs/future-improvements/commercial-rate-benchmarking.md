@@ -53,7 +53,7 @@ their insurance actually contracted to pay.
 
 ### Option A — Scale the MRF pipeline (highest value, already planned)
 
-The MRF discovery pipeline (`docs/future_improvements/mrf-discovery-pipeline.md`) is designed
+The MRF discovery pipeline (`docs/future-improvements/mrf-discovery-pipeline.md`) is designed
 to expand hospital coverage from ~3,100 to ~7,000 hospitals. Hospital MRF files contain
 per-payer negotiated rates for most major commercial insurers. Once the pipeline is built:
 
@@ -225,5 +225,5 @@ def _load_commercial_benchmarks(
 
 *Document created: April 2026*  
 *Owner: ClaroBill Engineering*  
-*Related: `docs/future_improvements/mrf-discovery-pipeline.md`,
+*Related: `docs/future-improvements/mrf-discovery-pipeline.md`,
 `apps/engine/app/api/v1/bills.py`, `apps/engine/app/services/rules_engine.py`*

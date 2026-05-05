@@ -18,7 +18,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ✅ done 2026-05-04 | `062d8dd` `9bf138c` `073f1a1` `d7ba465` `a446c62` `5dbe5a0` `fffda05` |
 | **5** | Medium-severity (M3, M4, M5, M6) | ✅ done 2026-05-04 | `587ef04` `ac49324` `8f80207` |
 | **6** | Type-truth migration (M7-M13) | ✅ done 2026-05-04 | `107b4b4` `79211f9` `0244166` `c60ea3b` `026e7e1` |
-| **7.1** | Coverage gap inventory (read-only — sets up Phase 7 implementation work) | ✅ done 2026-05-04 | `docs/test-coverage-gaps-2026-05-04.md` |
+| **7.1** | Coverage gap inventory (read-only — sets up Phase 7 implementation work) | ✅ done 2026-05-04 | `docs/archive/2026-05-04-test-coverage-gaps.md` |
 | **7** | Universal coverage audit (Rule 8) — engine 86% / web 115 tests | ✅ done 2026-05-05 | _this commit_ |
 
 ---
@@ -81,7 +81,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 ### Universal coverage (Phase 7) — closed 2026-05-05
 
 Closed in a single session against the inventory at
-`docs/test-coverage-gaps-2026-05-04.md`. Final numbers exceeded every
+`docs/archive/2026-05-04-test-coverage-gaps.md`. Final numbers exceeded every
 target on the engine side; web tests grew from 41 → 115.
 
 | Module | Pre-Phase 7 | Target | Final |

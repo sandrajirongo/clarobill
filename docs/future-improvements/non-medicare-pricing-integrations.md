@@ -40,7 +40,7 @@ The DHA publishes annual rate files for civilian providers billing TRICARE. RVU-
 
 ### 2. VA Community Care fee schedule
 
-**Detailed design:** *(not yet written — when scoped, file as `docs/future_improvements/va-community-care-integration.md`)*
+**Detailed design:** *(not yet written — when scoped, file as `docs/future-improvements/va-community-care-integration.md`)*
 
 When veterans get care from non-VA providers through the VA Community Care Network, VA reimburses at a published rate (usually Medicare-equivalent + multipliers). The schedule is public at https://www.va.gov/COMMUNITYCARE/providers/Fee_Schedule.asp. Updated quarterly.
 
@@ -48,7 +48,7 @@ When veterans get care from non-VA providers through the VA Community Care Netwo
 
 ### 3. State Medicaid fee schedules
 
-**Detailed design:** [`docs/future_improvements/medicaid-state-rate-scraping.md`](medicaid-state-rate-scraping.md)
+**Detailed design:** [`docs/future-improvements/medicaid-state-rate-scraping.md`](medicaid-state-rate-scraping.md)
 
 Each state runs its own Medicaid program with its own fee schedule. ~51 separate sources, varying formats (PDF, Excel, CSV, sometimes API). Phased approach: Top 10 states by Medicaid enrollment first (covers ~60% of beneficiaries), then expanded coverage.
 
@@ -64,7 +64,7 @@ When TRICARE beneficiaries get care at Military Treatment Facilities, most don't
 
 ### 5. Commercial payer Transparency in Coverage (TIC) files
 
-**Detailed design:** [`docs/future_improvements/commercial-rate-benchmarking.md`](commercial-rate-benchmarking.md)
+**Detailed design:** [`docs/future-improvements/commercial-rate-benchmarking.md`](commercial-rate-benchmarking.md)
 
 Major commercial health plans (Aetna, BCBS, UHC, Cigna, etc.) are required by 45 CFR Part 158 + 45 CFR §158.140 to publish their negotiated rates with every in-network provider in machine-readable JSON files. These complement hospital MRFs by giving us the *payer's* angle on the same negotiated rates.
 
@@ -109,10 +109,10 @@ Per-source tables with a thin abstraction layer in the rules engine is the right
 | MRF (Medicare civilian hospitals) | `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md` | Phases 1-2 done; 3-6 in progress | (current pipeline) |
 | TRICARE TMAC | `docs/decisions/2026-04-22-tricare-rate-integration.md` | Designed; not built | ~2 weeks |
 | VA Community Care | *(not yet scoped)* | Not started | ~1 week once scoped |
-| State Medicaid (top 10 states) | `docs/future_improvements/medicaid-state-rate-scraping.md` | Designed; not built | ~6-8 weeks |
+| State Medicaid (top 10 states) | `docs/future-improvements/medicaid-state-rate-scraping.md` | Designed; not built | ~6-8 weeks |
 | State Medicaid (remaining states) | Same doc | Not started | ~varies, depends on per-state source quality |
 | DoD MTF | *(not scoped — needs DoD partnership)* | Deferred | Unknown; partnership-gated |
-| Commercial TIC files | `docs/future_improvements/commercial-rate-benchmarking.md` | Designed; not built | ~4-6 weeks for largest payers |
+| Commercial TIC files | `docs/future-improvements/commercial-rate-benchmarking.md` | Designed; not built | ~4-6 weeks for largest payers |
 
 ---
 

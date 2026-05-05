@@ -79,7 +79,7 @@ Credentials (`clarobill-vision-sa` service account).
 1. Create account — add profile members (self + dependents) and insurance plans
 2. Upload a medical bill (PDF or image)
 3. Pre-analysis verification — confirm hospital, insurance plan, service dates, patient name
-4. Analysis runs — 13 independent rules check for errors (see `docs/rules-engine.md`)
+4. Analysis runs — 13 independent rules check for errors (see `docs/architecture/rules-engine.md`)
 5. Results teaser — see total potential savings before paying
 6. Pay → receive full PDF report + dispute letter by email
 
@@ -102,7 +102,7 @@ Credentials (`clarobill-vision-sa` service account).
 
 `PRICE_OUTLIER` thresholds: medicare/medicaid 1.05×, tricare/self_pay 1.20×, commercial/unknown 1.80×.
 
-See `docs/rules-engine.md` for complete rule documentation.
+See `docs/architecture/rules-engine.md` for complete rule documentation.
 
 ### Pipelines (scheduled)
 
@@ -118,7 +118,7 @@ ClaroBill operates two distinct pipelines on different cadences:
 - Target cadence: once per year (early January, after CMS January re-publication deadline)
 - Sources: CMS PI list, CMS POS file, NPPES Registry API, Wikidata SPARQL, then per-hospital website crawl
 
-See `docs/operations.md` for the full pipeline runbook (schedules, dependencies, what to check when something fails) and `docs/gcp-architecture.md` for service accounts and IAM.
+See `docs/operations/pipeline-runbook.md` for the full pipeline runbook (schedules, dependencies, what to check when something fails) and `docs/architecture/gcp-resources.md` for service accounts and IAM.
 
 ---
 
@@ -343,7 +343,7 @@ gcloud run services update clarobill-engine \
 bash pipeline/deploy.sh
 ```
 
-See `docs/gcp-architecture.md` for complete GCP setup instructions.
+See `docs/architecture/gcp-resources.md` for complete GCP setup instructions.
 
 ---
 
@@ -357,7 +357,7 @@ ClaroBill is in beta. Pricing tiers are locked in (`apps/web/src/lib/pricing.ts`
 | Open beta | 2026-06-01 → 2026-06-30 OR 200 bills processed (whichever first) | public, free signup | upcoming |
 | GA | 2026-07-02 onward | public, paid | upcoming |
 
-GA flips `NEXT_PUBLIC_BETA_MODE` to `false` in Vercel and activates Stripe. Full timeline + tier values at `docs/pricing.md`.
+GA flips `NEXT_PUBLIC_BETA_MODE` to `false` in Vercel and activates Stripe. Full timeline + tier values at `docs/product/pricing.md`.
 
 ---
 

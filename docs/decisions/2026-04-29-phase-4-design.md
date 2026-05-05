@@ -23,7 +23,7 @@
 | Q3 — re-publish handling | Append-only + query MAX(scraped_at). | `pipeline/parse_hospital_mrfs.py` (DELETE removed). **The schedule changed:** Feb 1 + Aug 1 → Feb 15 + Aug 15 + quarterly May/Aug/Nov 15. See `docs/decisions/2026-04-30-pipeline-cadence.md`. |
 | Q4 — concurrency | **Bump from 20 → 60.** | `pipeline/scrape_hospital_mrfs.py:MAX_WORKERS`, also Stage 4 |
 | Q5a — stuck-pending bug | Set `website_found_at = NOW()` for Tier 3 `no_result` and `ambiguous_no_verify`. | `scripts/mrf_discovery/stage3_tier3_places.py:apply_results()` |
-| Q5b — parse robustness | Multi-strategy fallback + per-row error tolerance. | `pipeline/hospital_mrf_utils.py:stream_charges_v2()` (per-row try/except), CSV explicitly deferred to `docs/future_improvements/csv-mrf-parser.md` |
+| Q5b — parse robustness | Multi-strategy fallback + per-row error tolerance. | `pipeline/hospital_mrf_utils.py:stream_charges_v2()` (per-row try/except), CSV explicitly deferred to `docs/future-improvements/csv-mrf-parser.md` |
 
 ---
 
@@ -220,7 +220,7 @@ parse failure (root key missing entirely) aborts the file.
 
 CSV-format MRFs are recognized and **skipped cleanly** with
 `parse_status='skipped'`. Full CSV support is deferred per
-`docs/future_improvements/csv-mrf-parser.md` — adding it requires a
+`docs/future-improvements/csv-mrf-parser.md` — adding it requires a
 per-vendor column-mapping pass we'd rather build deliberately than rush.
 
 ---
@@ -249,7 +249,7 @@ per-vendor column-mapping pass we'd rather build deliberately than rush.
 | `scripts/smoke_test_dual_write.py` | Reusable 10-hospital live tester for the dual-write path |
 | `docs/decisions/2026-04-30-pipeline-cadence.md` | Full ADR for the new schedule |
 | `docs/decisions/2026-04-29-redundant-clinical-pairs-rule.md` | New rule (REDUNDANT_CLINICAL_PAIR) added during Phase 4 |
-| `docs/future_improvements/csv-mrf-parser.md` | Why CSV is deferred, build sketch when re-opened |
+| `docs/future-improvements/csv-mrf-parser.md` | Why CSV is deferred, build sketch when re-opened |
 
 ### Schema changes
 
@@ -420,7 +420,7 @@ Synthetic regression suite:
 | Item | Why deferred | Trigger to revisit |
 |---|---|---|
 | **Phase 5 — rules engine cutover** | Still reads from `hospital_charges_legacy_stale`. Switching is a single SQL change — pending enough new-table data to compare audit results against. | After 2027-02-15 annual run produces ~140M rows of fresh 2026 chargemaster. |
-| **CSV-format MRFs** | Each hospital uses different column names. Per-vendor mapping is a project of its own. | When `parse_status='skipped'` count is meaningful. Build sketch in `docs/future_improvements/csv-mrf-parser.md`. |
+| **CSV-format MRFs** | Each hospital uses different column names. Per-vendor mapping is a project of its own. | When `parse_status='skipped'` count is meaningful. Build sketch in `docs/future-improvements/csv-mrf-parser.md`. |
 | **4f historical PRA backfill** | PRA blocked by Cloudflare; no historical bulk source available today. | If/when CMS or a third party publishes bulk historical chargemaster data. |
 | **Pre-Feb-15-2027 Stage 4 backfill** | Currently running as `clarobill-mrf-discovery-9gvjw`. Once it lands, the new ~10k-hospital fleet is scrapable on-demand without waiting for the next scheduled run. | Monitoring the execution; report stats when it completes. |
 

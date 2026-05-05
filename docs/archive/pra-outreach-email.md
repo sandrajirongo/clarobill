@@ -50,7 +50,7 @@ https://clarobill.com
 
 ## If they say no
 
-- Pivot to the original CMS-direct pipeline (`docs/future_improvements/mrf-discovery-pipeline.md`).
+- Pivot to the original CMS-direct pipeline (`docs/future-improvements/mrf-discovery-pipeline.md`).
 - Do **not** scrape `staging01.visiblecharges.com` — Turnstile-gated, rate-limited, and commercial scraping of a non-profit's curated dataset is the wrong posture for a company whose entire pitch is "we help patients catch unfair behavior."
 - Use their public sitemap (`/sitemap.xml`, allowed by robots.txt) only as a coverage benchmark.
 

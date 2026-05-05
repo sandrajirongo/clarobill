@@ -189,10 +189,10 @@ extraction is disproportionate effort for the marginal gain.
 
 ## Related improvements
 
-- `docs/future_improvements/commercial-rate-benchmarking.md` — once the MRF pipeline has
+- `docs/future-improvements/commercial-rate-benchmarking.md` — once the MRF pipeline has
   broad hospital coverage, `NEGOTIATED_RATE_EXCEEDED` will fire on most commercial bills and
   PRICE_OUTLIER will be a rare fallback — reducing the practical impact of this improvement
-- `docs/rules-engine.md` — documents current `hospital_name` proxy and the commercial rate
+- `docs/architecture/rules-engine.md` — documents current `hospital_name` proxy and the commercial rate
   multiplier table that this improvement would make more accurate
 
 ---

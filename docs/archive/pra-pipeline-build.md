@@ -12,8 +12,8 @@ and the rollback plan if any phase needs to be aborted.
 
 Companion docs:
 
-- `docs/future_improvements/mrf-discovery-pipeline.md` — full CMS-direct pipeline design
-- `docs/future_improvements/pra-outreach-email.md` — Plan C partnership outreach to Patient Rights Advocate (sent 2026-04-28, awaiting reply)
+- `docs/future-improvements/mrf-discovery-pipeline.md` — full CMS-direct pipeline design
+- `docs/future-improvements/pra-outreach-email.md` — Plan C partnership outreach to Patient Rights Advocate (sent 2026-04-28, awaiting reply)
 - `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md` — final architecture decision
 - `docs/decisions/2026-04-28-mrf-discovery-build-insights.md` — **running insights log** (every "why" decision, every dead-end, every concrete number). Updated every working session.
 
@@ -171,7 +171,7 @@ Switch rules engine to read new `hospital_charges`. Retain `hospital_charges_leg
 | 3b. Stage 1 (CMS PI list) | done + applied | 2026-04-28 — 5,426 hospitals seeded; DoD/VA filter added after real run; dry-run + real-run executed |
 | Real checkpoint state (post-cleanup) | 13,833 distinct US civilian-MRF-publishing hospitals | 2026-04-28 |
 | 3c. Stage 2A (POS file) | done + applied | `stage2_pos_file.py`; ran 2026-04-28 with batched insert fix |
-| 3c. Stage 2B (NPI Registry API) | done + applied | `stage2_npi_registry.py` + `stage2_npi_registry_pass2.py` (suffix-drop + truncation re-pass) + shared `nppes_client.py`. Real-run results 2026-04-28: 6,603 / 13,833 NPIs (47.7%) via name-matching. Pass 2B (address-based) + Pass 2C (broad-pull fuzzy match) designed and deferred to `docs/future_improvements/npi-coverage-improvement-passes.md`; revisit after Phase 4 parser backfill. |
+| 3c. Stage 2B (NPI Registry API) | done + applied | `stage2_npi_registry.py` + `stage2_npi_registry_pass2.py` (suffix-drop + truncation re-pass) + shared `nppes_client.py`. Real-run results 2026-04-28: 6,603 / 13,833 NPIs (47.7%) via name-matching. Pass 2B (address-based) + Pass 2C (broad-pull fuzzy match) designed and deferred to `docs/future-improvements/npi-coverage-improvement-passes.md`; revisit after Phase 4 parser backfill. |
 | 3c. Stage 2C (Wikidata SPARQL) | done (code) | `stage2_wikidata.py` + 15 tests; runs in <5 sec |
 | 3d. Stage 3 (Website discovery + Google Places) | not started | |
 | 3e. Stage 4 (Crawler) | not started | The hardest stage |

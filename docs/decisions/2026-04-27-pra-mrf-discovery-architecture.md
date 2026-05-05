@@ -16,7 +16,7 @@ Before this decision, ClaroBill sourced ~3,119 hospital MRF URLs from Payerset (
 3. **Third-party dependency.** Payerset can disappear, paywall, or throttle without notice. The product's biggest moat sat on an external commercial vendor's free tier.
 4. **No effective dating.** The existing `hospital_charges` rows had no `pricing_effective_year` column, so a 2026 bill could be compared to a chargemaster of unknown vintage. Hospitals re-negotiate rates every January per CMS requirement; comparing across years produces false-positive overcharge claims. **This is a correctness defect, not just a freshness issue** — and it is the worst class of defect for a tool that writes dispute letters on a patient's behalf.
 
-A first-party CMS-direct discovery pipeline (Plan B, documented at `docs/future_improvements/mrf-discovery-pipeline.md`) was scoped to fix coverage and dependency. It was estimated at ~7 engineering weeks and required NPPES bulk downloads, Wikidata SPARQL, Google Places API ($150-200/yr), an asyncio Playwright crawler, robots.txt management, and TOC-expansion logic for hospital systems.
+A first-party CMS-direct discovery pipeline (Plan B, documented at `docs/future-improvements/mrf-discovery-pipeline.md`) was scoped to fix coverage and dependency. It was estimated at ~7 engineering weeks and required NPPES bulk downloads, Wikidata SPARQL, Google Places API ($150-200/yr), an asyncio Playwright crawler, robots.txt management, and TOC-expansion logic for hospital systems.
 
 During that scoping, Sandra discovered hospitalpricingfiles.org, run by Patient Rights Advocate (PRA), a non-profit advocacy organization. Their sitemap.xml lists exactly 7,096 hospital detail pages — essentially the full CMS census — refreshed monthly (`changefreq: monthly`, all entries `lastmod: 2026-04-15` at investigation time).
 
@@ -139,17 +139,17 @@ Monthly Cloud Run Job (1st of each month, ~6 hr wall clock)
 
 ### Open commitments
 
-- Send the PRA outreach email (`docs/future_improvements/pra-outreach-email.md`) to ask for bulk historical data and a partnership relationship.
+- Send the PRA outreach email (`docs/future-improvements/pra-outreach-email.md`) to ask for bulk historical data and a partnership relationship.
 - Build Plan B (CMS-direct pipeline) only if PRA rejects partnership or disappears.
-- Document the rules-engine effective-date semantics in `docs/rules-engine.md` at Phase 5.
+- Document the rules-engine effective-date semantics in `docs/architecture/rules-engine.md` at Phase 5.
 
 ---
 
 ## References
 
-- `docs/future_improvements/pra-pipeline-build.md` — phase-by-phase build log
-- `docs/future_improvements/mrf-discovery-pipeline.md` — Plan B (CMS-direct fallback)
-- `docs/future_improvements/pra-outreach-email.md` — partnership outreach draft
+- `docs/future-improvements/pra-pipeline-build.md` — phase-by-phase build log
+- `docs/future-improvements/mrf-discovery-pipeline.md` — Plan B (CMS-direct fallback)
+- `docs/future-improvements/pra-outreach-email.md` — partnership outreach draft
 - `docs/decisions/2026-04-27-pra-dom-extractor-separation.md` — extractor module split rationale
 - Schema: `scripts/mrf_discovery/migrate_bq_schema.py`
 - Bucket: `scripts/mrf_discovery/setup_archive_bucket.sh`

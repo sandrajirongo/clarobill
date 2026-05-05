@@ -62,7 +62,7 @@ These were data ops only — no code, no commit. Documented here for forensic re
 
 ### Scope correction
 
-The original `docs/future_improvements/csv-mrf-parser.md` (2026-04-29) assumed
+The original `docs/future-improvements/csv-mrf-parser.md` (2026-04-29) assumed
 ~11K skipped CSV blobs. **Actual scope as of 2026-05-04 is much larger:**
 
 | Format (`mrf_archive_index.parse_status='skipped'`) | Blobs | Total GB |
@@ -379,10 +379,10 @@ green at every commit boundary.
 
 ## References
 
-- Postmortem that triggered items 1-3: `docs/postmortem/2026-05-03-mrf-pipeline-postmortem.md`
-- Operations runbook: `docs/operations.md`
+- Postmortem that triggered items 1-3: `docs/postmortems/2026-05-03-mrf-pipeline-postmortem.md`
+- Operations runbook: `docs/operations/pipeline-runbook.md`
 - Phase 4 (effective-dated archive) original design: `docs/decisions/2026-04-29-phase-4-design.md`
-- Original CSV-parser sketch (now superseded by this doc): `docs/future_improvements/csv-mrf-parser.md`
+- Original CSV-parser sketch (now superseded by this doc): `docs/future-improvements/csv-mrf-parser.md`
 - NPPES resolver implementation: `scripts/mrf_discovery/resolve_ambiguous_npis.py`
 - Parser source: `pipeline/parse_hospital_mrfs.py`
 - Scraper source: `pipeline/scrape_hospital_mrfs.py`

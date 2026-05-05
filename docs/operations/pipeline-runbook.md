@@ -234,7 +234,7 @@ Down siblings live in `supabase/migrations_down/<version>_<name>.down.sql` (mirr
 
 ### One-time history repair (2026-05-04)
 
-The `schema_migrations` table on the cloud project carried duplicate rows for several pre-CLI migrations because the SQL-editor-applied history was never reconciled. The fix was a one-time `supabase migration repair --status applied <version> ...` covering all 23 versions. After repair, `supabase migration list` returns clean local↔remote pairs with no phantoms. If the cloud DB ever shows phantoms again, the dedup query at `docs/ci-setup.md` collapses them safely (system table, no application data risk).
+The `schema_migrations` table on the cloud project carried duplicate rows for several pre-CLI migrations because the SQL-editor-applied history was never reconciled. The fix was a one-time `supabase migration repair --status applied <version> ...` covering all 23 versions. After repair, `supabase migration list` returns clean local↔remote pairs with no phantoms. If the cloud DB ever shows phantoms again, the dedup query at `docs/operations/ci-cd.md` collapses them safely (system table, no application data risk).
 
 ---
 
@@ -244,7 +244,7 @@ The current state is "Sandra runs manual `python3 scripts/...` commands." Produc
 
 | Phase | What | Status |
 |---|---|---|
-| 3g | Cloud Run Job `clarobill-mrf-discovery-annual` + Cloud Scheduler trigger `0 2 15 1 *` | Not started — see `docs/future_improvements/pra-pipeline-build.md` |
+| 3g | Cloud Run Job `clarobill-mrf-discovery-annual` + Cloud Scheduler trigger `0 2 15 1 *` | Not started — see `docs/future-improvements/pra-pipeline-build.md` |
 | 4 | Effective-dated archiver (rewrite `pipeline/scrape_hospital_mrfs.py` to write to `gs://mrf-archive-clarobill-prd` with year-partitioning) | **Done 2026-04-29** (commit `8e4a796`) |
 | 4 follow-ups | Postmortem #1 (scrape-time validation) + #2 (parser-from-archive_index) + URL-NPI fallback + NPPES resolver | **Done 2026-05-04** (`cb9b420`, `e2745d4`, `5a1de5d`, `750f83b`, `3684894`, `6bc53c5`) |
 | 4a-4d | CSV-format MRF parser rollout | In progress — see `docs/decisions/2026-05-04-mrf-coverage-plan.md` |
@@ -295,7 +295,7 @@ The current state is "Sandra runs manual `python3 scripts/...` commands." Produc
 ### "An audit produced a wrong finding"
 
 1. Pull the bill ID and the rule that fired (`apps/engine/app/services/rules_engine.py`).
-2. Find the rule's data source (see "Tables consulted" in `docs/rules-engine.md`).
+2. Find the rule's data source (see "Tables consulted" in `docs/architecture/rules-engine.md`).
 3. If the source is `hospital_charges`: confirm `pricing_effective_year` matches the bill's service year. If it's a year off, that's the bug — likely a parser issue.
 4. If the source is a CMS reference table (`cms_pfs_indicators`, `ncci_edit_pairs`, etc.): confirm the table's `effective_year` matches the bill's service year. If not, the annual loader is overdue.
 5. Check whether the source MRF is in `gs://mrf-archive-clarobill-prd/pricing-year=<bill_year>/<npi>/`. If yes, you can reproduce the audit deterministically. If no, the file was never archived for that year — record a known limitation.
@@ -342,10 +342,10 @@ By design, no service account can delete from `gs://mrf-archive-clarobill-prd`. 
 
 - `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md` — final architecture decision for the discovery pipeline
 - `docs/decisions/2026-04-28-mrf-discovery-build-insights.md` — running insights log (concrete numbers, dead-ends ruled out)
-- `docs/future_improvements/pra-pipeline-build.md` — phase-by-phase build status
-- `docs/future_improvements/non-medicare-pricing-integrations.md` — coverage roadmap for TRICARE / VA / Medicaid bills
-- `docs/gcp-architecture.md` — full GCP architecture, IAM, service accounts
-- `docs/rules-engine.md` — rules and the data they read
+- `docs/future-improvements/pra-pipeline-build.md` — phase-by-phase build status
+- `docs/future-improvements/non-medicare-pricing-integrations.md` — coverage roadmap for TRICARE / VA / Medicaid bills
+- `docs/architecture/gcp-resources.md` — full GCP architecture, IAM, service accounts
+- `docs/architecture/rules-engine.md` — rules and the data they read
 - `pipeline/deploy.sh` — Cloud Run Job + Cloud Scheduler provisioning script
 
 ---

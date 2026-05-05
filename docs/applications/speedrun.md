@@ -3,7 +3,7 @@
 **Founder:** Sandra Jirongo
 **Date prepared:** 2026-05-03
 **Purpose:** Form-ready answers + tactical rationale for the a16z Speedrun
-application. Mirrors the structure of `yc-application-answers.md`. Keep
+application. Mirrors the structure of `yc.md`. Keep
 both updated as positioning evolves; the YC and Speedrun decks share
 moat language but diverge on framing (YC favours operating discipline
 and milestones; Speedrun favours velocity and ambition).
@@ -280,7 +280,7 @@ voice and sequencing differ.
       personal-story-free fallback).
 - [ ] Verify every number against latest PostHog + BigQuery snapshots
       the morning of submission.
-- [ ] Run `grep "—" docs/applications/speedrun-application-answers.md`
+- [ ] Run `grep "—" docs/applications/speedrun.md`
       and confirm zero results.
 - [ ] Run `grep -E "Gemini|Claude|Anthropic|Vertex|Supabase|Stripe|
       SendGrid|Sentry|PostHog|Vercel"` on the answers and confirm zero
@@ -288,5 +288,5 @@ voice and sequencing differ.
       context but not in the form answer itself).
 - [ ] Attach the DAU spike chart and the funnel conversion chart;
       *not* the WAU dashed-line chart.
-- [ ] Cross-check against `yc-application-answers.md` for number
+- [ ] Cross-check against `yc.md` for number
       consistency.

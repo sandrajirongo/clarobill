@@ -333,7 +333,7 @@ have been used.
 
 **Note:** Only HCPCS Level II (alpha-prefix) codes are checked here. Retired CPT
 codes are caught by NON_PAYABLE_CODE via `proc_stat='I'` (within the current data
-window — pre-2024 retirements are a known gap; see `docs/future_improvements/terminated-cpt-codes-coverage.md`).
+window — pre-2024 retirements are a known gap; see `docs/future-improvements/terminated-cpt-codes-coverage.md`).
 
 **Estimated overcharge:** Full charge of the terminated-code line item.
 
@@ -511,7 +511,7 @@ expected user action is to request justification, not to demand a refund.
 
 ## Known Gaps and Future Work
 
-See `docs/future_improvements/` for detailed design docs on:
+See `docs/future-improvements/` for detailed design docs on:
 
 - **Terminated CPT codes (pre-2024):** Codes retired before our data window are
   invisible — `cms_pfs_indicators` only contains data from 2024 onward. Codes
@@ -530,7 +530,7 @@ See `docs/future_improvements/` for detailed design docs on:
   pending. Effective-dating (`pricing_effective_year`) is enforced at schema level
   to prevent comparing a 2026 bill against an unknown-vintage chargemaster.
   See `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md` and
-  `docs/future_improvements/mrf-discovery-pipeline.md`.
+  `docs/future-improvements/mrf-discovery-pipeline.md`.
 
 ---
 

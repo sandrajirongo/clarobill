@@ -98,6 +98,6 @@ There is no real downside. One module imports the other. Both live in the same p
 ## References
 
 - `docs/decisions/2026-04-27-pra-mrf-discovery-architecture.md` — parent architecture decision
-- `docs/future_improvements/pra-pipeline-build.md` — implementation tracking
+- `docs/future-improvements/pra-pipeline-build.md` — implementation tracking
 - Stage 2 implementation target: `scripts/mrf_discovery/stage2_pra_detail_extract.py` and `scripts/mrf_discovery/pra_dom_extractor.py`
 - Test target: `apps/engine/tests/scripts/test_pra_dom_extractor.py` + `fixtures/pra/*.html`

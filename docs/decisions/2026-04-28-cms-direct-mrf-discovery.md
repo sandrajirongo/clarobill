@@ -15,7 +15,7 @@ ClaroBill's "billed more than published rate" rule is the strongest violation fl
 
 Two prior plans were considered before this decision:
 
-### Plan A — CMS-direct discovery (the original plan, documented in `docs/future_improvements/mrf-discovery-pipeline.md`)
+### Plan A — CMS-direct discovery (the original plan, documented in `docs/future-improvements/mrf-discovery-pipeline.md`)
 
 A 6-stage pipeline that uses entirely public CMS data sources:
 - CMS Promoting Interoperability hospital list → seeds the ~7,000 CCNs
@@ -35,7 +35,7 @@ The plan was: render each detail page in headless Playwright once per month, scr
 
 ### Plan C — Bulk-data partnership with PRA
 
-Email PRA's contact form, request a signed data-sharing agreement that gives ClaroBill direct access to their hospital index. Mission-aligned (PRA is a non-profit advocacy org whose mission is exactly the kind of patient protection ClaroBill enables). Outreach drafted at `docs/future_improvements/pra-outreach-email.md` and sent on 2026-04-28. Reply window: unknown.
+Email PRA's contact form, request a signed data-sharing agreement that gives ClaroBill direct access to their hospital index. Mission-aligned (PRA is a non-profit advocacy org whose mission is exactly the kind of patient protection ClaroBill enables). Outreach drafted at `docs/future-improvements/pra-outreach-email.md` and sent on 2026-04-28. Reply window: unknown.
 
 ---
 
@@ -119,15 +119,15 @@ Plan B's diagnostic scripts (`_capture_fixtures.py`, `_diagnose_pra.py`, `stage1
 
 - Wait for PRA's reply (Plan C). If granted: integrate their bulk feed as a Stage 2 substep; their data accelerates coverage but is never required.
 - If PRA's reply is negative or after 30 days of silence, mark Plan C closed and proceed with Plan A as documented.
-- Document the pricing_effective_year semantics in `docs/rules-engine.md` when Phase 5 cutover happens.
+- Document the pricing_effective_year semantics in `docs/architecture/rules-engine.md` when Phase 5 cutover happens.
 
 ---
 
 ## References
 
-- `docs/future_improvements/mrf-discovery-pipeline.md` — full Plan A design (was Plan B in earlier framing)
-- `docs/future_improvements/pra-pipeline-build.md` — phase-by-phase build log (now reflects Plan A)
-- `docs/future_improvements/pra-outreach-email.md` — Plan C outreach
+- `docs/future-improvements/mrf-discovery-pipeline.md` — full Plan A design (was Plan B in earlier framing)
+- `docs/future-improvements/pra-pipeline-build.md` — phase-by-phase build log (now reflects Plan A)
+- `docs/future-improvements/pra-outreach-email.md` — Plan C outreach
 - `docs/decisions/2026-04-27-pra-mrf-discovery-architecture.md` — superseded; preserved for the architectural reasoning that still applies (effective-dating, immutable archive, IAM-enforced immutability)
 - Schema: `scripts/mrf_discovery/migrate_bq_schema.py`
 - Bucket: `scripts/mrf_discovery/setup_archive_bucket.sh`

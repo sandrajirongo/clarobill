@@ -103,7 +103,7 @@ Add a new rule **REDUNDANT_CLINICAL_PAIR** with:
 2. Cite a specific payer-policy document or clinical guideline.
 3. Add the entry with all five fields populated.
 4. Add a test case that mirrors an existing category test.
-5. Update `docs/rules-engine.md` if introducing a new category.
+5. Update `docs/architecture/rules-engine.md` if introducing a new category.
 
 ## Consequences
 

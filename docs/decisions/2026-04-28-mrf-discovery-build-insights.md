@@ -179,7 +179,7 @@ The 13,833 figure is what we should plan against from now on for cost estimation
 
 DoD MTFs (32) and VA Medical Centers (132) showed up in the PI list. They are NOT bugs in the source data — those facilities legitimately exist in CMS's directory because some are partially Medicare-certified for specialty services. We exclude them from MRF discovery because they do not publish CMS MRFs (they have their own pricing systems: TRICARE TMAC for DoD, VA Fee Schedule for VA Community Care).
 
-State Medicaid pricing is similarly out-of-scope for this pipeline. Each state has its own fee schedule, ~51 separate sources, no MRF format. Future loaders for these are documented at `docs/future_improvements/non-medicare-pricing-integrations.md`.
+State Medicaid pricing is similarly out-of-scope for this pipeline. Each state has its own fee schedule, ~51 separate sources, no MRF format. Future loaders for these are documented at `docs/future-improvements/non-medicare-pricing-integrations.md`.
 
 ### POS returned 29,583 hospital rows, not ~1,500 net new (2026-04-28 real run)
 
@@ -328,7 +328,7 @@ The 7,230 still-unmatched hospitals are not name-matching failures — they're s
 
 **For hospitals without resolved NPI at any stage:** `archive_layout.py` accepts CCN as the GCS object key (`{ccn}/{sha256}.{ext}`), so they progress through the pipeline normally — just keyed by CCN instead of NPI in the archive. The rules engine in Phase 5 has a NULL-check; bills against NPI-less hospitals get the rule skipped (correct behavior — no false flags).
 
-**Pass 2B (address-based lookup) and Pass 2C (broader-pull + client-side fuzzy match) are designed and deferred.** See `docs/future_improvements/npi-coverage-improvement-passes.md`. Re-evaluate trigger: after Phase 4 parser-driven backfill, if `hospital_directory.hospital_npi IS NULL` rate > 30%, implement Pass 2B; if still > 20% after 2B, implement Pass 2C.
+**Pass 2B (address-based lookup) and Pass 2C (broader-pull + client-side fuzzy match) are designed and deferred.** See `docs/future-improvements/npi-coverage-improvement-passes.md`. Re-evaluate trigger: after Phase 4 parser-driven backfill, if `hospital_directory.hospital_npi IS NULL` rate > 30%, implement Pass 2B; if still > 20% after 2B, implement Pass 2C.
 
 ### NPPES Registry API replacement shipped (2026-04-28)
 
@@ -603,7 +603,7 @@ These values come directly from the smoke-test outcome distribution. Future cost
 
 ### Manual-curation queue from this run
 
-The 629 `ambiguous_no_verify` cases are hospitals where Google returned 2-3 candidates, we paid for all 3 details calls (~$0.080 each = ~$50 total), and none of the candidate websites had the hospital name in their first 64KB of HTML. These are valuable for the manual queue documented at `docs/future_improvements/npi-coverage-improvement-passes.md` — the highest-bed-count hospitals from this set should be hand-curated before next year's run.
+The 629 `ambiguous_no_verify` cases are hospitals where Google returned 2-3 candidates, we paid for all 3 details calls (~$0.080 each = ~$50 total), and none of the candidate websites had the hospital name in their first 64KB of HTML. These are valuable for the manual queue documented at `docs/future-improvements/npi-coverage-improvement-passes.md` — the highest-bed-count hospitals from this set should be hand-curated before next year's run.
 
 ---
 
@@ -633,4 +633,4 @@ The 629 `ambiguous_no_verify` cases are hospitals where Google returned 2-3 cand
 | External dependency | Status |
 |---|---|
 | PRA outreach email (Plan C) | sent 2026-04-28, awaiting reply |
-| Non-Medicare pricing integrations | documented at `docs/future_improvements/non-medicare-pricing-integrations.md` (TRICARE TMAC, VA Community Care, state Medicaid, commercial TIC) |
+| Non-Medicare pricing integrations | documented at `docs/future-improvements/non-medicare-pricing-integrations.md` (TRICARE TMAC, VA Community Care, state Medicaid, commercial TIC) |

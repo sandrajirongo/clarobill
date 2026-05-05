@@ -152,7 +152,7 @@ with file_path:line_number references. Group by severity:
 STOP-THE-LINE / HIGH / MEDIUM / LOW. Tag every finding with a short ID
 (e.g. `S1`, `H4`) for traceability to fix commits.
 
-Reference docs: docs/bug-fix-campaign-progress.md (29 findings already
+Reference docs: docs/playbooks/bug-fix-campaign.md (29 findings already
 closed; do NOT re-flag these), CLAUDE.md (the 16 engineering rules —
 flag rule violations explicitly).
 ```
@@ -183,7 +183,7 @@ For each finding give:
 - Severity (STOP-THE-LINE / HIGH / MEDIUM / LOW)
 
 Don't re-flag findings already closed in
-docs/bug-fix-campaign-progress.md. Confidence ≥ 70%.
+docs/playbooks/bug-fix-campaign.md. Confidence ≥ 70%.
 ```
 
 ### Pattern: type-design-analyzer
@@ -216,7 +216,7 @@ For each finding give:
 - Severity (HIGH / MEDIUM / LOW)
 
 Skip type concerns already closed in
-docs/bug-fix-campaign-progress.md. Confidence ≥ 70%.
+docs/playbooks/bug-fix-campaign.md. Confidence ≥ 70%.
 ```
 
 ---
@@ -236,7 +236,7 @@ Claude does this synthesis automatically when the agents complete:
    the-line, etc. — the 5/4 audit followed this shape)
 
 The 2026-05-04 audit's consolidated finding list lives in the campaign
-tracker at `docs/bug-fix-campaign-progress.md` — that's the canonical
+tracker at `docs/playbooks/bug-fix-campaign.md` — that's the canonical
 shape of the output.
 
 ---
@@ -259,9 +259,9 @@ shape of the output.
 
 ## Cross-references
 
-- `docs/bug-fix-campaign-progress.md` — the canonical output shape
+- `docs/playbooks/bug-fix-campaign.md` — the canonical output shape
   (5/4 audit's 29 findings → 7 phases → 100% closed)
-- `docs/test-coverage-gaps-2026-05-04.md` — Phase 7.1 inventory
+- `docs/archive/2026-05-04-test-coverage-gaps.md` — Phase 7.1 inventory
   (different shape; coverage gap audit, not bug audit)
 - `~/.claude/projects/-Users-sandrajirongo-Projects-ClaroBill/<session_id>/subagents/`
   — the saved JSONL transcript of every audit agent run. To find which
