@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { ApiErrorResponse } from '@clarobill/shared';
+import { mapProfileMember } from '@/lib/api/mappers';
 
 // PATCH /api/profile/members/[memberId]
 // Updates a profile member. RLS ensures the member belongs to the user.
@@ -66,7 +67,7 @@ export async function PATCH(
     );
   }
 
-  return NextResponse.json({ member });
+  return NextResponse.json({ member: mapProfileMember(member) });
 }
 
 // DELETE /api/profile/members/[memberId]

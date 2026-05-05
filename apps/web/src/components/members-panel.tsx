@@ -16,26 +16,11 @@ import type { InsuranceCardExtraction } from '@/app/api/insurance-card/extract/r
 import { CameraIcon, PencilIcon } from '@/components/icons';
 import s from '@/app/dashboard/dashboard.module.css';
 
-interface InsurancePlan {
-  id: string;
-  profile_member_id: string;
-  payer_name: string;
-  plan_name: string;
-  member_id: string | null;
-  plan_type: string;
-  is_primary_plan: boolean;
-}
-
-interface ProfileMember {
-  id: string;
-  full_name: string;
-  date_of_birth: string;
-  state: string | null;
-  county: string | null;
-  zip_code: string | null;
-  is_primary: boolean;
-  insurance_plans: InsurancePlan[];
-}
+// M10: shared camelCase types instead of snake_case redeclarations.
+// API routes pass their rows through mapProfileMemberWithPlans + mapInsurancePlan.
+import type { InsurancePlan } from '@clarobill/shared';
+import type { ProfileMemberWithPlans as ProfileMember } from '@/lib/api/mappers';
+import { MembersListResponseSchema, parseJsonResponse } from '@/lib/api/parsers';
 
 export function MembersPanel(): JSX.Element {
   const t = useTranslations('profile.members');
@@ -87,8 +72,11 @@ export function MembersPanel(): JSX.Element {
   const loadMembers = useCallback(async (): Promise<void> => {
     const res = await fetch('/api/profile/members');
     if (res.ok) {
-      const { members: data } = await res.json() as { members: ProfileMember[] };
-      setMembers(data);
+      const { members: rawMembers } = await parseJsonResponse(res, MembersListResponseSchema);
+      // Inner shape is now camelCase ProfileMemberWithPlans (M10) — the API
+      // route runs every row through mapProfileMemberWithPlans before
+      // returning, so casting here just narrows the wrapper-validated type.
+      setMembers(rawMembers as ProfileMember[]);
     }
     setLoading(false);
   }, []);
@@ -159,11 +147,11 @@ export function MembersPanel(): JSX.Element {
 
   function startEditMember(member: ProfileMember): void {
     setEditingMemberId(member.id);
-    setEditName(member.full_name);
-    setEditDob(member.date_of_birth);
+    setEditName(member.fullName);
+    setEditDob(member.dateOfBirth);
     setEditState(member.state ?? '');
     setEditCounty(member.county ?? '');
-    setEditZip(member.zip_code ?? '');
+    setEditZip(member.zipCode ?? '');
     setError(null);
   }
 
@@ -202,11 +190,11 @@ export function MembersPanel(): JSX.Element {
 
   function startEditPlan(plan: InsurancePlan): void {
     setEditingPlanId(plan.id);
-    setEditPayerName(plan.payer_name);
-    setEditPlanName(plan.plan_name);
-    setEditPlanType(plan.plan_type);
-    setEditMemberIdField(plan.member_id ?? '');
-    setEditIsPrimary(plan.is_primary_plan);
+    setEditPayerName(plan.payerName);
+    setEditPlanName(plan.planName);
+    setEditPlanType(plan.planType);
+    setEditMemberIdField(plan.memberId ?? '');
+    setEditIsPrimary(plan.isPrimaryPlan);
     setError(null);
   }
 
@@ -331,7 +319,7 @@ export function MembersPanel(): JSX.Element {
         {members.map((member) => {
           const isAddingPlan = addingPlanFor === member.id;
           const isEditingMember = editingMemberId === member.id;
-          const dobFormatted = new Date(member.date_of_birth + 'T00:00:00').toLocaleDateString('en-US', {
+          const dobFormatted = new Date(member.dateOfBirth + 'T00:00:00').toLocaleDateString('en-US', {
             month: 'short', day: 'numeric', year: 'numeric',
           });
           const locationParts = [member.county, member.state].filter(Boolean);
@@ -419,13 +407,13 @@ export function MembersPanel(): JSX.Element {
                 <div className={s.memberHeader}>
                   <div style={{ minWidth: 0 }}>
                     <p className={s.memberName}>
-                      {member.full_name}
-                      {member.is_primary && <span className={s.primaryBadge}>{t('primary')}</span>}
+                      {member.fullName}
+                      {member.isPrimary && <span className={s.primaryBadge}>{t('primary')}</span>}
                     </p>
                     <p className={s.memberMeta}>
                       {t('dob')} {dobFormatted}
                       {locationParts.length > 0 && ` · ${locationParts.join(', ')}`}
-                      {member.zip_code && ` ${member.zip_code}`}
+                      {member.zipCode && ` ${member.zipCode}`}
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
@@ -448,9 +436,9 @@ export function MembersPanel(): JSX.Element {
               {/* ── Insurance plans ──────────────────────────────────── */}
               {!isEditingMember && (
                 <div className={s.plansSection}>
-                  {member.insurance_plans.length > 0 ? (
+                  {member.insurancePlans.length > 0 ? (
                     <div className={s.plansList}>
-                      {member.insurance_plans.map((plan) => {
+                      {member.insurancePlans.map((plan) => {
                         const isEditingPlan = editingPlanId === plan.id;
 
                         if (isEditingPlan) {
@@ -533,14 +521,14 @@ export function MembersPanel(): JSX.Element {
                         return (
                           <div key={plan.id} className={s.planRow}>
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <span className={s.planPayer}>{plan.payer_name}</span>
-                              <span className={s.planName}> · {plan.plan_name}</span>
-                              {plan.is_primary_plan
+                              <span className={s.planPayer}>{plan.payerName}</span>
+                              <span className={s.planName}> · {plan.planName}</span>
+                              {plan.isPrimaryPlan
                                 ? <span className={s.planPrimaryBadge}>{t('primary')}</span>
-                                : member.insurance_plans.length > 1
+                                : member.insurancePlans.length > 1
                                 ? <span className={s.planSecondaryBadge}>{t('secondary')}</span>
                                 : null}
-                              {plan.member_id && <span className={s.planMemberId}>ID: {plan.member_id}</span>}
+                              {plan.memberId && <span className={s.planMemberId}>ID: {plan.memberId}</span>}
                             </div>
                             <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
                               <button
@@ -570,7 +558,7 @@ export function MembersPanel(): JSX.Element {
                       onClick={() => {
                         setAddingPlanFor(member.id);
                         setError(null);
-                        setNewIsPrimary(member.insurance_plans.length === 0);
+                        setNewIsPrimary(member.insurancePlans.length === 0);
                       }}
                       className={s.addPlanBtn}
                     >

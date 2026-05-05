@@ -208,3 +208,74 @@ export const AnalysisResultSchema = z.preprocess(
 );
 
 // Type alias intentionally NOT exported — see note on BillingError above.
+
+// ─── ProfileMember + InsurancePlan (M10) ──────────────────────────────────────
+
+const InsurancePlanBase = z.object({
+  id: z.string(),
+  profileMemberId: z.string(),
+  payerName: z.string(),
+  planName: z.string(),
+  memberId: z.string().nullable(),
+  planType: PlanTypeSchema,
+  isPrimaryPlan: z.boolean(),
+  createdAt: z.string(),
+});
+
+export const InsurancePlanSchema = z.preprocess(
+  (raw) =>
+    coalesce(raw, [
+      ['profileMemberId', 'profile_member_id'],
+      ['payerName', 'payer_name'],
+      ['planName', 'plan_name'],
+      ['memberId', 'member_id'],
+      ['planType', 'plan_type'],
+      ['isPrimaryPlan', 'is_primary_plan'],
+      ['createdAt', 'created_at'],
+    ]),
+  InsurancePlanBase,
+);
+
+const ProfileMemberBase = z.object({
+  id: z.string(),
+  fullName: z.string(),
+  dateOfBirth: z.string(),
+  state: z.string().nullable(),
+  county: z.string().nullable(),
+  zipCode: z.string().nullable(),
+  isPrimary: z.boolean(),
+  createdAt: z.string(),
+});
+
+export const ProfileMemberSchema = z.preprocess(
+  (raw) =>
+    coalesce(raw, [
+      ['fullName', 'full_name'],
+      ['dateOfBirth', 'date_of_birth'],
+      ['zipCode', 'zip_code'],
+      ['isPrimary', 'is_primary'],
+      ['createdAt', 'created_at'],
+    ]),
+  ProfileMemberBase,
+);
+
+// The /api/profile/members endpoint returns a member joined with all of
+// its insurance plans nested under `insurance_plans`. Define the joined
+// shape explicitly so the mapper / consumers can rely on the `insurancePlans`
+// camelCase form even though the join from PostgREST returns snake-cased keys.
+const ProfileMemberWithPlansBase = ProfileMemberBase.extend({
+  insurancePlans: z.array(InsurancePlanSchema),
+});
+
+export const ProfileMemberWithPlansSchema = z.preprocess(
+  (raw) =>
+    coalesce(raw, [
+      ['fullName', 'full_name'],
+      ['dateOfBirth', 'date_of_birth'],
+      ['zipCode', 'zip_code'],
+      ['isPrimary', 'is_primary'],
+      ['createdAt', 'created_at'],
+      ['insurancePlans', 'insurance_plans'],
+    ]),
+  ProfileMemberWithPlansBase,
+);

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { ApiErrorResponse } from '@clarobill/shared';
+import { mapProfileMember, mapProfileMemberWithPlans } from '@/lib/api/mappers';
 
 // GET /api/profile/members
 // Returns all profile members for the authenticated user, each with their insurance plans.
@@ -34,7 +35,9 @@ export async function GET(): Promise<NextResponse> {
     );
   }
 
-  return NextResponse.json({ members: members ?? [] });
+  // M10: map snake_case Supabase rows to the camelCase shared shape so
+  // consumers don't redeclare a parallel snake_case type.
+  return NextResponse.json({ members: (members ?? []).map(mapProfileMemberWithPlans) });
 }
 
 // POST /api/profile/members
@@ -96,5 +99,5 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  return NextResponse.json({ member }, { status: 201 });
+  return NextResponse.json({ member: mapProfileMember(member) }, { status: 201 });
 }

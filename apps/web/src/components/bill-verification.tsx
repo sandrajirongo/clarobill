@@ -24,24 +24,12 @@ import {
 import { CameraIcon } from '@/components/icons';
 import s from './bill-verification.module.css';
 
-interface InsurancePlan {
-  id: string;
-  payer_name: string;
-  plan_name: string;
-  plan_type: string;
-  member_id: string | null;
-  is_primary_plan: boolean;
-}
-interface ProfileMember {
-  id: string;
-  full_name: string;
-  date_of_birth: string;
-  state: string | null;
-  county: string | null;
-  zip_code: string | null;
-  is_primary: boolean;
-  insurance_plans: InsurancePlan[];
-}
+// M10: import the camelCase shared types instead of redeclaring snake_case
+// shapes locally. The /api/profile/members route now passes its rows through
+// mapProfileMemberWithPlans so these are exactly what comes off the wire.
+// InsurancePlan only flows through as a nested array — accessed via member.insurancePlans[i],
+// no direct import needed here.
+import type { ProfileMemberWithPlans as ProfileMember } from '@/lib/api/mappers';
 
 interface Props {
   billId: string;
@@ -110,10 +98,10 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
     setLoadingMembers(false);
 
     // Auto-select primary member + plan; switch to compact mode if everything is ready
-    const primary = data.find((m) => m.is_primary) ?? data[0];
+    const primary = data.find((m) => m.isPrimary) ?? data[0];
     if (primary) {
       setSelectedMemberId(primary.id);
-      const primaryPlan = primary.insurance_plans.find((p) => p.is_primary_plan) ?? primary.insurance_plans[0];
+      const primaryPlan = primary.insurancePlans.find((p) => p.isPrimaryPlan) ?? primary.insurancePlans[0];
       if (primaryPlan) {
         setSelectedPlanId(primaryPlan.id);
         setFormMode('compact'); // returning user — show summary by default
@@ -147,13 +135,13 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
   function handleSelectMember(memberId: string): void {
     setSelectedMemberId(memberId);
     const m = members.find((x) => x.id === memberId);
-    const plan = m?.insurance_plans.find((p) => p.is_primary_plan) ?? m?.insurance_plans[0];
+    const plan = m?.insurancePlans.find((p) => p.isPrimaryPlan) ?? m?.insurancePlans[0];
     setSelectedPlanId(plan?.id ?? null);
     setShowAddPlan(false);
   }
 
   const selectedMember = members.find((m) => m.id === selectedMemberId) ?? null;
-  const selectedPlan   = selectedMember?.insurance_plans.find((p) => p.id === selectedPlanId) ?? null;
+  const selectedPlan   = selectedMember?.insurancePlans.find((p) => p.id === selectedPlanId) ?? null;
   const canRun = Boolean(selectedMember && selectedPlan);
 
   // ── Inline add member ────────────────────────────────────────────────────
@@ -277,8 +265,8 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         profileMemberId: selectedMember.id,
-        payerName: selectedPlan.payer_name,
-        planName: selectedPlan.plan_name,
+        payerName: selectedPlan.payerName,
+        planName: selectedPlan.planName,
         hospitalName: ocrHospitalName ?? null,
       }),
     });
@@ -355,13 +343,13 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
             <div className={s.compactRow}>
               <div className={s.compactField}>
                 <span className={s.compactLabel}>Patient</span>
-                <span className={s.compactValue}>{selectedMember.full_name}</span>
+                <span className={s.compactValue}>{selectedMember.fullName}</span>
               </div>
               <div className={s.compactDivider} />
               <div className={s.compactField}>
                 <span className={s.compactLabel}>Insurance</span>
-                <span className={s.compactValue}>{selectedPlan.payer_name}</span>
-                <span className={s.compactSub}>{selectedPlan.plan_name}</span>
+                <span className={s.compactValue}>{selectedPlan.payerName}</span>
+                <span className={s.compactSub}>{selectedPlan.planName}</span>
               </div>
             </div>
             <button className={s.changeLink} onClick={() => setFormMode('expanded')}>
@@ -376,7 +364,7 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
               <div className={s.stepHeader}>
                 <span className={s.stepNum}>1</span>
                 <span className={s.stepTitle}>Who is this bill for?</span>
-                {selectedMember && <span className={s.stepSummary}>{selectedMember.full_name}</span>}
+                {selectedMember && <span className={s.stepSummary}>{selectedMember.fullName}</span>}
               </div>
               <div className={s.stepBody}>
                 {members.length > 0 && (
@@ -391,9 +379,9 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                         aria-checked={selectedMemberId === m.id}
                       >
                         <div>
-                          <p className={s.memberOptionName}>{m.full_name}</p>
+                          <p className={s.memberOptionName}>{m.fullName}</p>
                           <p className={s.memberOptionMeta}>
-                            DOB {new Date(m.date_of_birth + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            DOB {new Date(m.dateOfBirth + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                             {m.state && ` · ${m.state}`}
                           </p>
                         </div>
@@ -457,16 +445,16 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
               <div className={s.stepHeader}>
                 <span className={s.stepNum}>2</span>
                 <span className={s.stepTitle}>Which insurance plan?</span>
-                {selectedPlan && <span className={s.stepSummary}>{selectedPlan.payer_name} · {selectedPlan.plan_name}</span>}
+                {selectedPlan && <span className={s.stepSummary}>{selectedPlan.payerName} · {selectedPlan.planName}</span>}
               </div>
               <div className={s.stepBody}>
                 {!selectedMember ? (
                   <p className={s.stepHint}>Select a member above first.</p>
                 ) : (
                   <>
-                    {selectedMember.insurance_plans.length > 0 && (
+                    {selectedMember.insurancePlans.length > 0 && (
                       <div className={s.planList}>
-                        {selectedMember.insurance_plans.map((p) => (
+                        {selectedMember.insurancePlans.map((p) => (
                           <div
                             key={p.id}
                             className={s.planOption}
@@ -476,12 +464,12 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                             aria-checked={selectedPlanId === p.id}
                           >
                             <div style={{ flex: 1 }}>
-                              <p className={s.planPayer}>{p.payer_name}</p>
-                              <p className={s.planName}>{p.plan_name}</p>
+                              <p className={s.planPayer}>{p.payerName}</p>
+                              <p className={s.planName}>{p.planName}</p>
                             </div>
-                            {p.is_primary_plan ? (
+                            {p.isPrimaryPlan ? (
                               <span className={s.planBadgePrimary}>Primary</span>
-                            ) : selectedMember.insurance_plans.length > 1 ? (
+                            ) : selectedMember.insurancePlans.length > 1 ? (
                               <span className={s.planBadgeSecondary}>Secondary</span>
                             ) : null}
                           </div>
@@ -496,10 +484,10 @@ export function BillVerification({ billId, fileName, ocrHospitalName }: Props): 
                           setShowAddPlan(true);
                           setFormError(null);
                           // Default new plan to primary if the member has none yet
-                          setNewIsPrimary(selectedMember.insurance_plans.length === 0);
+                          setNewIsPrimary(selectedMember.insurancePlans.length === 0);
                         }}
                       >
-                        {selectedMember.insurance_plans.length === 0 ? '+ Add insurance plan' : '+ Add another plan'}
+                        {selectedMember.insurancePlans.length === 0 ? '+ Add insurance plan' : '+ Add another plan'}
                       </button>
                     ) : (
                       <div className={s.inlineFormBox}>

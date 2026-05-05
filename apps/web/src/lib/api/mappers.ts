@@ -13,7 +13,10 @@
 // snake/camel migration window — see `parseBillingErrors` in `parsers.ts`).
 // Callers that consume the `errors` field still go through `parseBillingErrors`.
 
-import type { Bill, LineItem, AnalysisResult, BillStatus, PlanType } from '@clarobill/shared';
+import type {
+  Bill, LineItem, AnalysisResult, BillStatus, PlanType,
+  ProfileMember, InsurancePlan,
+} from '@clarobill/shared';
 
 // MimeType is declared as an inline literal on Bill in @clarobill/shared
 // rather than a named export. Re-derive the same shape here so the cast
@@ -103,6 +106,82 @@ export function mapLineItemRow(row: LineItemRow): LineItem {
     totalCharge: Number(row.total_charge),
     modifier: row.modifier,
     diagnosisPointers: row.diagnosis_pointers,
+  };
+}
+
+// ─── ProfileMember / InsurancePlan (M10) ──────────────────────────────────────
+
+type InsurancePlanRow = {
+  id: string;
+  profile_member_id: string;
+  payer_name: string;
+  plan_name: string;
+  member_id: string | null;
+  plan_type: string;
+  is_primary_plan: boolean;
+  created_at: string;
+};
+
+type ProfileMemberRow = {
+  id: string;
+  full_name: string;
+  date_of_birth: string;
+  state: string | null;
+  county: string | null;
+  zip_code: string | null;
+  is_primary: boolean;
+  created_at: string;
+};
+
+type ProfileMemberWithPlansRow = ProfileMemberRow & {
+  insurance_plans?: InsurancePlanRow[] | null;
+};
+
+export function mapInsurancePlan(row: InsurancePlanRow): InsurancePlan {
+  return {
+    id: row.id,
+    profileMemberId: row.profile_member_id,
+    payerName: row.payer_name,
+    planName: row.plan_name,
+    memberId: row.member_id ?? null,
+    planType: row.plan_type as InsurancePlan['planType'],
+    isPrimaryPlan: row.is_primary_plan,
+    createdAt: row.created_at,
+    // updatedAt isn't selected by current API routes; mirror the shared
+    // type's field by reusing createdAt as a sentinel. Tightening this
+    // would require backfilling the column in the SELECT clauses too.
+    updatedAt: row.created_at,
+  };
+}
+
+export function mapProfileMember(row: ProfileMemberRow): ProfileMember {
+  // userId isn't selected by /api/profile/members (RLS gates the row to
+  // the authenticated user already, so the field is redundant on the
+  // wire). Use empty string rather than asserting the row carries it.
+  return {
+    id: row.id,
+    userId: '',
+    fullName: row.full_name,
+    dateOfBirth: row.date_of_birth,
+    state: row.state ?? null,
+    county: row.county ?? null,
+    zipCode: row.zip_code ?? null,
+    isPrimary: row.is_primary,
+    createdAt: row.created_at,
+    updatedAt: row.created_at,
+  };
+}
+
+export interface ProfileMemberWithPlans extends ProfileMember {
+  insurancePlans: InsurancePlan[];
+}
+
+export function mapProfileMemberWithPlans(
+  row: ProfileMemberWithPlansRow,
+): ProfileMemberWithPlans {
+  return {
+    ...mapProfileMember(row),
+    insurancePlans: (row.insurance_plans ?? []).map(mapInsurancePlan),
   };
 }
 

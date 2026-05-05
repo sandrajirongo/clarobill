@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { ApiErrorResponse } from '@clarobill/shared';
+import { mapInsurancePlan } from '@/lib/api/mappers';
 
 // PATCH /api/profile/plans/[planId]
 // Updates an insurance plan. RLS ensures the plan's member belongs to the user.
@@ -73,7 +74,7 @@ export async function PATCH(
     );
   }
 
-  return NextResponse.json({ plan });
+  return NextResponse.json({ plan: mapInsurancePlan(plan) });
 }
 
 // DELETE /api/profile/plans/[planId]

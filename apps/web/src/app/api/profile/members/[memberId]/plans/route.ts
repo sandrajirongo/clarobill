@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { ApiErrorResponse } from '@clarobill/shared';
+import { mapInsurancePlan } from '@/lib/api/mappers';
 
 // POST /api/profile/members/[memberId]/plans
 // Adds an insurance plan to a profile member.
@@ -91,5 +92,5 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ plan }, { status: 201 });
+  return NextResponse.json({ plan: mapInsurancePlan(plan) }, { status: 201 });
 }
