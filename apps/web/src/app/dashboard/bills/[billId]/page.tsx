@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { BillResultsView } from '@/components/bill-results-view';
-import type { BillingError } from '@clarobill/shared';
+import { parseBillingErrors } from '@/lib/api/parsers';
 
 interface PageProps {
   params: Promise<{ billId: string }>;
@@ -145,9 +145,11 @@ export default async function BillResultsPage({ params, searchParams }: PageProp
   // The downloaded PDF report uses the inverse order (critical first) — that
   // is a paid deliverable where leading with the worst finding is correct.
   const SEVERITY_ASC: Record<string, number> = { info: 0, warning: 1, critical: 2 };
-  const errors = (analysis.errors as BillingError[]).slice().sort((a, b) => {
-    const sa = SEVERITY_ASC[a.severity?.toLowerCase?.() ?? ''] ?? 9;
-    const sb = SEVERITY_ASC[b.severity?.toLowerCase?.() ?? ''] ?? 9;
+  // Parse at the boundary — Zod normalises legacy snake_case rows and rejects
+  // shape drift, so error.estimatedOvercharge is guaranteed non-undefined.
+  const errors = parseBillingErrors(analysis.errors).slice().sort((a, b) => {
+    const sa = SEVERITY_ASC[a.severity] ?? 9;
+    const sb = SEVERITY_ASC[b.severity] ?? 9;
     if (sa !== sb) return sa - sb;
     return b.estimatedOvercharge - a.estimatedOvercharge;
   });

@@ -5,6 +5,7 @@ import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase
 import { BillUploader } from '@/components/bill-uploader';
 import { SavingsTracker } from '@/components/savings-tracker';
 import { ReferralCard } from '@/components/referral-card';
+import { safeCountErrors } from '@/lib/api/parsers';
 import s from './dashboard.module.css';
 
 export default async function DashboardPage(): Promise<JSX.Element> {
@@ -42,7 +43,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   const referralCode = referralResult.data;
 
   const totalSavings = analyses.reduce((sum, a) => sum + Number(a.total_potential_savings), 0);
-  const totalErrors  = analyses.reduce((sum, a) => sum + ((a.errors as unknown[]).length), 0);
+  const totalErrors  = analyses.reduce((sum, a) => sum + safeCountErrors(a.errors), 0);
   const totalChargesReviewed = analyses.reduce((sum, a) => sum + Number(a.total_charges), 0);
 
   const { data: referrals } = await supabase

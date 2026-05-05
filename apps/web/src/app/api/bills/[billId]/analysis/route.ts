@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import type { BillAnalysisResponse, ApiErrorResponse } from '@clarobill/shared';
+import { parseBillingErrors } from '@/lib/api/parsers';
 
 // GET /api/bills/[billId]/analysis
 // Returns the full bill analysis — bill, line items, and analysis result.
@@ -87,7 +88,9 @@ export async function GET(
     analysis: {
       id: analysis.id,
       billId: analysis.bill_id,
-      errors: analysis.errors,
+      // Parse at the boundary so legacy snake_case rows are normalised and
+      // shape drift fails loudly instead of producing undefined fields downstream.
+      errors: parseBillingErrors(analysis.errors),
       totalCharges: Number(analysis.total_charges),
       estimatedFairValue: Number(analysis.estimated_fair_value),
       totalPotentialSavings: Number(analysis.total_potential_savings),
