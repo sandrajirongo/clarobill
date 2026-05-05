@@ -48,5 +48,6 @@ data/
 !apps/**/data/
 !apps/**/data/**
 *.csv
+!**/tests/fixtures/**/*.csv
 *.html
 .vercel

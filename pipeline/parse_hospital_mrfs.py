@@ -26,6 +26,7 @@ For each hospital processed:
   gcloud run jobs execute clarobill-mrf-parser --region us-central1
 """
 
+import csv
 import gzip
 import io
 import json
@@ -48,8 +49,10 @@ from hospital_mrf_utils import (
     extract_mrf_date,
     extract_npi_from_mrf_root,
     extract_npi_from_url,
+    stream_charges_csv,
     stream_charges_v2,
 )
+from csv_vendors import CsvVendorNotIdentified
 
 # SF5 (Phase 8.4): centralised DML helper that asserts num_dml_affected_rows.
 # pipeline/ runs as a Cloud Run Job; the script-style import path adds the
@@ -112,12 +115,7 @@ ARCHIVE_INDEX_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.mrf_archive_index"
 FLUSH_EVERY_BLOBS = 100   # flush after this many successful parses
 FLUSH_EVERY_SECS  = 300   # or after 5 minutes, whichever comes first
 
-# Extensions we know how to parse today. CSV-format MRFs are valid CMS output
-# but use vendor-specific column names — supporting them properly requires a
-# separate column-mapping pass. For now we log + skip so a CSV file does not
-# crash the parser, and we mark the archive_index row as 'skipped'.
-# See docs/future_improvements/csv-mrf-parser.md for the planned approach.
-_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip")
+_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip", ".csv", ".csv.gz")
 
 
 def build_clients() -> tuple[bigquery.Client, storage.Client]:
@@ -563,31 +561,32 @@ def process_blob_with_meta(
         # copy, so this is belt-and-suspenders.
         return False
 
-    # Content sniff — extension says ".json" but the bytes may say HTML
-    # (404 page, hospital marketing page, even Facebook redirects in
-    # observed cases). The scraper used to save whatever the source URL
-    # returned regardless of body type; this pre-flight aborts before the
-    # full ijson parse so a 26K-blob queue of garbage doesn't burn 36+ hours
-    # of Cloud Run runtime to produce zero charge rows.
-    fmt = _sniff_blob_format(blob)
-    if fmt != "json":
-        logger.warning(
-            "[%s] Content is %s, not JSON — marking failed (path was %s)",
-            label, fmt, blob.name,
-        )
-        update_archive_index_status(
-            bq, mrf_url, "failed",
-            error=f"content-sniff: {fmt}",
-        )
-        return False
+    is_csv = blob.name.lower().endswith((".csv", ".csv.gz"))
+
+    # Content sniff for JSON blobs — the scraper saved whatever the source URL
+    # returned, so a .json blob may actually contain HTML (404 page, marketing
+    # landing page). Skip this check for CSV: CSV has no magic bytes and the
+    # extension is the only reliable signal.
+    if not is_csv:
+        fmt = _sniff_blob_format(blob)
+        if fmt != "json":
+            logger.warning(
+                "[%s] Content is %s, not JSON — marking failed (path was %s)",
+                label, fmt, blob.name,
+            )
+            update_archive_index_status(
+                bq, mrf_url, "failed",
+                error=f"content-sniff: {fmt}",
+            )
+            return False
 
     logger.info("[%s] Processing %s", label, blob.name)
     scraped_at = datetime.now(timezone.utc).isoformat()
 
-    # Read MRF JSON last_updated_on AND scraper-stamped HTTP Last-Modified.
-    # The scraper writes the latter into blob metadata as `last_modified`.
-    # effective_year resolves both into a single year + source label.
-    json_last_updated = _read_mrf_date(blob)
+    # For JSON: read last_updated_on from MRF root for effective-year resolution.
+    # For CSV: no JSON root, so pass None; http_last_modified from blob metadata
+    # or calendar year fallback will handle it.
+    json_last_updated = None if is_csv else _read_mrf_date(blob)
     http_last_modified = meta.get("last_modified") or None
     pricing_effective_year, year_source = effective_year.resolve_year(
         json_last_updated_on=json_last_updated,
@@ -598,31 +597,17 @@ def process_blob_with_meta(
         label, pricing_effective_year, year_source,
     )
 
-    # Provenance: every charge row carries the original MRF URL it came from
-    # plus (when available) the gs:// URI of the immutable archive blob.
-    # Lets us trace any anomalous row back to its source file.
     source_mrf_url = mrf_url
-    # The staging blob has gs://mrf-staging/raw/... — the parser doesn't have
-    # the archive URI handy unless we pass it through blob metadata. For now
-    # we record None and rely on mrf_archive_index.source_mrf_url join to
-    # recover the archive blob if needed.
     source_gcs_uri: str | None = None
 
-    # NPI resolution chain — fall through until one source yields a 10-digit
-    # NPI. In priority order: MRF JSON root (authoritative when present),
-    # source URL filename (where ~95% of real-world MRFs embed the NPI),
-    # then scraper-supplied blob metadata (least reliable; often empty for
-    # hospitals discovered via CMS PI list rather than NPPES).
-    #
-    # Strict mode (2026-05-04): if no source yields an NPI we mark the blob
-    # as 'failed' and abort, instead of writing un-joinable rows with empty
-    # NPI. ~60% of pre-fix hospital_charges rows had NULL NPI; that data was
-    # effectively unusable downstream — better to flag the blob for re-parse
-    # after a fix than to keep accumulating unqueryable charge rows.
+    # NPI resolution chain.
+    # JSON: MRF root → URL → scraper metadata.
+    # CSV:  URL → scraper metadata → CSV metadata row (rows 1-2 of the file).
     hospital_npi = (
-        _read_mrf_npi(blob)
+        ("" if is_csv else _read_mrf_npi(blob))
         or extract_npi_from_url(mrf_url)
         or meta.get("hospital_npi")
+        or (is_csv and _read_csv_meta_npi(blob))
         or ""
     )
     if not hospital_npi:
@@ -641,10 +626,16 @@ def process_blob_with_meta(
 
     try:
         with _open_mrf_blob(blob) as f:
-            rows = stream_charges_v2(
-                f, hospital_npi, pricing_effective_year, scraped_at,
-                source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
-            )
+            if is_csv:
+                rows = stream_charges_csv(
+                    f, hospital_npi, pricing_effective_year, scraped_at,
+                    source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                )
+            else:
+                rows = stream_charges_v2(
+                    f, hospital_npi, pricing_effective_year, scraped_at,
+                    source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                )
             row_count = _write_ndjson_to_gcs(rows, staging_bucket, staging_blob_name)
 
         if row_count == 0:
@@ -748,6 +739,30 @@ def _read_mrf_date(blob: storage.Blob) -> str | None:
     if match:
         return match.group(1).decode("utf-8", errors="replace")[:10]
     return None
+
+
+def _read_csv_meta_npi(blob: storage.Blob) -> str:
+    """Extract NPI from the CMS standard CSV metadata rows (rows 1 and 2).
+
+    Reads the first 4 KiB of the blob (enough for both header rows in every
+    observed MRF) and delegates to _extract_npi_from_csv_meta.
+    """
+    try:
+        head = blob.download_as_bytes(start=0, end=4095, raw_download=True)
+        if blob.name.lower().endswith(".gz"):
+            head = gzip.GzipFile(fileobj=io.BytesIO(head), mode="rb").read(4096)
+    except Exception:
+        return ""
+    text = head.lstrip(b"\xef\xbb\xbf").decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    reader = csv.reader(lines)
+    try:
+        header_row = next(reader)
+        values_row = next(reader)
+    except StopIteration:
+        return ""
+    from hospital_mrf_utils import _extract_npi_from_csv_meta
+    return _extract_npi_from_csv_meta(header_row, values_row)
 
 
 def _read_mrf_npi(blob: storage.Blob) -> str | None:

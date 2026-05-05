@@ -14,15 +14,23 @@ Normalisation flattens this into rows, one per
   code × setting × payer_or_null combination.
 """
 
+import csv
 import gzip
 import io
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, BinaryIO, Generator
+from typing import Any, BinaryIO, Generator, Iterator
 from urllib.parse import unquote, urlparse
 
 import ijson
+
+from csv_vendors import (
+    CsvVendorNotIdentified,
+    PayerGroup,
+    detect_payer_groups,
+    is_cms_standard_csv,
+)
 
 _UTF8_BOM = b"\xef\xbb\xbf"
 
@@ -583,3 +591,220 @@ def _expand_charge_item(
                     source_gcs_uri=source_gcs_uri,
                     scraped_at=scraped_at,
                 )
+
+
+def _extract_npi_from_csv_meta(header_row: list[str], values_row: list[str]) -> str:
+    """Pull a 10-digit NPI from a CMS CSV metadata row pair (rows 1 and 2)."""
+    headers = [h.strip().lower() for h in header_row]
+    for col in ("type_2_npi", "hospital_npi", "npi"):
+        try:
+            idx = headers.index(col)
+        except ValueError:
+            continue
+        if idx < len(values_row):
+            val = values_row[idx].strip()
+            if len(val) == 10 and val.isdigit():
+                return val
+    return ""
+
+
+def _expand_csv_row(
+    row: dict[str, str],
+    payer_groups: list[PayerGroup],
+    hospital_npi: str,
+    pricing_effective_year: int,
+    scraped_at: str,
+    source_mrf_url: str | None,
+    source_gcs_uri: str | None,
+) -> Iterator[ChargeRow]:
+    """Expand one CMS standard CSV data row into ChargeRow objects.
+
+    Emits one row per (code × payer). code|2 is treated as a second code entry
+    matching the same behaviour as _expand_charge_item for JSON files. If no
+    payer groups are present (or all have empty charge columns), emits a single
+    row with payer_name=None carrying gross and discounted_cash values.
+    """
+    description = row.get("description", "").strip()
+    setting = (row.get("setting") or "both").strip().lower() or "both"
+    gross = _parse_float(row.get("standard_charge|gross"))
+    cash = _parse_float(row.get("standard_charge|discounted_cash"))
+    min_neg = _parse_float(
+        row.get("standard_charge|min") or row.get("standard_charge|minimum")
+    )
+    max_neg = _parse_float(
+        row.get("standard_charge|max") or row.get("standard_charge|maximum")
+    )
+
+    codes: list[tuple[str, str]] = []
+    code1 = row.get("code|1", "").strip()
+    type1 = (row.get("code|1|type", "") or "UNKNOWN").strip().upper()
+    if code1:
+        codes.append((code1, type1))
+    code2 = row.get("code|2", "").strip()
+    type2 = (row.get("code|2|type", "") or "UNKNOWN").strip().upper()
+    if code2:
+        codes.append((code2, type2))
+    if not codes:
+        codes = [("", "UNKNOWN")]
+
+    def _pg_val(col: str | None) -> str:
+        # payer_group column names are in original case (e.g. "standard_charge|Aetna|PPO|...")
+        # but the row dict was built with lowercased keys, so lower() before lookup.
+        return row.get(col.lower() if col else "") or ""
+
+    emitted = False
+    for code, code_type in codes:
+        for pg in payer_groups:
+            neg_charge = _parse_float(_pg_val(pg.dollar_col))
+            methodology = _pg_val(pg.methodology_col).strip() or None
+            pct = _pg_val(pg.pct_col).strip()
+            algo = _pg_val(pg.algorithm_col).strip()
+            estimated = _parse_float(_pg_val(pg.estimated_col))
+
+            # Determine negotiated_type: prefer explicit methodology, then derive
+            # from whichever rate expression is present.
+            neg_type = methodology
+            if neg_type is None:
+                if pct:
+                    neg_type = f"percentage:{pct}"
+                elif algo:
+                    neg_type = f"algorithm:{algo}"
+
+            # Skip payer columns that are entirely empty — they represent
+            # contracted payers not applicable to this service row.
+            if neg_charge is None and neg_type is None and estimated is None:
+                continue
+
+            yield ChargeRow(
+                pricing_effective_year=pricing_effective_year,
+                hospital_npi=hospital_npi,
+                code_type=code_type,
+                code=code,
+                description=description,
+                gross_charge=gross,
+                discounted_cash_price=cash,
+                min_negotiated=min_neg,
+                max_negotiated=max_neg,
+                payer_name=pg.payer_name or None,
+                plan_name=pg.plan_name or None,
+                negotiated_charge=neg_charge,
+                negotiated_type=neg_type,
+                setting=setting,
+                source_mrf_url=source_mrf_url,
+                source_gcs_uri=source_gcs_uri,
+                scraped_at=scraped_at,
+            )
+            emitted = True
+
+        if not payer_groups or not emitted:
+            yield ChargeRow(
+                pricing_effective_year=pricing_effective_year,
+                hospital_npi=hospital_npi,
+                code_type=code_type,
+                code=code,
+                description=description,
+                gross_charge=gross,
+                discounted_cash_price=cash,
+                min_negotiated=min_neg,
+                max_negotiated=max_neg,
+                payer_name=None,
+                plan_name=None,
+                negotiated_charge=None,
+                negotiated_type=None,
+                setting=setting,
+                source_mrf_url=source_mrf_url,
+                source_gcs_uri=source_gcs_uri,
+                scraped_at=scraped_at,
+            )
+            emitted = True
+
+
+def stream_charges_csv(
+    file_obj: BinaryIO,
+    hospital_npi: str,
+    pricing_effective_year: int,
+    scraped_at: str,
+    source_mrf_url: str | None = None,
+    source_gcs_uri: str | None = None,
+) -> Iterator[ChargeRow]:
+    """Stream-parse a CMS-standard wide-format CSV MRF.
+
+    The CMS Price Transparency standard CSV has three header rows before the
+    charge data:
+      Row 1: hospital metadata column names
+      Row 2: hospital metadata values (last_updated_on, NPI, etc.)
+      Row 3: charge column names including dynamic payer columns
+      Row 4+: one charge row per procedure/item
+
+    Payer columns are discovered dynamically from row 3, so this single
+    function handles any hospital that follows the CMS standard schema.
+
+    Raises CsvVendorNotIdentified if row 3 doesn't contain the required
+    standard_charge|gross and standard_charge|discounted_cash columns.
+    """
+    file_obj = _strip_bom(file_obj)
+    text_stream = io.TextIOWrapper(file_obj, encoding="utf-8", errors="replace")
+    reader = csv.reader(text_stream)
+
+    meta_header = next(reader, None)
+    if meta_header is None:
+        return
+
+    meta_values = next(reader, None)
+    if meta_values is None:
+        return
+
+    if not hospital_npi and meta_header and meta_values:
+        hospital_npi = _extract_npi_from_csv_meta(meta_header, meta_values)
+
+    charge_header = next(reader, None)
+    if charge_header is None:
+        return
+
+    # raw_cols preserves the original case from the hospital's CSV file so that
+    # payer names (e.g. "Blue Cross Blue Shield") are stored correctly in the
+    # output rows. cols is the lowercased version used as dict keys when building
+    # the per-row lookup dict, since fixed columns like "standard_charge|gross"
+    # must be looked up case-insensitively.
+    raw_cols = [c.strip() for c in charge_header]
+    cols = [c.lower() for c in raw_cols]
+
+    if not is_cms_standard_csv(cols):
+        raise CsvVendorNotIdentified(
+            "Header row 3 missing standard_charge|gross or "
+            "standard_charge|discounted_cash — not a CMS standard CSV"
+        )
+
+    # Payer group column references use original-case column names so that
+    # payer_name / plan_name in the emitted ChargeRow are correctly cased.
+    # When looking up values in `row`, we lowercase the column name (see
+    # _expand_csv_row). Fixed columns (description, code|1, etc.) are
+    # already lowercase in `cols` so they look up cleanly with row.get().
+    payer_groups = detect_payer_groups(raw_cols)
+
+    row_count = 0
+    bad_rows = 0
+    for raw_row in reader:
+        if not any(v.strip() for v in raw_row):
+            continue
+        row = dict(zip(cols, raw_row))
+        try:
+            for charge_row in _expand_csv_row(
+                row, payer_groups, hospital_npi, pricing_effective_year,
+                scraped_at, source_mrf_url, source_gcs_uri,
+            ):
+                yield charge_row
+                row_count += 1
+        except Exception as exc:  # noqa: BLE001
+            bad_rows += 1
+            if bad_rows <= 5:
+                logger.warning(
+                    "Skipping malformed CSV row for NPI %s: %s", hospital_npi, exc,
+                )
+
+    if bad_rows:
+        logger.warning(
+            "NPI %s CSV: %d bad rows skipped out of %d total",
+            hospital_npi, bad_rows, row_count + bad_rows,
+        )
+    logger.info("Parsed %d CSV charge rows for NPI %s", row_count, hospital_npi)
