@@ -60,6 +60,13 @@ class BillingErrorCode(StrEnum):
     NEGOTIATED_CEILING_EXCEEDED = "NEGOTIATED_CEILING_EXCEEDED"
     MUE_EXCEEDED = "MUE_EXCEEDED"
     REDUNDANT_CLINICAL_PAIR = "REDUNDANT_CLINICAL_PAIR"
+    # SF2 (Phase 8.2): emitted when a BigQuery-backed benchmark lookup
+    # could not be reached. Pre-SF2 a transient BQ outage silently returned
+    # {} and the engine emitted zero hospital-side findings — patient saw
+    # "no anomalies" when in fact no benchmark was ever consulted. Now the
+    # rules engine surfaces this as an info-severity finding so the report
+    # explicitly tells the patient the gap exists.
+    BENCHMARK_UNAVAILABLE = "BENCHMARK_UNAVAILABLE"
 
 
 class Bill(BaseModel):

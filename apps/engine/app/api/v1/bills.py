@@ -4,6 +4,7 @@ import asyncio
 import logging
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -303,17 +304,43 @@ async def _run_analysis_pipeline(
                 bill_id, len(quarter_to_codes), sorted(quarter_to_codes),
             )
         bq = _build_bq_client()
-        hospital_charges = _load_hospital_charges(
-            bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+        # SF2 (Phase 8.2): track BQ-backed sources that failed to load so the
+        # report can surface a BENCHMARK_UNAVAILABLE finding. Pre-SF2 a
+        # transient BQ outage silently returned {} and the patient saw "no
+        # anomalies" with no indication the engine never reached the table.
+        bq_unavailable_sources: list[str] = []
+
+        def _safe_load(name: str, loader: Callable[[], dict[str, Decimal]]) -> dict[str, Decimal]:
+            try:
+                return loader()
+            except Exception as exc:
+                logger.warning(
+                    "BQ benchmark source %r unavailable for bill %s: %s",
+                    name, bill_id, exc,
+                )
+                bq_unavailable_sources.append(name)
+                return {}
+
+        hospital_charges = _safe_load(
+            "hospital_gross",
+            lambda: _load_hospital_charges(
+                bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+            ),
         )
-        negotiated_charges = _load_negotiated_charges(
-            bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name,
-            hospital_state, hospital_zip,
+        negotiated_charges = _safe_load(
+            "negotiated_rate",
+            lambda: _load_negotiated_charges(
+                bq, cpt_codes, hospital_npi, hospital_name, payer_name, plan_name,
+                hospital_state, hospital_zip,
+            ),
         )
         # Load the hospital-wide ceiling rate as a fallback for codes where the
         # exact payer/plan rate could not be matched (e.g. MRF naming mismatch).
-        negotiated_ceiling = _load_negotiated_ceiling(
-            bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+        negotiated_ceiling = _safe_load(
+            "negotiated_ceiling",
+            lambda: _load_negotiated_ceiling(
+                bq, cpt_codes, hospital_npi, hospital_name, hospital_state, hospital_zip
+            ),
         )
         engine = RulesEngine(
             ncci_edit_pairs=ncci_pairs,
@@ -336,6 +363,29 @@ async def _run_analysis_pipeline(
         # Map detected errors to line item IDs
         line_item_ids: list[str] = [str(row["id"]) for row in line_item_rows]
         billing_errors = _map_errors_to_line_items(detected_errors, line_item_ids)
+
+        # SF2 (Phase 8.2): if any BQ-backed benchmark source was unavailable,
+        # surface a single BENCHMARK_UNAVAILABLE finding so the report tells
+        # the patient explicitly that those checks couldn't run. Without
+        # this, the patient sees a clean report and assumes nothing is
+        # wrong — even though the engine never reached the data.
+        if bq_unavailable_sources:
+            sources_label = ", ".join(sorted(set(bq_unavailable_sources)))
+            billing_errors.append(BillingError(
+                code=BillingErrorCode.BENCHMARK_UNAVAILABLE,
+                severity=ErrorSeverity.INFO,
+                affected_line_item_ids=[],
+                description=(
+                    f"We couldn't reach the hospital-charge benchmark for this bill "
+                    f"({sources_label}). Other findings on this report still apply, "
+                    f"but the missing benchmark means a real overcharge could go "
+                    f"unflagged. Please retry analysis later for the most complete "
+                    f"results."
+                ),
+                estimated_overcharge=Decimal("0"),
+                benchmark_rate=None,
+                benchmark_source=None,
+            ))
 
         # 5. AI summary (Gemini primary, Claude fallback)
         ai_service = get_ai_analysis_service()

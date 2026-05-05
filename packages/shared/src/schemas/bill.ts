@@ -41,6 +41,7 @@ export const BillingErrorCodeSchema = z.enum([
   'NEGOTIATED_CEILING_EXCEEDED',
   'MUE_EXCEEDED',
   'REDUNDANT_CLINICAL_PAIR',
+  'BENCHMARK_UNAVAILABLE',
 ]);
 
 export const PlanTypeSchema = z.enum([

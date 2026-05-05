@@ -25,6 +25,18 @@
   },
   {
     "affectedLineItemIds": [
+      "li-benchmark_unavailable-1",
+      "li-benchmark_unavailable-2"
+    ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
+    "code": "BENCHMARK_UNAVAILABLE",
+    "description": "Synthetic BENCHMARK_UNAVAILABLE finding for boundary contract test",
+    "estimatedOvercharge": 123.45,
+    "severity": "critical"
+  },
+  {
+    "affectedLineItemIds": [
       "li-date_inconsistency-1",
       "li-date_inconsistency-2"
     ],

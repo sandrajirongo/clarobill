@@ -99,7 +99,8 @@ export type BillingErrorCode =
   | 'NEGOTIATED_RATE_EXCEEDED'
   | 'NEGOTIATED_CEILING_EXCEEDED'
   | 'MUE_EXCEEDED'
-  | 'REDUNDANT_CLINICAL_PAIR';
+  | 'REDUNDANT_CLINICAL_PAIR'
+  | 'BENCHMARK_UNAVAILABLE';
 
 export type BenchmarkSource =
   | 'medicare'              // CMS PFS rate (PRICE_OUTLIER, INVALID_CPT_CODE)
