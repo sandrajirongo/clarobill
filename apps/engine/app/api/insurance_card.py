@@ -82,10 +82,26 @@ class InsuranceCardExtraction(BaseModel):
 
 
 def _parse_ai_response(raw_text: str) -> dict[str, object]:
-    """Strip optional markdown code fences and parse JSON from an AI response."""
+    """Strip optional markdown code fences and parse JSON from an AI response.
+
+    H16 (Phase 8.3): defensive against malformed fences. Pre-H16 a response
+    of just "```" (no newline, no closing fence) raised IndexError on the
+    `split("\\n", 1)[1]` access — and the caller's try/except only caught
+    JSONDecodeError + ValueError, so the IndexError escaped as a raw 500
+    with no PostHog telemetry. Now any opening fence is stripped via
+    removeprefix + closing fence stripped via rstrip, with NO indexing
+    operations that could raise.
+    """
     text = raw_text.strip()
     if text.startswith("```"):
-        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        # Drop opening fence + optional language tag (e.g. ```json).
+        # If there's a newline after the fence, drop everything up to it.
+        text = text.removeprefix("```")
+        if "\n" in text:
+            text = text.split("\n", 1)[1]
+        # Drop trailing closing fence; rstrip handles any number of
+        # trailing backticks + whitespace.
+        text = text.rstrip("`").strip()
     return json.loads(text)  # type: ignore[no-any-return]
 
 
@@ -162,7 +178,11 @@ async def extract_insurance_card(
 
     try:
         data = _parse_ai_response(raw_text)
-    except (json.JSONDecodeError, ValueError) as exc:
+    # H16 (Phase 8.3): widened from (JSONDecodeError, ValueError) to
+    # Exception. The parse step is small and the failure mode is bounded
+    # — any error here means we couldn't recover the AI's JSON, regardless
+    # of the specific exception class.
+    except Exception as exc:
         logger.error("Failed to parse AI card extraction response: %s", raw_text[:200])
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
