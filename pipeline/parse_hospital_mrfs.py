@@ -899,8 +899,13 @@ def _load_terminal_mrf_urls(bq: bigquery.Client) -> set[str]:
     burns Cloud Run runtime for no output. This returns the skip-set so
     the main loop can short-circuit before any HTTP I/O.
 
-    Returns an empty set if the query fails — better to slow-process the
-    full bucket than crash on parser startup.
+    SF13 (Phase 8.5): on BQ failure, fall back to a GCS-cached snapshot
+    (≤24h) before slow-processing the full bucket. Pre-SF13 a transient
+    BQ outage at parser startup → empty skip-set → ~25K staging blobs
+    all reprocessed instead of the ~1k pending ones → Cloud Run
+    --task-timeout 4h blows + partial flush + re-run loop. Cost: ~5 MB
+    Standard storage + 25 reads/writes per year ≈ $0.001/year
+    (CLAUDE.md Rule 16).
     """
     query = f"""
         SELECT DISTINCT source_mrf_url
@@ -908,15 +913,70 @@ def _load_terminal_mrf_urls(bq: bigquery.Client) -> set[str]:
         WHERE parse_status IN ('failed', 'skipped', 'parsed')
           AND source_mrf_url IS NOT NULL
     """
+    cache_bucket = os.environ.get("MRF_DISCOVERY_CACHE_BUCKET", "").strip() or None
     try:
         rows = list(bq.query(query).result())
     except Exception as exc:
-        logger.warning("Could not load terminal-state skip-set from %s: %s — proceeding without it",
-                       ARCHIVE_INDEX_TABLE, exc)
+        logger.warning(
+            "Could not load terminal-state skip-set from %s: %s — falling back to GCS cache",
+            ARCHIVE_INDEX_TABLE, exc,
+        )
+        if cache_bucket:
+            cached = _load_skip_set_cache(cache_bucket)
+            if cached is not None:
+                logger.warning(
+                    "Using cached skip-set (%d URLs). May be up to 24h stale; "
+                    "the worst case is re-parsing a few recently-completed "
+                    "blobs — survivable.",
+                    len(cached),
+                )
+                return cached
+        logger.warning("No cache available — proceeding without skip-set (full bucket walk)")
         return set()
     skip_set = {str(r["source_mrf_url"]) for r in rows}
     logger.info("Loaded skip-set: %d source MRF URLs already in terminal state", len(skip_set))
+    # SF13 fallback: persist this run's snapshot for the next outage.
+    # Best-effort — write failure must not fail the parser.
+    if cache_bucket and skip_set:
+        try:
+            _save_skip_set_cache(cache_bucket, skip_set)
+        except Exception as exc:  # noqa: BLE001 — cache is best-effort
+            logger.warning("Skip-set cache write failed: %s", exc)
     return skip_set
+
+
+def _skip_set_cache_path() -> str:
+    return "parse_skip_set/latest.json"
+
+
+def _save_skip_set_cache(bucket: str, urls: set[str]) -> None:
+    """Persist the skip-set to GCS so a future outage can fall back. SF13."""
+    blob = storage.Client().bucket(bucket).blob(_skip_set_cache_path())
+    blob.upload_from_string(json.dumps(sorted(urls)), content_type="application/json")
+    logger.info("Cached %d skip-set URLs to gs://%s/%s", len(urls), bucket, _skip_set_cache_path())
+
+
+def _load_skip_set_cache(bucket: str) -> set[str] | None:
+    """Load the most recent cached skip-set. None if not cached or expired. SF13."""
+    try:
+        blob = storage.Client().bucket(bucket).blob(_skip_set_cache_path())
+        if not blob.exists():
+            return None
+        # Reject snapshots older than 24h — staleness beyond that risks
+        # re-parsing too many recently-completed blobs.
+        blob.reload()
+        if blob.updated:
+            age_seconds = (datetime.now(timezone.utc) - blob.updated).total_seconds()
+            if age_seconds > 24 * 3600:
+                logger.warning(
+                    "Skip-set cache too stale (%.1f hours); ignoring",
+                    age_seconds / 3600,
+                )
+                return None
+        return set(json.loads(blob.download_as_text()))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Skip-set cache load failed: %s", exc)
+        return None
 
 
 def main() -> None:

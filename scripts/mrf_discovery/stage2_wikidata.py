@@ -28,8 +28,10 @@ query on each annual run reflects new Wikidata edits.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -79,22 +81,68 @@ SELECT DISTINCT ?hospital ?name ?website WHERE {
 def fetch_us_hospital_systems(
     sparql_endpoint: str = WIKIDATA_SPARQL,
     timeout: int = 60,
+    *,
+    cache_bucket: str | None = None,
+    cache_year: int | None = None,
 ) -> list[dict]:
     """Run the SPARQL query, return [{name, website}, ...].
 
     Wikidata returns each entity once even if multiple websites exist for it
     (`DISTINCT` on hospital). If the same name appears with different websites
     (e.g. system + facility), we keep the first one returned.
+
+    SF8 (Phase 8.5): retry-with-backoff (3 attempts, exponential) and GCS
+    cache fallback. Pre-SF8 a transient Wikidata outage = entire annual
+    discovery's Wikidata signal lost = ~500 long-tail hospitals' worth of
+    coverage gone for a year. Now: persist successful results to
+    gs://{cache_bucket}/wikidata/{year}.json; on all-3-fail, fall back
+    to last year's cached snapshot. Cost analysis: ~65 MB Standard
+    storage + 1 write/year + 1 read/year ≈ $0.02/year (CLAUDE.md Rule 16).
     """
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "application/sparql-results+json",
     }
-    resp = requests.get(
-        sparql_endpoint, params={"query": SPARQL_QUERY}, headers=headers, timeout=timeout,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                sparql_endpoint, params={"query": SPARQL_QUERY}, headers=headers, timeout=timeout,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            break
+        except (requests.RequestException, ValueError) as exc:
+            last_exc = exc
+            if attempt < 2:
+                sleep_s = 2 ** attempt
+                logger.warning(
+                    "Wikidata SPARQL attempt %d/3 failed (%s); retrying in %ds",
+                    attempt + 1, exc, sleep_s,
+                )
+                time.sleep(sleep_s)
+            else:
+                logger.error(
+                    "Wikidata SPARQL exhausted 3 retries: %s. Falling back to GCS cache.",
+                    exc,
+                )
+    else:  # pragma: no cover — only reached when all retries fail
+        # SF8 fallback: last year's snapshot from GCS.
+        if cache_bucket and cache_year:
+            cached = _load_wikidata_cache(cache_bucket, cache_year - 1)
+            if cached is not None:
+                logger.warning(
+                    "Wikidata: using cached snapshot from year %d (%d rows). "
+                    "Live SPARQL was unavailable: %s",
+                    cache_year - 1, len(cached), last_exc,
+                )
+                return cached
+        # No cache available — re-raise so the run fails loudly.
+        raise RuntimeError(
+            f"Wikidata SPARQL failed after 3 retries and no cache fallback "
+            f"is available (cache_bucket={cache_bucket!r}, cache_year={cache_year!r}). "
+            f"Last error: {last_exc}"
+        )
     bindings = payload.get("results", {}).get("bindings", [])
     seen_names: set[str] = set()
     rows: list[dict] = []
@@ -109,7 +157,45 @@ def fetch_us_hospital_systems(
         seen_names.add(key)
         rows.append({"name": name, "website": website})
     logger.info("Wikidata returned %d unique US hospitals/systems", len(rows))
+    # SF8 fallback: persist this run's results so a future outage can
+    # use them. Best-effort — a cache write failure must not fail the run.
+    if cache_bucket and cache_year and rows:
+        try:
+            _save_wikidata_cache(cache_bucket, cache_year, rows)
+        except Exception as exc:  # noqa: BLE001 — cache is best-effort
+            logger.warning("Wikidata cache write failed (year=%d): %s", cache_year, exc)
     return rows
+
+
+def _wikidata_cache_path(year: int) -> str:
+    return f"wikidata/{year}.json"
+
+
+def _save_wikidata_cache(bucket: str, year: int, rows: list[dict]) -> None:
+    """Persist a Wikidata fetch result to GCS for next-year fallback. SF8."""
+    from google.cloud import storage  # noqa: PLC0415 — lazy import; storage is heavy
+    client = storage.Client()
+    blob = client.bucket(bucket).blob(_wikidata_cache_path(year))
+    blob.upload_from_string(json.dumps(rows), content_type="application/json")
+    logger.info(
+        "Cached %d Wikidata rows to gs://%s/%s",
+        len(rows), bucket, _wikidata_cache_path(year),
+    )
+
+
+def _load_wikidata_cache(bucket: str, year: int) -> list[dict] | None:
+    """Load a prior Wikidata snapshot from GCS, or None if not cached. SF8."""
+    from google.cloud import storage  # noqa: PLC0415
+    try:
+        client = storage.Client()
+        blob = client.bucket(bucket).blob(_wikidata_cache_path(year))
+        if not blob.exists():
+            return None
+        data = blob.download_as_text()
+        return list(json.loads(data))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Wikidata cache load failed (year=%d): %s", year, exc)
+        return None
 
 
 def _clean_url(val: str) -> str | None:
@@ -321,7 +407,16 @@ def run(
     dataset: str = bq_checkpoint.DEFAULT_DATASET,
     dry_run: bool = False,
 ) -> dict[str, int]:
-    candidates = fetch_us_hospital_systems()
+    # SF8: pass through GCS cache config from env so the function can
+    # fall back to last year's snapshot when Wikidata is unreachable.
+    # MRF_DISCOVERY_CACHE_BUCKET should point at a Standard-class bucket
+    # in the same project (e.g. gs://mrf-discovery-cache).
+    import os  # noqa: PLC0415
+    cache_bucket = os.environ.get("MRF_DISCOVERY_CACHE_BUCKET", "").strip() or None
+    cache_year = datetime.now(timezone.utc).year
+    candidates = fetch_us_hospital_systems(
+        cache_bucket=cache_bucket, cache_year=cache_year,
+    )
     unresolved = get_unresolved_websites(bq_client, project, run_id, dataset=dataset)
     logger.info(
         "Stage 2C: %d Wikidata candidates, %d checkpoint rows missing website",
