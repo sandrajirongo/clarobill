@@ -172,7 +172,7 @@ def test_billing_error_dump_keys_match_zod_keys() -> None:
         affected_line_item_ids=["a"],
         description="d",
         estimated_overcharge=Decimal("1"),
-        medicare_benchmark_rate=Decimal("0.5"),
+        benchmark_rate=Decimal("0.5"),
     )
     dumped = json.loads(instance.model_dump_json(by_alias=True))
     pydantic_dump_keys = set(dumped.keys())

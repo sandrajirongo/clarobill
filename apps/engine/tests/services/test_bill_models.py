@@ -30,7 +30,7 @@ def sample_error() -> BillingError:
         affected_line_item_ids=["li-1", "li-2"],
         description="CPT 99214 billed at 3x Medicare rate",
         estimated_overcharge=Decimal("250.50"),
-        medicare_benchmark_rate=Decimal("50.25"),
+        benchmark_rate=Decimal("50.25"),
     )
 
 
@@ -40,17 +40,17 @@ def test_billing_error_dumps_camel_case_with_by_alias(sample_error: BillingError
     # Camel keys present
     assert "affectedLineItemIds" in dumped
     assert "estimatedOvercharge" in dumped
-    assert "medicareBenchmarkRate" in dumped
+    assert "benchmarkRate" in dumped
 
     # Snake keys NOT present — this is the contract that prevents the
     # patient-results page from rendering $undefined.toFixed(2).
     assert "affected_line_item_ids" not in dumped
     assert "estimated_overcharge" not in dumped
-    assert "medicare_benchmark_rate" not in dumped
+    assert "benchmark_rate" not in dumped
 
     # Decimal serialiser still applied
     assert dumped["estimatedOvercharge"] == 250.50
-    assert dumped["medicareBenchmarkRate"] == 50.25
+    assert dumped["benchmarkRate"] == 50.25
 
 
 def test_billing_error_dumps_snake_without_alias(sample_error: BillingError) -> None:
@@ -86,7 +86,7 @@ def test_billing_error_round_trip_snake(sample_error: BillingError) -> None:
         "affected_line_item_ids": ["li-1", "li-2"],
         "description": "CPT 99214 billed at 3x Medicare rate",
         "estimated_overcharge": 250.50,
-        "medicare_benchmark_rate": 50.25,
+        "benchmark_rate": 50.25,
     }
     rebuilt = BillingError.model_validate(legacy_snake, strict=False)
     assert rebuilt.affected_line_item_ids == ["li-1", "li-2"]
@@ -108,7 +108,7 @@ def test_billing_error_strict_construction_still_blocks_silent_coercion() -> Non
             "affectedLineItemIds": [],
             "description": "",
             "estimatedOvercharge": 0,
-            "medicareBenchmarkRate": None,
+            "benchmarkRate": None,
         })  # default strict=True — must reject string→enum coercion
 
 
@@ -125,7 +125,8 @@ def test_billing_error_known_keys_after_dump_match_zod_schema(
         "affectedLineItemIds",
         "description",
         "estimatedOvercharge",
-        "medicareBenchmarkRate",
+        "benchmarkRate",
+        "benchmarkSource",
     }
     assert set(dumped.keys()) == expected_keys
 
@@ -140,7 +141,7 @@ def test_billing_error_rejects_negative_overcharge() -> None:
         affected_line_item_ids=[],
         description="",
         estimated_overcharge=Decimal("-1"),
-        medicare_benchmark_rate=None,
+        benchmark_rate=None,
     )
     assert e.estimated_overcharge == Decimal("-1")
 
@@ -153,7 +154,7 @@ def test_billing_error_rejects_unknown_code() -> None:
             "affectedLineItemIds": [],
             "description": "",
             "estimatedOvercharge": 0,
-            "medicareBenchmarkRate": None,
+            "benchmarkRate": None,
         })
 
 

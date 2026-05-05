@@ -466,7 +466,7 @@ class TestDoGenerateReportTask:
                         "code": "NCCI_UNBUNDLING", "severity": "warning",
                         "affectedLineItemIds": ["line-1"],
                         "description": "Test", "estimatedOvercharge": 500.0,
-                        "medicareBenchmarkRate": None,
+                        "benchmarkRate": None,
                     }],
                     "ai_summary": "Found 1 finding.",
                 },

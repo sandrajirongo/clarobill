@@ -4,10 +4,11 @@
       "li-ambulance_charge_outlier-1",
       "li-ambulance_charge_outlier-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "AMBULANCE_CHARGE_OUTLIER",
     "description": "Synthetic AMBULANCE_CHARGE_OUTLIER finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -15,10 +16,11 @@
       "li-anesthesia_outlier-1",
       "li-anesthesia_outlier-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "ANESTHESIA_OUTLIER",
     "description": "Synthetic ANESTHESIA_OUTLIER finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -26,10 +28,11 @@
       "li-date_inconsistency-1",
       "li-date_inconsistency-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "DATE_INCONSISTENCY",
     "description": "Synthetic DATE_INCONSISTENCY finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -37,10 +40,11 @@
       "li-duplicate_charge-1",
       "li-duplicate_charge-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "DUPLICATE_CHARGE",
     "description": "Synthetic DUPLICATE_CHARGE finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -48,10 +52,11 @@
       "li-facility_charge_outlier-1",
       "li-facility_charge_outlier-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "FACILITY_CHARGE_OUTLIER",
     "description": "Synthetic FACILITY_CHARGE_OUTLIER finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -59,10 +64,11 @@
       "li-hospital_charge_outlier-1",
       "li-hospital_charge_outlier-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "HOSPITAL_CHARGE_OUTLIER",
     "description": "Synthetic HOSPITAL_CHARGE_OUTLIER finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -70,10 +76,11 @@
       "li-invalid_cpt_code-1",
       "li-invalid_cpt_code-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "INVALID_CPT_CODE",
     "description": "Synthetic INVALID_CPT_CODE finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -81,10 +88,11 @@
       "li-missing_modifier-1",
       "li-missing_modifier-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "MISSING_MODIFIER",
     "description": "Synthetic MISSING_MODIFIER finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -92,10 +100,11 @@
       "li-mue_exceeded-1",
       "li-mue_exceeded-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "MUE_EXCEEDED",
     "description": "Synthetic MUE_EXCEEDED finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -103,10 +112,11 @@
       "li-ncci_unbundling-1",
       "li-ncci_unbundling-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "NCCI_UNBUNDLING",
     "description": "Synthetic NCCI_UNBUNDLING finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -114,10 +124,11 @@
       "li-negotiated_ceiling_exceeded-1",
       "li-negotiated_ceiling_exceeded-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "NEGOTIATED_CEILING_EXCEEDED",
     "description": "Synthetic NEGOTIATED_CEILING_EXCEEDED finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -125,10 +136,11 @@
       "li-negotiated_rate_exceeded-1",
       "li-negotiated_rate_exceeded-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "NEGOTIATED_RATE_EXCEEDED",
     "description": "Synthetic NEGOTIATED_RATE_EXCEEDED finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -136,10 +148,11 @@
       "li-non_payable_code-1",
       "li-non_payable_code-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "NON_PAYABLE_CODE",
     "description": "Synthetic NON_PAYABLE_CODE finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -147,10 +160,11 @@
       "li-price_outlier-1",
       "li-price_outlier-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "PRICE_OUTLIER",
     "description": "Synthetic PRICE_OUTLIER finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -158,10 +172,11 @@
       "li-redundant_clinical_pair-1",
       "li-redundant_clinical_pair-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "REDUNDANT_CLINICAL_PAIR",
     "description": "Synthetic REDUNDANT_CLINICAL_PAIR finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -169,10 +184,11 @@
       "li-terminated_code_billed-1",
       "li-terminated_code_billed-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "TERMINATED_CODE_BILLED",
     "description": "Synthetic TERMINATED_CODE_BILLED finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   },
   {
@@ -180,10 +196,11 @@
       "li-upcoding-1",
       "li-upcoding-2"
     ],
+    "benchmarkRate": 78.9,
+    "benchmarkSource": null,
     "code": "UPCODING",
     "description": "Synthetic UPCODING finding for boundary contract test",
     "estimatedOvercharge": 123.45,
-    "medicareBenchmarkRate": 78.9,
     "severity": "critical"
   }
 ]

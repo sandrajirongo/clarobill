@@ -126,14 +126,24 @@ def _ncci_flagged_code_pairs(
 
 @dataclass(frozen=True)
 class DetectedError:
-    """A billing error detected by a rule. Mirrors the BillingError TypeScript type."""
+    """A billing error detected by a rule. Mirrors the BillingError TypeScript type.
+
+    T10 (Phase 8.1): `medicare_benchmark_rate` was renamed to
+    `benchmark_rate` and paired with `benchmark_source` so the dispute
+    letter / report can render the right label per rule code.
+    """
 
     code: str
     severity: str  # 'critical' | 'warning' | 'info'
     affected_indices: tuple[int, ...]  # Indices into the line_items list
     description: str
     estimated_overcharge: Decimal
-    medicare_benchmark_rate: Decimal | None
+    benchmark_rate: Decimal | None = None
+    # One of: 'medicare', 'hospital_gross', 'negotiated_rate',
+    # 'negotiated_ceiling', 'opps_cap', 'ambulance_fee_schedule', 'anesthesia'.
+    # None when no benchmark applies (DUPLICATE_CHARGE, MUE_EXCEEDED,
+    # REDUNDANT_CLINICAL_PAIR, NCCI_UNBUNDLING, etc.).
+    benchmark_source: str | None = None
 
 
 # CMS modifiers that override NCCI PTP edits. Modifier 59 was the original
@@ -380,7 +390,8 @@ class RulesEngine:
                         f"may be a duplicate."
                     ),
                     estimated_overcharge=Decimal(str(item.total_charge)),
-                    medicare_benchmark_rate=self._medicare_rates.get(item.cpt_code),
+                    benchmark_rate=self._medicare_rates.get(item.cpt_code),
+                    benchmark_source="medicare" if self._medicare_rates.get(item.cpt_code) else None,
                 ))
             else:
                 seen[key] = index
@@ -439,7 +450,8 @@ class RulesEngine:
                             f"to justify the difference."
                         ),
                         estimated_overcharge=overcharge,
-                        medicare_benchmark_rate=medicare_rate,
+                        benchmark_rate=medicare_rate,
+                        benchmark_source="medicare",
                     ))
 
             else:
@@ -469,7 +481,8 @@ class RulesEngine:
                             f"to justify the difference."
                         ),
                         estimated_overcharge=overcharge,
-                        medicare_benchmark_rate=medicare_rate,
+                        benchmark_rate=medicare_rate,
+                        benchmark_source="medicare",
                     ))
 
         return errors
@@ -576,7 +589,7 @@ class RulesEngine:
                     f"Potential overcharge: ${overcharge:.2f}."
                 ),
                 estimated_overcharge=overcharge,
-                medicare_benchmark_rate=None,
+                benchmark_rate=None,
             ))
 
         flagged_code_pairs = [
@@ -693,7 +706,8 @@ class RulesEngine:
                         f"${overcharge:.2f}); CPT {kept_code} would typically remain."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=self._medicare_rates.get(redundant_item.cpt_code),
+                    benchmark_rate=self._medicare_rates.get(redundant_item.cpt_code),
+                    benchmark_source="medicare",
                 ))
                 # Reference unused-variable to keep linters quiet; the index
                 # is captured for future use (e.g., per-line UI highlighting).
@@ -747,7 +761,7 @@ class RulesEngine:
                 affected_indices=(index,),
                 description=f"{code_label} {item.cpt_code} {reason}",
                 estimated_overcharge=Decimal(str(item.total_charge)),
-                medicare_benchmark_rate=None,
+                benchmark_rate=None,
             ))
 
         return errors
@@ -808,7 +822,7 @@ class RulesEngine:
                             f"This may indicate a billing error or an incorrect conversion factor."
                         ),
                         estimated_overcharge=Decimal("0"),
-                        medicare_benchmark_rate=None,
+                        benchmark_rate=None,
                     ))
                 elif published_base is not None:
                     # Exact check: CMS publishes the base units for this code
@@ -829,7 +843,7 @@ class RulesEngine:
                                 f"Potential overcharge: ${float(overcharge):.2f}."
                             ),
                             estimated_overcharge=overcharge,
-                            medicare_benchmark_rate=None,
+                            benchmark_rate=None,
                         ))
                 elif implied_base > _MAX_PLAUSIBLE_BASE_UNITS:
                     # No published base units for this code — fall back to heuristic ceiling
@@ -846,7 +860,7 @@ class RulesEngine:
                             f"Potential overcharge: ${float(overcharge):.2f}."
                         ),
                         estimated_overcharge=overcharge,
-                        medicare_benchmark_rate=None,
+                        benchmark_rate=None,
                     ))
             else:
                 # No OCR time — ceiling-only check (can't do exact base unit check without time)
@@ -864,7 +878,7 @@ class RulesEngine:
                             f"warrants review. Potential overcharge: ${float(overcharge):.2f}."
                         ),
                         estimated_overcharge=overcharge,
-                        medicare_benchmark_rate=None,
+                        benchmark_rate=None,
                     ))
 
         return errors
@@ -939,7 +953,8 @@ class RulesEngine:
                         f"itemized bill and contacting the provider to review the charge."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=benchmark,
+                    benchmark_rate=benchmark,
+                    benchmark_source="ambulance_fee_schedule",
                 ))
 
         return errors
@@ -979,7 +994,7 @@ class RulesEngine:
                     f"have been used."
                 ),
                 estimated_overcharge=Decimal(str(item.total_charge)),
-                medicare_benchmark_rate=None,
+                benchmark_rate=None,
             ))
 
         return errors
@@ -1023,7 +1038,8 @@ class RulesEngine:
                         f"${overcharge:.2f} more than the hospital's own listed price."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=gross_charge,
+                    benchmark_rate=gross_charge,
+                    benchmark_source="hospital_gross",
                 ))
 
         return errors
@@ -1073,7 +1089,8 @@ class RulesEngine:
                         f"balance-billing attempt."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=negotiated_rate,
+                    benchmark_rate=negotiated_rate,
+                    benchmark_source="negotiated_rate",
                 ))
 
         return errors
@@ -1124,7 +1141,8 @@ class RulesEngine:
                         f"an itemized review of this charge."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=ceiling_rate,
+                    benchmark_rate=ceiling_rate,
+                    benchmark_source="negotiated_ceiling",
                 ))
 
         return errors
@@ -1165,7 +1183,8 @@ class RulesEngine:
                         f"an itemised bill and asking the facility to review the charge."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=opps_cap,
+                    benchmark_rate=opps_cap,
+                    benchmark_source="opps_cap",
                 ))
 
         return errors
@@ -1219,7 +1238,7 @@ class RulesEngine:
                         f"Billing this code is considered improper."
                     ),
                     estimated_overcharge=Decimal(str(item.total_charge)),
-                    medicare_benchmark_rate=None,
+                    benchmark_rate=None,
                 ))
                 continue
 
@@ -1251,7 +1270,7 @@ class RulesEngine:
                         f"to be reimbursed. Potential overcharge: ${float(overcharge):.2f}."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=None,
+                    benchmark_rate=None,
                 ))
             else:
                 # Indicators 0, 2, 3: check each line individually
@@ -1280,7 +1299,7 @@ class RulesEngine:
                         f"Potential overcharge: ${float(overcharge):.2f}."
                     ),
                     estimated_overcharge=overcharge,
-                    medicare_benchmark_rate=None,
+                    benchmark_rate=None,
                 ))
 
         return errors

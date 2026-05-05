@@ -1595,7 +1595,8 @@ def _map_errors_to_line_items(
             affected_line_item_ids=affected_ids,
             description=error.description,
             estimated_overcharge=error.estimated_overcharge,
-            medicare_benchmark_rate=error.medicare_benchmark_rate,
+            benchmark_rate=error.benchmark_rate,
+            benchmark_source=error.benchmark_source,  # type: ignore[arg-type]
         ))
     return result
 

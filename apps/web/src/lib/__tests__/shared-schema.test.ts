@@ -13,7 +13,8 @@ describe('BillingErrorSchema', () => {
     affectedLineItemIds: ['li-1', 'li-2'],
     description: 'CPT 99214 billed at 3x Medicare rate',
     estimatedOvercharge: 250.5,
-    medicareBenchmarkRate: 50.25,
+    benchmarkRate: 50.25,
+    benchmarkSource: 'medicare',
   };
 
   it('parses canonical camelCase input unchanged', () => {
@@ -27,7 +28,8 @@ describe('BillingErrorSchema', () => {
       affected_line_item_ids: ['li-1', 'li-2'],
       description: 'CPT 99214 billed at 3x Medicare rate',
       estimated_overcharge: 250.5,
-      medicare_benchmark_rate: 50.25,
+      benchmark_rate: 50.25,
+      benchmark_source: 'medicare',
     };
     expect(BillingErrorSchema.parse(snake)).toEqual(validCamel);
   });
@@ -40,7 +42,7 @@ describe('BillingErrorSchema', () => {
       affected_line_item_ids: ['snake'],
       description: 'd',
       estimatedOvercharge: 1,
-      medicareBenchmarkRate: null,
+      benchmarkRate: null,
     };
     expect(BillingErrorSchema.parse(mixed).affectedLineItemIds).toEqual(['camel']);
   });
@@ -57,9 +59,9 @@ describe('BillingErrorSchema', () => {
     expect(() => BillingErrorSchema.parse({ ...validCamel, estimatedOvercharge: -1 })).toThrow();
   });
 
-  it('accepts null medicareBenchmarkRate', () => {
-    const out = BillingErrorSchema.parse({ ...validCamel, medicareBenchmarkRate: null });
-    expect(out.medicareBenchmarkRate).toBeNull();
+  it('accepts null benchmarkRate', () => {
+    const out = BillingErrorSchema.parse({ ...validCamel, benchmarkRate: null });
+    expect(out.benchmarkRate).toBeNull();
   });
 });
 
@@ -147,7 +149,7 @@ describe('AnalysisResultSchema', () => {
           affected_line_item_ids: ['li-1'],
           description: 'd',
           estimated_overcharge: 100,
-          medicare_benchmark_rate: null,
+          benchmark_rate: null,
         },
       ],
       total_charges: 1000,

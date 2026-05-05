@@ -22,7 +22,7 @@ describe('parseBillingErrors', () => {
         affectedLineItemIds: ['li-1'],
         description: 'd',
         estimatedOvercharge: 100,
-        medicareBenchmarkRate: null,
+        benchmarkRate: null,
       },
     ]);
     expect(errors).toHaveLength(1);
@@ -37,7 +37,7 @@ describe('parseBillingErrors', () => {
         affected_line_item_ids: ['li-1'],
         description: 'd',
         estimated_overcharge: 100,
-        medicare_benchmark_rate: null,
+        benchmark_rate: null,
       },
     ]);
     expect(errors[0]?.affectedLineItemIds).toEqual(['li-1']);

@@ -46,7 +46,7 @@ def _make_detected_error(
         affected_indices=affected,
         description="Test error",
         estimated_overcharge=Decimal(str(overcharge)),
-        medicare_benchmark_rate=None,
+        benchmark_rate=None,
     )
 
 
@@ -228,13 +228,13 @@ class TestMapErrorsToLineItems:
             affected_indices=(0,),
             description="Code X bundles code Y",
             estimated_overcharge=Decimal("500.00"),
-            medicare_benchmark_rate=Decimal("150.00"),
+            benchmark_rate=Decimal("150.00"),
         )
         result = _map_errors_to_line_items([error], self._LINE_IDS)
         assert result[0].code == BillingErrorCode.NCCI_UNBUNDLING
         assert result[0].severity == ErrorSeverity.CRITICAL
         assert result[0].estimated_overcharge == Decimal("500.00")
-        assert result[0].medicare_benchmark_rate == Decimal("150.00")
+        assert result[0].benchmark_rate == Decimal("150.00")
 
     def test_description_preserved_in_billing_error(self) -> None:
         error = _make_detected_error("PRICE_OUTLIER", (0,), 100.0)
@@ -244,7 +244,7 @@ class TestMapErrorsToLineItems:
             affected_indices=error.affected_indices,
             description="Charge $450 is 5.3× the Medicare rate of $85",
             estimated_overcharge=error.estimated_overcharge,
-            medicare_benchmark_rate=error.medicare_benchmark_rate,
+            benchmark_rate=error.benchmark_rate,
         )
         result = _map_errors_to_line_items([error_with_desc], self._LINE_IDS)
         assert result[0].description == "Charge $450 is 5.3× the Medicare rate of $85"

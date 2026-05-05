@@ -53,7 +53,7 @@ def make_error(code: str, overcharge: float) -> BillingError:
         affected_line_item_ids=["abc"],
         description=f"Test description for {code}",
         estimated_overcharge=Decimal(str(overcharge)),
-        medicare_benchmark_rate=Decimal("100.00"),
+        benchmark_rate=Decimal("100.00"),
     )
 
 

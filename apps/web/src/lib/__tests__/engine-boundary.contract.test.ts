@@ -34,10 +34,10 @@ describe('engine→web BillingError boundary contract', () => {
     for (const error of parsed) {
       expect(error).toHaveProperty('affectedLineItemIds');
       expect(error).toHaveProperty('estimatedOvercharge');
-      expect(error).toHaveProperty('medicareBenchmarkRate');
+      expect(error).toHaveProperty('benchmarkRate');
       expect(error).not.toHaveProperty('affected_line_item_ids');
       expect(error).not.toHaveProperty('estimated_overcharge');
-      expect(error).not.toHaveProperty('medicare_benchmark_rate');
+      expect(error).not.toHaveProperty('benchmark_rate');
     }
   });
 });

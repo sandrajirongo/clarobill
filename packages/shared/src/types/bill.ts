@@ -101,14 +101,25 @@ export type BillingErrorCode =
   | 'MUE_EXCEEDED'
   | 'REDUNDANT_CLINICAL_PAIR';
 
+export type BenchmarkSource =
+  | 'medicare'              // CMS PFS rate (PRICE_OUTLIER, INVALID_CPT_CODE)
+  | 'hospital_gross'        // Hospital's own gross charge (HOSPITAL_CHARGE_OUTLIER)
+  | 'negotiated_rate'       // Insurer-specific contracted rate (NEGOTIATED_RATE_EXCEEDED)
+  | 'negotiated_ceiling'    // Hospital-wide max negotiated (NEGOTIATED_CEILING_EXCEEDED)
+  | 'opps_cap'              // OPPS payment cap (FACILITY_CHARGE_OUTLIER)
+  | 'ambulance_fee_schedule'// CMS ambulance schedule (AMBULANCE_CHARGE_OUTLIER)
+  | 'anesthesia';           // CMS base units × locality CF (ANESTHESIA_OUTLIER)
+
 export interface BillingError {
   code: BillingErrorCode;
   severity: ErrorSeverity;
   affectedLineItemIds: string[];
   description: string;
   estimatedOvercharge: number;
-  // Medicare benchmark for comparison (if applicable)
-  medicareBenchmarkRate: number | null;
+  // T10 (Phase 8.1): renamed from medicareBenchmarkRate. Use
+  // benchmarkSource to know what kind of benchmark this number represents.
+  benchmarkRate: number | null;
+  benchmarkSource: BenchmarkSource | null;
 }
 
 export interface AnalysisResult {

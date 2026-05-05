@@ -81,7 +81,8 @@ function makeError(overrides: Partial<BillingError> = {}): BillingError {
     affectedLineItemIds: ['li-1'],
     description: 'CPT 27447 and 27486 are an NCCI bundled pair. Billing both is unbundling.',
     estimatedOvercharge: 500.0,
-    medicareBenchmarkRate: 350.0,
+    benchmarkRate: 350.0,
+    benchmarkSource: 'medicare',
     ...overrides,
   };
 }

@@ -78,13 +78,32 @@ function coalesce<T extends Record<string, unknown>>(
 
 // ─── BillingError ─────────────────────────────────────────────────────────────
 
+// T10 (Phase 8.1): benchmarkSource names what benchmarkRate actually is.
+// Pre-T10 the field was called `medicareBenchmarkRate` and was set to
+// hospital_gross / negotiated_rate / opps_cap / etc. for non-Medicare
+// rules — the field name lied. The dispute letter copy now renders the
+// right label per source.
+const BenchmarkSourceSchema = z.enum([
+  'medicare',
+  'hospital_gross',
+  'negotiated_rate',
+  'negotiated_ceiling',
+  'opps_cap',
+  'ambulance_fee_schedule',
+  'anesthesia',
+]);
+
 const BillingErrorBase = z.object({
   code: BillingErrorCodeSchema,
   severity: ErrorSeveritySchema,
   affectedLineItemIds: z.array(z.string()),
   description: z.string(),
   estimatedOvercharge: z.number().nonnegative(),
-  medicareBenchmarkRate: z.number().nonnegative().nullable(),
+  benchmarkRate: z.number().nonnegative().nullable(),
+  // Optional + nullable so legacy rows that lack the field parse cleanly.
+  // The transform below fills in 'medicare' default for non-null rates
+  // (preserving the pre-T10 implicit contract).
+  benchmarkSource: BenchmarkSourceSchema.nullable().optional(),
 });
 
 export const BillingErrorSchema = z.preprocess(
@@ -92,9 +111,25 @@ export const BillingErrorSchema = z.preprocess(
     coalesce(raw, [
       ['affectedLineItemIds', 'affected_line_item_ids'],
       ['estimatedOvercharge', 'estimated_overcharge'],
-      ['medicareBenchmarkRate', 'medicare_benchmark_rate'],
+      ['benchmarkRate', 'benchmark_rate'],
+      ['benchmarkSource', 'benchmark_source'],
+      // T10 back-compat: legacy JSONB rows used `medicareBenchmarkRate`
+      // (always implicitly source='medicare' but never stored). Map both
+      // shapes to benchmarkRate so the migration backfill can run after
+      // deploy without breaking the read path.
+      ['benchmarkRate', 'medicareBenchmarkRate'],
+      ['benchmarkRate', 'medicare_benchmark_rate'],
     ]),
-  BillingErrorBase,
+  BillingErrorBase.transform((parsed) => ({
+    ...parsed,
+    // Legacy rows where benchmarkRate came from the medicareBenchmarkRate
+    // alias have no benchmarkSource — default to 'medicare' since that
+    // was the implicit pre-T10 contract. Always normalize to non-undefined.
+    benchmarkSource: (parsed.benchmarkSource
+      ?? (parsed.benchmarkRate !== null ? 'medicare' : null)) as
+      | z.infer<typeof BenchmarkSourceSchema>
+      | null,
+  })),
 );
 
 // Type alias intentionally NOT exported here — `BillingError` is still exported

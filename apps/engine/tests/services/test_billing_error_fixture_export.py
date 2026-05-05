@@ -51,7 +51,7 @@ def _representative_error(code: BillingErrorCode) -> BillingError:
         affected_line_item_ids=[f"li-{code.value.lower()}-1", f"li-{code.value.lower()}-2"],
         description=f"Synthetic {code.value} finding for boundary contract test",
         estimated_overcharge=Decimal("123.45"),
-        medicare_benchmark_rate=Decimal("78.90"),
+        benchmark_rate=Decimal("78.90"),
     )
 
 
@@ -104,7 +104,7 @@ def test_fixture_covers_every_billing_error_code() -> None:
 def test_fixture_keys_are_camel_case() -> None:
     """The whole point of the boundary fixture: every key must be camelCase."""
     expected = _generate_fixture()
-    snake_markers = {"affected_line_item_ids", "estimated_overcharge", "medicare_benchmark_rate"}
+    snake_markers = {"affected_line_item_ids", "estimated_overcharge", "benchmark_rate"}
     for item in expected:
         for key in item:
             assert key not in snake_markers, (

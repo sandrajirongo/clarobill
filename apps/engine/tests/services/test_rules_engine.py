@@ -109,7 +109,7 @@ class TestPriceOutlierDetection:
         errors = engine_with_data.run(items)
         outlier_errors = [e for e in errors if e.code == "PRICE_OUTLIER"]
         assert len(outlier_errors) == 1
-        assert outlier_errors[0].medicare_benchmark_rate == Decimal("100.00")
+        assert outlier_errors[0].benchmark_rate == Decimal("100.00")
 
     def test_does_not_flag_charge_below_threshold(self, engine_with_data: RulesEngine) -> None:
         # $105 is below the 1.8x default threshold of $180
@@ -172,11 +172,11 @@ class TestPriceOutlierCommercial:
         assert len(errors) == 1
         assert "outpatient" in errors[0].description.lower()
 
-    def test_medicare_benchmark_rate_field_still_stores_raw_medicare_rate(self) -> None:
+    def test_benchmark_rate_field_still_stores_raw_medicare_rate(self) -> None:
         # The field is used internally — should always store the raw Medicare rate.
         engine = self._engine("practitioner")
         errors = [e for e in engine.run([make_line_item("99214", 200.00)]) if e.code == "PRICE_OUTLIER"]
-        assert errors[0].medicare_benchmark_rate == Decimal("100.00")
+        assert errors[0].benchmark_rate == Decimal("100.00")
 
 
 class TestNcciUnbundling:
@@ -541,7 +541,7 @@ class TestFacilityChargeOutlier:
         errors = opps_engine.run(items)
         facility_errors = [e for e in errors if e.code == "FACILITY_CHARGE_OUTLIER"]
         assert len(facility_errors) == 1
-        assert facility_errors[0].medicare_benchmark_rate == Decimal("900.00")
+        assert facility_errors[0].benchmark_rate == Decimal("900.00")
         assert facility_errors[0].estimated_overcharge == Decimal("1600.00")
 
     def test_does_not_flag_charge_below_threshold(self, opps_engine: RulesEngine) -> None:
@@ -598,7 +598,7 @@ class TestAmbulanceChargeOutlier:
         amb_errors = [e for e in errors if e.code == "AMBULANCE_CHARGE_OUTLIER"]
         assert len(amb_errors) == 1
         assert amb_errors[0].severity == "warning"
-        assert amb_errors[0].medicare_benchmark_rate == Decimal("710.00")
+        assert amb_errors[0].benchmark_rate == Decimal("710.00")
 
     def test_does_not_flag_charge_below_threshold(self, amb_engine: RulesEngine) -> None:
         # $750 is 1.056x the $710 benchmark — below the 1.1x threshold
@@ -799,7 +799,7 @@ class TestHospitalChargeOutlier:
         assert len(hosp_errors) == 1
         assert hosp_errors[0].severity == "critical"
         assert hosp_errors[0].estimated_overcharge == Decimal("100.00")
-        assert hosp_errors[0].medicare_benchmark_rate == Decimal("350.00")
+        assert hosp_errors[0].benchmark_rate == Decimal("350.00")
 
     def test_does_not_flag_charge_at_published_gross(self, hosp_engine: RulesEngine) -> None:
         # Billing exactly the published gross charge is fine
@@ -879,7 +879,7 @@ class TestNegotiatedRateExceeded:
         assert len(neg_errors) == 1
         assert neg_errors[0].severity == "critical"
         assert neg_errors[0].estimated_overcharge == Decimal("708.00")
-        assert neg_errors[0].medicare_benchmark_rate == Decimal("142.00")
+        assert neg_errors[0].benchmark_rate == Decimal("142.00")
 
     def test_does_not_flag_charge_at_negotiated_rate(self, neg_engine: RulesEngine) -> None:
         items = [make_line_item("99214", 142.00)]
@@ -973,7 +973,7 @@ class TestNegotiatedCeilingExceeded:
         assert len(ceiling_errors) == 1
         assert ceiling_errors[0].severity == "warning"  # not critical — cross-payer ceiling
         assert ceiling_errors[0].estimated_overcharge == Decimal("165.00")
-        assert ceiling_errors[0].medicare_benchmark_rate == Decimal("185.00")
+        assert ceiling_errors[0].benchmark_rate == Decimal("185.00")
 
     def test_does_not_flag_charge_at_ceiling(self, ceiling_engine: RulesEngine) -> None:
         items = [make_line_item("99214", 185.00)]

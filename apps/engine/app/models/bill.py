@@ -127,6 +127,17 @@ class LineItem(BaseModel):
     diagnosis_pointers: list[str]
 
 
+BenchmarkSource = Literal[
+    "medicare",            # CMS PFS rate (PRICE_OUTLIER, INVALID_CPT_CODE)
+    "hospital_gross",      # Hospital's own gross charge (HOSPITAL_CHARGE_OUTLIER)
+    "negotiated_rate",     # Insurer-specific contracted rate (NEGOTIATED_RATE_EXCEEDED)
+    "negotiated_ceiling",  # Hospital-wide max negotiated (NEGOTIATED_CEILING_EXCEEDED)
+    "opps_cap",            # OPPS payment cap (FACILITY_CHARGE_OUTLIER)
+    "ambulance_fee_schedule",  # CMS ambulance schedule (AMBULANCE_CHARGE_OUTLIER)
+    "anesthesia",          # CMS base units × locality CF (ANESTHESIA_OUTLIER)
+]
+
+
 class BillingError(BaseModel):
     # alias_generator + populate_by_name + by_alias dump → emits camelCase
     # to match the TS BillingError contract while still letting the engine
@@ -145,14 +156,23 @@ class BillingError(BaseModel):
     affected_line_item_ids: list[str]
     description: str
     estimated_overcharge: Decimal
-    # Medicare benchmark rate for comparison; None when not applicable
-    medicare_benchmark_rate: Decimal | None
+    # T10 (Phase 8.1): renamed from benchmark_rate.
+    # Pre-T10 the field was overloaded — set to hospital_gross for
+    # HOSPITAL_CHARGE_OUTLIER, negotiated_rate for NEGOTIATED_RATE_EXCEEDED,
+    # ceiling_rate for NEGOTIATED_CEILING_EXCEEDED, etc. — but the field
+    # NAME claimed it was the Medicare rate. Dispute letter copy printed
+    # "Medicare benchmark: $X" wrongly for 5+ rule codes.
+    # Post-T10: benchmark_rate is the comparison number; benchmark_source
+    # names what the number actually is. UI / dispute letter copy can
+    # render the right label per source.
+    benchmark_rate: Decimal | None = None
+    benchmark_source: BenchmarkSource | None = None
 
     @field_serializer("estimated_overcharge")
     def _ser_overcharge(self, v: Decimal) -> float:
         return float(v)
 
-    @field_serializer("medicare_benchmark_rate")
+    @field_serializer("benchmark_rate")
     def _ser_benchmark(self, v: Decimal | None) -> float | None:
         return float(v) if v is not None else None
 
