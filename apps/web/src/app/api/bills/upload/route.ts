@@ -66,7 +66,7 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
       user_id: user.id,
       file_name: fileName,
       display_name: displayName?.trim() || null,
-      file_path: `${user.id}/placeholder`, // Updated after we know the billId
+      file_path: null, // Updated after we know the billId — null avoids unique constraint collision on retries
       file_size: fileSize,
       mime_type: mimeType,
       status: 'uploading',
