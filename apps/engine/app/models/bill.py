@@ -93,7 +93,14 @@ class BillingError(BaseModel):
 
 
 class AnalysisResult(BaseModel):
-    model_config = ConfigDict(strict=True)
+    # alias_generator + by_alias dump → camelCase wire shape, matching the
+    # BillingError contract from Phase 1. Kept consistent so any future
+    # response_model=AnalysisResult endpoint produces the right key set.
+    model_config = ConfigDict(
+        strict=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     bill_id: str
@@ -105,6 +112,22 @@ class AnalysisResult(BaseModel):
     dispute_letter_url: str | None
     report_url: str | None
     created_at: str
+
+    # Match the BillingError pattern: emit Decimal as float so JSON consumers
+    # (TS frontend, Supabase JSONB, future response_model=) see numbers, not
+    # quoted strings. Without these, model_dump_json() emits the Decimal as
+    # a string and breaks the TS `number` contract — H8 of the bug-fix campaign.
+    @field_serializer("total_charges")
+    def _ser_total_charges(self, v: Decimal) -> float:
+        return float(v)
+
+    @field_serializer("estimated_fair_value")
+    def _ser_fair_value(self, v: Decimal) -> float:
+        return float(v)
+
+    @field_serializer("total_potential_savings")
+    def _ser_savings(self, v: Decimal) -> float:
+        return float(v)
 
 
 # ─── API Request / Response ────────────────────────────────────────────────────

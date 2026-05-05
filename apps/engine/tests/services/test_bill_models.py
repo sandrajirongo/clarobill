@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.bill import (
+    AnalysisResult,
     BillingError,
     BillingErrorCode,
     ErrorSeverity,
@@ -152,3 +153,70 @@ def test_billing_error_rejects_unknown_code() -> None:
             "estimatedOvercharge": 0,
             "medicareBenchmarkRate": None,
         })
+
+
+# ─── AnalysisResult ───────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def sample_analysis() -> AnalysisResult:
+    return AnalysisResult(
+        id="a-1",
+        bill_id="b-1",
+        errors=[],
+        total_charges=Decimal("1234.56"),
+        estimated_fair_value=Decimal("789.00"),
+        total_potential_savings=Decimal("445.56"),
+        ai_summary="summary",
+        dispute_letter_url=None,
+        report_url=None,
+        created_at="2026-05-04T00:00:00Z",
+    )
+
+
+def test_analysis_result_serializes_decimals_as_floats(
+    sample_analysis: AnalysisResult,
+) -> None:
+    """H8 contract: Decimal fields dump as JSON numbers, not stringified Decimals.
+
+    Without the field_serializers added in this commit, `model_dump(mode="json")`
+    emits {"total_charges": "1234.56"} — a string — which the TS `totalCharges:
+    number` contract silently accepts but downstream Number() coercion treats
+    as NaN under any locale that disagrees on the decimal separator. Latent
+    footgun until anyone wires AnalysisResult into a response_model=.
+    """
+    # by_alias=True mirrors the production dump path (matches the camelCase
+    # contract introduced for BillingError in Phase 1.2).
+    dumped = sample_analysis.model_dump(by_alias=True, mode="json")
+    assert dumped["totalCharges"] == 1234.56
+    assert dumped["estimatedFairValue"] == 789.0
+    assert dumped["totalPotentialSavings"] == 445.56
+    # Type assertion: each must be a Python float (or int, which JSON treats
+    # as a number) — never a str.
+    assert isinstance(dumped["totalCharges"], float)
+    assert isinstance(dumped["estimatedFairValue"], float)
+    assert isinstance(dumped["totalPotentialSavings"], float)
+
+    # Also confirm via the snake-case dump that the serializer fires regardless
+    # of alias usage — guards against a future contributor reaching for the
+    # snake form and getting back a stringified Decimal.
+    snake_dumped = sample_analysis.model_dump(mode="json")
+    assert isinstance(snake_dumped["total_charges"], float)
+    assert isinstance(snake_dumped["estimated_fair_value"], float)
+    assert isinstance(snake_dumped["total_potential_savings"], float)
+
+
+def test_analysis_result_dumps_camel_case(sample_analysis: AnalysisResult) -> None:
+    """The alias_generator on AnalysisResult mirrors the one on BillingError —
+    consumers always see the same casing convention."""
+    dumped = sample_analysis.model_dump(by_alias=True, mode="json")
+    assert "billId" in dumped
+    assert "totalCharges" in dumped
+    assert "estimatedFairValue" in dumped
+    assert "totalPotentialSavings" in dumped
+    assert "aiSummary" in dumped
+    assert "disputeLetterUrl" in dumped
+    assert "reportUrl" in dumped
+    assert "createdAt" in dumped
+    assert "bill_id" not in dumped
+    assert "total_charges" not in dumped
