@@ -17,6 +17,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **3** | High-severity engine (H1, H2, H3, H8, H9, H10) | ✅ done 2026-05-04 | `be0c76a` `0010f73` `98f51c5` `d5ffd8b` `d3147ac` `45682cc` |
 | **4** | MRF pipeline (S3, S4, S5, H4, H5, H6, H7) | ✅ done 2026-05-04 | `062d8dd` `9bf138c` `073f1a1` `d7ba465` `a446c62` `5dbe5a0` `fffda05` |
 | **5** | Medium-severity (M3, M4, M5, M6) | ✅ done 2026-05-04 | `587ef04` `ac49324` `8f80207` |
+| **6** | Type-truth migration (M7-M13) | ✅ done 2026-05-04 (M10 deferred) | `107b4b4` `79211f9` `0244166` `c60ea3b` |
 | **6** | Type-truth migration (M7-M13) | pending | — |
 | **7** | Universal coverage audit (Rule 8) | pending | — |
 
@@ -65,21 +66,22 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | **M4** | Severity sort key used `.lower()` against what should be a typed enum | `587ef04` |
 | **M5** | Charge regex picked up date fragments like `03.05` | `ac49324` |
 | **M6** | Prompt injection vector via OCR'd description fields in AI dispute letter | `8f80207` |
+| **M7** | Bill mapper duplicated character-for-character across 2 files | `107b4b4` |
+| **M8** | Shape clusters duplicated across Pydantic + shared TS + inline TS | closed via Zod schemas (Phase 1) + Pydantic↔Zod parity test (`c60ea3b`) |
+| **M9** | LineItem Pydantic field names were snake_case while TS expects camelCase | `c60ea3b` (caught by parity test) |
+| **M11** | Bill/LineItem mappers extracted to single source | `107b4b4` |
+| **M12** | 11 unsafe `as` casts replaced with Zod `parseJsonResponse` | `79211f9` |
+| **M13** | BQ DML row-count verification helper + applied at 3 MERGE sites | `0244166` |
 
 ---
 
 ## Findings open
 
-### Type-truth migration (Phase 6)
+### Deferred to follow-up
 
-| Tag | Description |
-|---|---|
-| **M7** | Bill mapper duplicated character-for-character across 2 files |
-| **M8-M9** | 9 distinct shape clusters across Pydantic + shared TS + inline TS |
-| **M10** | `ProfileMember` + `InsurancePlan` redeclared in snake_case in components |
-| **M11** | 13 unsafe `as` casts in frontend bypassing Zod (which is installed and unused) |
-| **M12** | Pydantic ↔ Zod parity check missing |
-| **M13** | BQ writes lack `num_dml_affected_rows` verification |
+| Tag | Description | Why deferred |
+|---|---|---|
+| **M10** | `ProfileMember` + `InsurancePlan` redeclared in snake_case in `bill-verification.tsx` + `members-panel.tsx` | Requires aligning the API routes that produce these responses — higher blast-radius cleanup. The Zod boundary (M12) gates the unsafe-cast surface in the meantime. |
 
 ### Universal coverage (Phase 7)
 
@@ -102,6 +104,7 @@ Multi-agent audit on 2026-05-04 surfaced **29 confirmed findings**: 5 stop-the-l
 | End of CI setup (PR #8) | 502 | 24 |
 | End of Phase 4 | 510 (engine) + 94 (mrf_discovery scripts) | 24 |
 | End of Phase 5 | 529 (engine) + 94 (mrf_discovery scripts) | 24 |
+| End of Phase 6 | 538 (engine) + 100 (mrf_discovery scripts) | 41 |
 
 ---
 
