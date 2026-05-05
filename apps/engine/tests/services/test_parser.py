@@ -406,6 +406,37 @@ class TestZipCodeExclusion:
         assert "90210" not in codes
 
 
+    def test_zip_in_no_comma_address_not_treated_as_cpt(self, parser: BillParser) -> None:
+        """H1 fix (2026-05-04): pre-fix, comma-less hospital addresses
+        ('Cleveland OH 44195' as Vision OCR commonly emits them) bypassed the
+        ZIP-exclusion regex and the trailing 5-digit number was captured as a
+        CPT code, then routed to PRICE_OUTLIER / NCCI lookups against a fake
+        code with no Medicare rate."""
+        text = (
+            "CLEVELAND CLINIC\n"
+            "9500 Euclid Ave\n"
+            "Cleveland OH 44195\n"
+            "99214  Office Visit  $350.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].cpt_code == "99214"
+        # Most importantly, 44195 is NOT in the items
+        assert "44195" not in [i.cpt_code for i in items]
+
+    def test_zip_with_zip4_extension_not_treated_as_cpt(self, parser: BillParser) -> None:
+        """ZIP+4 ('44195-1234') — the address pattern accepts the optional -1234
+        suffix; the pre-CPT line should be skipped entirely."""
+        text = (
+            "CLEVELAND CLINIC\n"
+            "Cleveland, OH 44195-1234\n"
+            "99214  Office Visit  $350.00\n"
+        )
+        items = parser.parse(text)
+        assert len(items) == 1
+        assert items[0].cpt_code == "99214"
+
+
 class TestFooterAmountExclusion:
     def test_total_charges_footer_not_assigned_as_code_charge(self, parser: BillParser) -> None:
         # "TOTAL CHARGES\n$9,579.00" — the $9,579 is on its own line with no keyword,

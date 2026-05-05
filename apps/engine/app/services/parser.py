@@ -274,15 +274,26 @@ class BillParser:
             if i in processed_line_indices:
                 continue
 
+            # Skip whole-line hospital address blocks before any CPT regex runs.
+            # `_HOSPITAL_ADDRESS_PATTERN` covers both "City, ST 12345" and
+            # "City ST 12345" (no comma) per its `,?` group. Pre-fix (H1), the
+            # exclusion below required a comma — a no-comma address line slipped
+            # through and the trailing ZIP was captured as a fake CPT code, which
+            # then polluted line-item lists, broke duplicate detection, and
+            # misattributed charges in column-interleaved sequence matching.
+            if _HOSPITAL_ADDRESS_PATTERN.match(line):
+                continue
+
             code_match = _PROCEDURE_CODE_PATTERN.search(line)
             if not code_match:
                 continue
 
             cpt_code = code_match.group(1)
 
-            # Exclude ZIP codes: "San Francisco, CA 94143" — the state abbreviation
-            # immediately before a 5-digit number identifies it as a ZIP, not a CPT code.
-            if re.search(r",\s*[A-Z]{2}\s+$", line[: code_match.start()]):
+            # Belt-and-braces: still exclude trailing ZIPs even when the rest of
+            # the line doesn't match the strict address pattern (e.g. an address
+            # block split across two lines).
+            if re.search(r"(?:,\s*|\s)[A-Z]{2}\s+$", line[: code_match.start()]):
                 continue
 
             # Extract optional modifier from the procedure code line.
