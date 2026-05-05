@@ -51,6 +51,82 @@ def test_keyword_regex(text: str, expected: bool) -> None:
     assert bool(s4._KEYWORD_RE.search(text)) is expected
 
 
+# --- S5 fix: response body cap ------------------------------------------------
+
+
+class _FakeResponse:
+    """Minimal stand-in for requests.Response covering the iter_content path."""
+
+    def __init__(
+        self,
+        body: bytes,
+        content_length: str | None = None,
+        encoding: str = "utf-8",
+        chunk_size: int | None = None,
+    ) -> None:
+        self.headers = {"Content-Length": content_length} if content_length else {}
+        self.encoding = encoding
+        self.apparent_encoding = encoding
+        self._body = body
+        # If chunk_size is set, fragment the body into multiple chunks so the
+        # iter_content path is exercised end-to-end (not all at once).
+        self._chunk_size = chunk_size or len(body) or 1
+
+    def iter_content(self, chunk_size: int = 65536) -> object:  # noqa: ARG002 - parity with requests
+        size = self._chunk_size
+        for i in range(0, len(self._body), size):
+            yield self._body[i : i + size]
+
+
+class TestReadCapped:
+    """S5 fix: _read_capped enforces MAX_BODY_BYTES even when the server
+    omits Content-Length, preventing OOM from a single oversize response."""
+
+    def test_returns_text_when_within_cap(self) -> None:
+        body = b"<html>tiny page</html>"
+        resp = _FakeResponse(body)
+        assert s4._read_capped(resp, max_bytes=1024) == "<html>tiny page</html>"
+
+    def test_rejects_oversize_via_content_length_header(self) -> None:
+        # Content-Length declares a body larger than the cap — refuse without
+        # downloading anything. Real-world: server lies about size, but if we
+        # trust the header on rejection we save bandwidth.
+        resp = _FakeResponse(b"unused", content_length=str(10 * 1024 * 1024))
+        assert s4._read_capped(resp, max_bytes=1024) is None
+
+    def test_rejects_oversize_when_content_length_absent(self) -> None:
+        # Server omits Content-Length AND streams more than the cap — chunked
+        # iter_content must abort. Pre-fix, requests.get() loaded the whole
+        # body before any size check could fire.
+        body = b"x" * (2048)
+        resp = _FakeResponse(body, chunk_size=256)
+        assert s4._read_capped(resp, max_bytes=1024) is None
+
+    def test_accepts_exact_cap_size(self) -> None:
+        body = b"y" * 1024
+        resp = _FakeResponse(body, chunk_size=128)
+        result = s4._read_capped(resp, max_bytes=1024)
+        assert result == "y" * 1024
+
+    def test_handles_chunked_body_within_cap(self) -> None:
+        body = b"abc" * 100  # 300 bytes split into 25 chunks of 12 bytes
+        resp = _FakeResponse(body, chunk_size=12)
+        assert s4._read_capped(resp, max_bytes=1024) == "abc" * 100
+
+    def test_decodes_with_response_encoding(self) -> None:
+        body = "café résumé".encode("latin-1")
+        resp = _FakeResponse(body, encoding="latin-1")
+        assert s4._read_capped(resp, max_bytes=1024) == "café résumé"
+
+    def test_replaces_invalid_bytes_rather_than_raising(self) -> None:
+        body = b"\xff\xfe\x00invalid utf-8"
+        resp = _FakeResponse(body, encoding="utf-8")
+        # Should not raise — replace strategy returns a string with U+FFFD substitutions.
+        result = s4._read_capped(resp, max_bytes=1024)
+        assert result is not None
+        assert "invalid utf-8" in result
+
+
 def test_toc_filename_regex() -> None:
     assert s4._TOC_FILENAME_RE.search("standard-charges-toc.json")
     assert s4._TOC_FILENAME_RE.search("toc-standard-charges.json")

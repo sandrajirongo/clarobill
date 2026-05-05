@@ -86,6 +86,15 @@ HEAD_TIMEOUT = 10
 GET_TIMEOUT = 20
 MAX_REDIRECTS = 3
 MAX_WORKERS = 60
+# S5 fix (2026-05-04): a single 500MB hospital response — binary file
+# misadvertised as HTML, infinite-redirect loop, misconfigured streaming
+# server — would OOM the worker because requests.get() without stream=True
+# loads the entire body into memory before any size check can fire. The cap
+# below is applied via stream=True + iter_content; anything beyond MAX_BODY_BYTES
+# is silently truncated and treated as if the page wasn't useful. 5 MiB
+# comfortably accommodates the largest hospital homepages (~2 MB peak observed)
+# and the largest legitimate price-transparency JSON TOCs (HCA/Sutter ~3 MB).
+MAX_BODY_BYTES = 5 * 1024 * 1024
 
 # Depth-2 generic follow: from any fetched HTML page we follow up to N
 # anchor links whose text/href matches `_KEYWORD_RE`. Bounds:
@@ -317,28 +326,73 @@ def _host_of(url: str) -> str:
         return ""
 
 
+def _read_capped(resp: requests.Response, max_bytes: int = MAX_BODY_BYTES) -> str | None:
+    """Read the body up to max_bytes, decoded as text. Returns None when capped.
+
+    Used by `_get_with_ua_fallback` so callers never see a payload larger than
+    the cap. Refuses up-front if Content-Length declares an oversize response;
+    falls back to chunked iter_content otherwise (some servers omit the header
+    or stream-truncate at unbounded length).
+    """
+    cl = resp.headers.get("Content-Length")
+    if cl and cl.isdigit() and int(cl) > max_bytes:
+        return None
+    encoding = resp.encoding or resp.apparent_encoding or "utf-8"
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        for chunk in resp.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                return None
+            chunks.append(chunk)
+    except requests.RequestException:
+        return None
+    try:
+        return b"".join(chunks).decode(encoding, errors="replace")
+    except (UnicodeDecodeError, LookupError):
+        return b"".join(chunks).decode("utf-8", errors="replace")
+
+
 def _get_with_ua_fallback(
     session: requests.Session, url: str, timeout: int
-) -> requests.Response | None:
+) -> tuple[requests.Response | None, str | None]:
     """GET with descriptive UA; on 403/406/429 retry with a browser UA.
 
     Wraps every network call in a per-host semaphore (PER_HOST_MAX_CONCURRENT)
     so that hospital-system fan-outs (Sutter, HCA, Providence) don't stampede
-    a single origin. Returns None on persistent failure.
+    a single origin.
+
+    S5 fix (2026-05-04): the response body is read via stream=True + chunked
+    iter_content, capped at MAX_BODY_BYTES. Pre-fix, the bare `session.get()`
+    loaded the entire body into memory before any size check could fire — a
+    single 500MB response (binary misadvertised as HTML, redirect loop,
+    misconfigured streaming server) would OOM the worker. With 60 workers,
+    three pathological responses ate the Cloud Run container.
+
+    Returns (response, body_text_or_none). body is None when the response
+    was oversize, the network errored mid-stream, or the request itself
+    failed. Caller checks resp.status_code and decides what to do with body.
     """
     sem = _per_host_semaphore(_host_of(url))
     with sem:
         try:
-            resp = session.get(url, timeout=timeout, allow_redirects=True)
+            resp = session.get(
+                url, timeout=timeout, allow_redirects=True, stream=True,
+            )
             if resp.status_code in (403, 406, 429):
                 resp.close()
                 resp = session.get(
-                    url, timeout=timeout, allow_redirects=True,
+                    url, timeout=timeout, allow_redirects=True, stream=True,
                     headers={"User-Agent": BROWSER_UA},
                 )
-            return resp
+            body = _read_capped(resp)
+            resp.close()
+            return resp, body
         except requests.RequestException:
-            return None
+            return None, None
 
 
 def _head_with_ua_fallback(
@@ -479,11 +533,11 @@ def _expand_toc(session: requests.Session, toc_url: str) -> list[str]:
     We accept any of these by walking the JSON tree and collecting any
     string value under a key named url/location/href/file_url.
     """
-    resp = _get_with_ua_fallback(session, toc_url, GET_TIMEOUT)
-    if resp is None or resp.status_code != 200:
+    resp, body = _get_with_ua_fallback(session, toc_url, GET_TIMEOUT)
+    if resp is None or resp.status_code != 200 or body is None:
         return []
     try:
-        data = resp.json()
+        data = json.loads(body)
     except (ValueError, json.JSONDecodeError):
         return []
 
@@ -707,13 +761,10 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
             # what we don't want is to crawl off-host LANDING pages.
             return
         visited_pages.add(probe_url)
-        resp = _get_with_ua_fallback(session, probe_url, GET_TIMEOUT)
-        if resp is None or resp.status_code != 200:
-            if resp is not None:
-                resp.close()
+        resp, body = _get_with_ua_fallback(session, probe_url, GET_TIMEOUT)
+        if resp is None or resp.status_code != 200 or body is None:
             return
-        html = resp.text or ""
-        resp.close()
+        html = body
         _scan_page_for_urls(session, probe_url, html, found_urls, toc_seen, method)
 
         if depth < MAX_FOLLOW_DEPTH:
