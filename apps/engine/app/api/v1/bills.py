@@ -333,7 +333,9 @@ async def _run_analysis_pipeline(
         supabase.table("analysis_results").insert({
             "id": str(uuid.uuid4()),
             "bill_id": bill_id,
-            "errors": [e.model_dump() for e in billing_errors],
+            # by_alias=True emits camelCase keys to match the TS BillingError
+            # contract; mode="json" applies the field_serializer for Decimal→float.
+            "errors": [e.model_dump(by_alias=True, mode="json") for e in billing_errors],
             "total_charges": float(total_charges),
             "estimated_fair_value": float(estimated_fair),
             "total_potential_savings": float(total_savings),
@@ -1759,19 +1761,15 @@ async def _do_generate_report(
             for r in as_rows(items_row.data)
         ]
 
+        # `model_validate` honours both snake_case (legacy rows) and
+        # camelCase (current contract via alias_generator + populate_by_name).
+        # This is what makes the JSONB backfill rewrite a forward-only operation
+        # — the read path tolerates either shape during migration.
+        # strict=False allows JSONB primitives to coerce: str→StrEnum, float→Decimal.
+        # The model is normally strict (no silent coercion at construction time);
+        # for self-emitted JSONB round-trip this is the correct relaxation.
         billing_errors = [
-            BillingError(
-                code=BillingErrorCode(e["code"]),
-                severity=ErrorSeverity(e["severity"]),
-                affected_line_item_ids=list(e["affected_line_item_ids"]),
-                description=str(e["description"]),
-                estimated_overcharge=Decimal(str(e["estimated_overcharge"])),
-                medicare_benchmark_rate=(
-                    Decimal(str(e["medicare_benchmark_rate"]))
-                    if e.get("medicare_benchmark_rate") else None
-                ),
-            )
-            for e in analysis_data["errors"]
+            BillingError.model_validate(e, strict=False) for e in analysis_data["errors"]
         ]
 
         generator = ReportGenerator()

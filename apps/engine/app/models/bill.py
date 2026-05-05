@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic.alias_generators import to_camel
 
 
 class BillStatus(StrEnum):
@@ -62,7 +63,17 @@ class LineItem(BaseModel):
 
 
 class BillingError(BaseModel):
-    model_config = ConfigDict(strict=True)
+    # alias_generator + populate_by_name + by_alias dump → emits camelCase
+    # to match the TS BillingError contract while still letting the engine
+    # construct instances with the snake_case Python field names. The
+    # frontend's Zod schema accepts both shapes during the migration window
+    # (Phase 1 of the 2026-05-04 bug-fix campaign); once the SQL backfill
+    # rewrites legacy rows, the snake fallback in Zod becomes dead code.
+    model_config = ConfigDict(
+        strict=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     code: BillingErrorCode
     severity: ErrorSeverity
