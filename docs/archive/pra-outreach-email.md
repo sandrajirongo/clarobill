@@ -1,5 +1,7 @@
 # Outreach Email — Patient Rights Advocate
 
+**Status:** ARCHIVED 2026-05-05 — outreach was sent on 2026-04-28; team pivoted to CMS-direct discovery the same day. PRA partnership not pursued. Kept as a record of the original Plan B sourcing strategy.
+
 **Send to:** https://www.patientrightsadvocate.org/contact (web form)
 **Alternate:** Reply-to email from any subscribed PRA newsletter, or LinkedIn DM to Cynthia Fisher (founder)
 **From:** jirongo.sandie@gmail.com (or a ClaroBill-branded address if available)

@@ -1,5 +1,7 @@
 # MRF Discovery Pipeline — Build Log
 
+**Status:** ARCHIVED 2026-05-05 — pipeline build complete; current operating contract lives in [operations/pipeline-runbook.md](../operations/pipeline-runbook.md). Kept as a chronological record of the build phases.
+
 > **Note:** This file was originally named for the PRA-sourced plan. As of
 > 2026-04-28 we have pivoted to CMS-direct discovery (`docs/decisions/2026-04-28-cms-direct-mrf-discovery.md`).
 > The schema and infrastructure work in Phases 1-2 is unchanged; only the

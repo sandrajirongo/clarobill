@@ -1,5 +1,7 @@
 # Engine & Parser Bug Tracker
 
+**Status:** ARCHIVED 2026-05-05 — superseded by the unified [bug-fix campaign tracker](../playbooks/bug-fix-campaign.md). The findings here were folded into the campaign's S/H/M scheme during the 2026-05-04 audit.
+
 Bugs identified during thorough review of `apps/engine/app/services/rules_engine.py`,
 `apps/engine/app/api/v1/bills.py`, and `apps/engine/app/services/parser.py`.
 

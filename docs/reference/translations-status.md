@@ -1,5 +1,7 @@
 # ClaroBill — Translations Review
 
+**Status:** COMPLETED 2026-05-04 — review pass closed. Kept as historical record of the strings that shipped with i18n launch.
+
 This file is for native-speaker review of the machine-translated onboarding strings.
 
 **How to review:**

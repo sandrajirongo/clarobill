@@ -1,7 +1,7 @@
 # Engine Bug Fix Reference — April 2026
 
 **Date:** 2026-04-22
-**Status:** In progress — fixes applied one at a time, tested after each push
+**Status:** ARCHIVED 2026-05-05 — superseded by the unified [bug-fix campaign tracker](../playbooks/bug-fix-campaign.md). The 8 bugs catalogued here were reclassified into the campaign's S/H/M tagging during the 2026-05-04 audit.
 **Context:** Full diagnostic performed April 22 2026 after all 3 sample test bills
 returned zero errors. Root cause analysis traced 8 distinct bugs across the parser,
 rules engine, and data loading pipeline.

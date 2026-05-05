@@ -1,7 +1,7 @@
 # Separate the PRA DOM Extractor from the Playwright Renderer
 
 **Date:** 2026-04-27
-**Status:** Decided (implementation in Phase 3)
+**Status:** SUPERSEDED-BY [2026-04-28-cms-direct-mrf-discovery.md](2026-04-28-cms-direct-mrf-discovery.md). PRA-based discovery was abandoned the next day; the separation rationale is moot.
 
 ---
 

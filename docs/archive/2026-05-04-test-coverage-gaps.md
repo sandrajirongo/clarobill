@@ -1,6 +1,8 @@
 # Test coverage gap inventory — 2026-05-04
 
-Snapshot taken at end of Phase 6 (commit `d91ac0f`). This is the starting point for Phase 7 of the bug-fix campaign — universal coverage per CLAUDE.md Rule 8.
+**Status:** ARCHIVED 2026-05-05 — Phase 7 (universal coverage) closed in commit `9c611c7`. Engine 86%, web 115 tests. See [docs/playbooks/bug-fix-campaign.md](../playbooks/bug-fix-campaign.md) for the campaign tracker.
+
+Snapshot taken at end of Phase 6 (commit `d91ac0f`). This was the starting point for Phase 7 of the bug-fix campaign — universal coverage per CLAUDE.md Rule 8.
 
 ## Baseline measurement
 

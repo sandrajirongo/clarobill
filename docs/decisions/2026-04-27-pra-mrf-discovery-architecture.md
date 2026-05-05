@@ -1,7 +1,7 @@
 # PRA-Sourced MRF Discovery Architecture
 
 **Date:** 2026-04-27
-**Status:** In progress (Phases 1-2 implemented, Phases 3-6 in build)
+**Status:** SUPERSEDED-BY [2026-04-28-cms-direct-mrf-discovery.md](2026-04-28-cms-direct-mrf-discovery.md). Plan B's Cloudflare CDN block defeated the scrape; the team pivoted to CMS-direct discovery the next day.
 
 ---
 

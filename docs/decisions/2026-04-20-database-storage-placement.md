@@ -1,7 +1,7 @@
 # Database and Storage Placement
 
 **Date:** 2026-04-20
-**Status:** Active
+**Status:** SUPERSEDED — current canonical answer lives in [README.md → Database Architecture](../../README.md#database-architecture). This ADR preserves the original rationale.
 
 ---
 

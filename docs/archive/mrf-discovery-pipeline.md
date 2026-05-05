@@ -1,6 +1,8 @@
 # Hospital MRF Discovery Pipeline
 ## First-Party Price Transparency Data at Scale
 
+**Status:** ARCHIVED 2026-05-05 — original design proposal. Implementation shipped per [decisions/2026-04-28-cms-direct-mrf-discovery.md](../decisions/2026-04-28-cms-direct-mrf-discovery.md) and now operates per [operations/pipeline-runbook.md](../operations/pipeline-runbook.md).
+
 **Status:** Planned — build after Phase 4 product launch  
 **Run cadence:** Once per year (January 15)  
 **Target coverage:** 98%+ of ~7,000 CMS-registered hospitals  
