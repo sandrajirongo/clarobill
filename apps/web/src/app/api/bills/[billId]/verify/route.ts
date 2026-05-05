@@ -107,7 +107,15 @@ export async function POST(
 
   // Forward to engine with all confirmed context
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
-  const idToken = await getCloudRunIdToken(engineUrl);
+
+  let idToken: string | null = null;
+  try {
+    idToken = await getCloudRunIdToken(engineUrl);
+    console.info('[verify] WIF token obtained', { billId, hasToken: !!idToken });
+  } catch (authErr) {
+    console.error('[verify] WIF auth failed — falling back to no token', { billId, error: String(authErr) });
+    // Don't abort — let the engine reject with 401/403 so we get a clear status
+  }
 
   const engineResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/analyze`, {
     method: 'POST',
@@ -120,9 +128,12 @@ export async function POST(
       bill_id: billId,
       file_path: bill.file_path,
       user_id: user.id,
-      state: member.state ?? null,
-      county: member.county ?? null,
-      zip_code: member.zip_code ?? null,
+      // Engine validates state against CMS uppercase pattern (^[A-Z][A-Z\s]{1,49}$)
+      // and zip_code against ^\d{5}$. Normalize at the boundary so user-entered
+      // mixed-case values (e.g. "California") don't produce 422s.
+      state: member.state?.trim().toUpperCase() ?? null,
+      county: member.county?.trim() || null,
+      zip_code: /^\d{5}/.test(member.zip_code ?? '') ? (member.zip_code as string).slice(0, 5) : null,
       payer_name: body.payerName.trim(),
       plan_name: body.planName.trim(),
       plan_type: insurancePlan?.plan_type ?? null,
@@ -130,7 +141,15 @@ export async function POST(
   });
 
   if (!engineResponse.ok) {
-    console.error('[verify] Engine rejected analysis request', { billId, status: engineResponse.status });
+    const engineBody = await engineResponse.text().catch(() => '<unreadable>');
+    console.error('[verify] Engine rejected analysis request', {
+      billId,
+      status: engineResponse.status,
+      body: engineBody.slice(0, 500),
+      hasIdToken: !!idToken,
+      hasApiKey: !!process.env.ENGINE_API_KEY,
+      engineUrl,
+    });
     return NextResponse.json(
       { error: { code: 'ANALYSIS_FAILED', detail: 'Analysis service unavailable. Please try again.', step: 'verify_engine' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 502 }

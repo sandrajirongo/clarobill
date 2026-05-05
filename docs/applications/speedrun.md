@@ -290,3 +290,7 @@ voice and sequencing differ.
       *not* the WAU dashed-line chart.
 - [ ] Cross-check against `yc.md` for number
       consistency.
+
+       H13 deferred with a note in the campaign tracker — mechanical refactor of ~30 supabase call sites; warrants a focused
+  review session.  
+  

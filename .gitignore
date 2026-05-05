@@ -49,3 +49,4 @@ data/
 !apps/**/data/**
 *.csv
 *.html
+.vercel

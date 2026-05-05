@@ -132,18 +132,20 @@ def test_billing_error_known_keys_after_dump_match_zod_schema(
 
 
 def test_billing_error_rejects_negative_overcharge() -> None:
-    # Pydantic strict mode does not enforce ge=0 unless declared on the field.
-    # This test documents the current contract — overcharge can be any Decimal.
-    # Phase 3 (H8) tightens this with Field(ge=0). This test will be updated then.
-    e = BillingError(
-        code=BillingErrorCode.PRICE_OUTLIER,
-        severity=ErrorSeverity.CRITICAL,
-        affected_line_item_ids=[],
-        description="",
-        estimated_overcharge=Decimal("-1"),
-        benchmark_rate=None,
-    )
-    assert e.estimated_overcharge == Decimal("-1")
+    # M19 (Phase 8.6): Field(ge=0) on estimated_overcharge. Pre-M19 the
+    # field accepted any Decimal — a parser bug producing a negative
+    # total_charge would propagate to negative overcharge for several
+    # rule codes and silently under-count savings. Now the model
+    # rejects negative values at construction time.
+    with pytest.raises(ValidationError):
+        BillingError(
+            code=BillingErrorCode.PRICE_OUTLIER,
+            severity=ErrorSeverity.CRITICAL,
+            affected_line_item_ids=[],
+            description="",
+            estimated_overcharge=Decimal("-1"),
+            benchmark_rate=None,
+        )
 
 
 def test_billing_error_rejects_unknown_code() -> None:

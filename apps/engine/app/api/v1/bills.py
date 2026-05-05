@@ -168,12 +168,21 @@ async def _run_analysis_pipeline(
         # Pre-2026-04-30 this discarded the city via `_, state, zip`; the letter
         # ended up with a `[PROVIDER NAME AND ADDRESS]` placeholder.
         hospital_city, hospital_state, hospital_zip = parser.extract_hospital_address(raw_text)
+        # M14 (Phase 8.6): hospital identity (name + address) is bill content
+        # — log at INFO only IDs/counts, push name/address logs to DEBUG.
+        # Cloud Logging retains INFO+ beyond ClaroBill's PHI window; DEBUG
+        # is suppressed in prod by default.
         if hospital_npi:
-            logger.info("Extracted NPI %s from bill %s", hospital_npi, bill_id)
+            logger.info("Extracted NPI from bill %s", bill_id)
+            logger.debug("Bill %s NPI value: %s", bill_id, hospital_npi)
         if hospital_name:
             logger.info(
-                "Extracted hospital '%s' (city=%s state=%s zip=%s) from bill %s",
-                hospital_name, hospital_city, hospital_state, hospital_zip, bill_id,
+                "Extracted hospital identity for bill %s (state=%s zip=%s)",
+                bill_id, hospital_state, hospital_zip,
+            )
+            logger.debug(
+                "Bill %s hospital name='%s' city='%s'",
+                bill_id, hospital_name, hospital_city,
             )
         # Persist all confirmed identity fields — hospital from OCR, payer/plan from user
         identity_update: dict[str, str] = {}
@@ -459,10 +468,18 @@ async def _run_analysis_pipeline(
     except Exception as exc:
         logger.exception("Unexpected error in analysis pipeline for bill %s: %s", bill_id, exc)
         supabase.table("bills").update({"status": BillStatus.FAILED}).eq("id", bill_id).execute()
+        # M23 (Phase 8.6): tag the failure with exception_type so PostHog
+        # can distinguish a wave of FAILED-from-BQ-outage from a wave of
+        # FAILED-from-programmer-bug. Pre-M23 every catastrophe became
+        # "pipeline_error" with no class info.
         posthog_client.capture(
             distinct_id=user_id,
             event="bill analysis failed",
-            properties={"bill_id": bill_id, "failure_reason": "pipeline_error"},
+            properties={
+                "bill_id": bill_id,
+                "failure_reason": "pipeline_error",
+                "exception_type": type(exc).__name__,
+            },
         )
 
 
@@ -1962,10 +1979,12 @@ async def _do_generate_report(
             properties={"bill_id": bill_id},
         )
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Report generation background task failed for bill %s", bill_id)
+        # M23 (Phase 8.6): tag exception_type so failures are
+        # distinguishable in PostHog.
         posthog_client.capture(
             distinct_id=user_id,
             event="report generation failed",
-            properties={"bill_id": bill_id},
+            properties={"bill_id": bill_id, "exception_type": type(exc).__name__},
         )

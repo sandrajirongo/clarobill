@@ -200,11 +200,19 @@ _NPI_LABEL_PATTERN = re.compile(r"\bNPI[:\s#]+(\d{10})\b", re.IGNORECASE)
 #   2. Negative lookbehind: reject if the candidate is immediately preceded by
 #      "account", "mrn", or "claim" labels (with optional :, #, or whitespace).
 #      These are the most common 10-digit OCR collisions on real bills.
+# M22 (Phase 8.6): re.DOTALL removed — pre-M22 the `.` matched newlines
+# so the 60-char window could span multiple unrelated bill sections (a
+# "Billing Provider" header on line 5 and an unrelated 10-digit account
+# number on line 12 could match falsely). The disqualifier list is
+# narrow (account|mrn|claim only); other label permutations like
+# "patient", "policy", "auth", "case" weren't covered. Dropping DOTALL
+# constrains the match to a single line, eliminating the cross-line
+# false-positive class. Inline NPI labels still match.
 _NPI_CONTEXT_PATTERN = re.compile(
     r"(?:billing|provider|facility|physician)\b"
     r"(?:(?!account|mrn|claim).){0,60}?"
     r"\b([12]\d{9})\b",
-    re.IGNORECASE | re.DOTALL,
+    re.IGNORECASE,
 )
 # Disqualifier: if the candidate appears immediately after one of these labels,
 # don't treat it as an NPI even when a provider keyword is also nearby.
@@ -636,6 +644,22 @@ class BillParser:
                 return name
         return None
 
+    def _hospital_name_line_index(self, raw_text: str) -> int | None:
+        """Return the line index of the hospital-name match (M16 helper).
+
+        Used by extract_hospital_address to require the address line to
+        appear AFTER the hospital_name line, not before. Some bill layouts
+        print "STATEMENT FOR: <patient address>" above the hospital
+        billing block; pre-M16 the patient's address was captured as the
+        hospital's, biasing _resolve_npi_by_name Pass 1 against the
+        wrong state.
+        """
+        lines = raw_text.splitlines()
+        for i, line in enumerate(lines[:20]):
+            if _HOSPITAL_KEYWORDS.search(line):
+                return i
+        return None
+
     def extract_hospital_address(
         self, raw_text: str
     ) -> tuple[str | None, str | None, str | None]:
@@ -649,13 +673,28 @@ class BillParser:
             (city, state_abbrev, zip5) — any element may be None if not found.
         """
         lines = raw_text.splitlines()
-        for line in lines[:30]:
+        # M16 (Phase 8.6): require the address line to appear AT OR AFTER
+        # the hospital_name line. Pre-M16 the parser took the FIRST
+        # City/ST/ZIP match in the first 30 lines — and on bills where
+        # "STATEMENT FOR: <patient address>" appears above the hospital's
+        # billing block, the patient's address was returned. That fed the
+        # wrong state into _resolve_npi_by_name Pass 1.
+        start_idx = self._hospital_name_line_index(raw_text) or 0
+        for line in lines[start_idx:30]:
             m = _HOSPITAL_ADDRESS_PATTERN.match(line.strip())
             if m:
                 city = m.group(1).strip().rstrip(",")
                 state_abbrev = m.group(2)
                 zip5 = m.group(3)
                 return city, state_abbrev, zip5
+        # Fallback: if we didn't find a hospital_name line, retry from
+        # line 0 to preserve the prior behavior on bills without the
+        # patient-address-first layout.
+        if start_idx > 0:
+            for line in lines[:start_idx]:
+                m = _HOSPITAL_ADDRESS_PATTERN.match(line.strip())
+                if m:
+                    return m.group(1).strip().rstrip(","), m.group(2), m.group(3)
         return None, None, None
 
     def extract_npi(self, raw_text: str) -> str | None:
@@ -708,8 +747,11 @@ class BillParser:
         is a clean human-readable label.
         """
         text = line[cpt_end:]
-        # Remove dates
+        # Remove dates (US MM/DD/YYYY) + ISO YYYY-MM-DD (M20 — pre-fix
+        # ISO dates survived in descriptions because only _DATE_PATTERN
+        # was applied).
         text = _DATE_PATTERN.sub("", text)
+        text = _ISO_DATE_PATTERN.sub("", text)
         # Remove dollar amounts
         text = _AMOUNT_PATTERN.sub("", text)
         # Remove parenthesised remark numbers like (1) (2)

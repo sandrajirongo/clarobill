@@ -160,7 +160,7 @@ Summary headlines below; the full per-finding detail is in those transcripts.
 ### Phase 8 — HIGH (14)
 
 - **H12** — `generate_bill_summary` is the un-sanitized prompt-injection sibling that M6 left open
-- **H13** — Sync supabase calls block the asyncio event loop in `_run_analysis_pipeline`
+- **H13** — Sync supabase calls block the asyncio event loop in `_run_analysis_pipeline` *(deferred from Phase 8.3 — mechanical refactor of ~30 call sites; warrants a focused review pass)*
 - **H14** — `_resolve_payer_aliases` bidirectional CONTAINS_SUBSTR with no length floor → wrong-payer matches
 - **H15** — `_filter_npis_with_charges` returns `[]` on exception, silently widening the NPI search to a wrong hospital
 - **H16** — `_parse_ai_response` IndexError on malformed code fence → 500 (not 502) to caller

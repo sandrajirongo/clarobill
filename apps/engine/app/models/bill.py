@@ -162,7 +162,12 @@ class BillingError(BaseModel):
     severity: ErrorSeverity
     affected_line_item_ids: list[str]
     description: str
-    estimated_overcharge: Decimal
+    # M19 (Phase 8.6): non-negative guard. Pre-M19 a parser bug that
+    # produced a negative ParsedLineItem.total_charge (refund line
+    # captured as a charge) would propagate to negative overcharge for
+    # several rule codes, then sum into a smaller-than-real
+    # total_potential_savings — silently under-counting savings.
+    estimated_overcharge: Decimal = Field(ge=0)
     # T10 (Phase 8.1): renamed from benchmark_rate.
     # Pre-T10 the field was overloaded — set to hospital_gross for
     # HOSPITAL_CHARGE_OUTLIER, negotiated_rate for NEGOTIATED_RATE_EXCEEDED,
