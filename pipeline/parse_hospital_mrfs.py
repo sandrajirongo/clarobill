@@ -49,8 +49,10 @@ from hospital_mrf_utils import (
     extract_mrf_date,
     extract_npi_from_mrf_root,
     extract_npi_from_url,
+    extract_npi_from_xlsx_meta,
     stream_charges_csv,
     stream_charges_v2,
+    stream_charges_xlsx,
 )
 from csv_vendors import CsvVendorNotIdentified
 
@@ -121,7 +123,7 @@ ARCHIVE_INDEX_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.mrf_archive_index"
 FLUSH_EVERY_BLOBS = 100   # flush after this many successful parses
 FLUSH_EVERY_SECS  = 300   # or after 5 minutes, whichever comes first
 
-_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip", ".csv", ".csv.gz")
+_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip", ".csv", ".csv.gz", ".xlsx")
 
 
 def build_clients() -> tuple[bigquery.Client, storage.Client]:
@@ -568,14 +570,16 @@ def process_blob_with_meta(
         return False
 
     is_csv = blob.name.lower().endswith((".csv", ".csv.gz"))
+    is_xlsx = False
 
-    # Content sniff for JSON blobs — the scraper saved whatever the source URL
-    # returned, so a .json blob may actually contain HTML (404 page, marketing
-    # landing page). Skip this check for CSV: CSV has no magic bytes and the
-    # extension is the only reliable signal.
+    # Content sniff for non-CSV blobs — the scraper saved whatever the source
+    # URL returned, so a .json blob may contain HTML, XLSX, or PDF. CSV has no
+    # magic bytes so the extension is the only reliable signal.
     if not is_csv:
         fmt = _sniff_blob_format(blob)
-        if fmt != "json":
+        if fmt == "xlsx":
+            is_xlsx = True
+        elif fmt != "json":
             logger.warning(
                 "[%s] Content is %s, not JSON — marking failed (path was %s)",
                 label, fmt, blob.name,
@@ -589,10 +593,9 @@ def process_blob_with_meta(
     logger.info("[%s] Processing %s", label, blob.name)
     scraped_at = datetime.now(timezone.utc).isoformat()
 
-    # For JSON: read last_updated_on from MRF root for effective-year resolution.
-    # For CSV: no JSON root, so pass None; http_last_modified from blob metadata
-    # or calendar year fallback will handle it.
-    json_last_updated = None if is_csv else _read_mrf_date(blob)
+    # JSON: read last_updated_on from MRF root for effective-year resolution.
+    # CSV/XLSX: no JSON root — http_last_modified or calendar year fallback.
+    json_last_updated = None if (is_csv or is_xlsx) else _read_mrf_date(blob)
     http_last_modified = meta.get("last_modified") or None
     pricing_effective_year, year_source = effective_year.resolve_year(
         json_last_updated_on=json_last_updated,
@@ -608,14 +611,29 @@ def process_blob_with_meta(
 
     # NPI resolution chain.
     # JSON: MRF root → URL → scraper metadata.
-    # CSV:  URL → scraper metadata → CSV metadata row (rows 1-2 of the file).
-    hospital_npi = (
-        ("" if is_csv else _read_mrf_npi(blob))
-        or extract_npi_from_url(mrf_url)
-        or meta.get("hospital_npi")
-        or (is_csv and _read_csv_meta_npi(blob))
-        or ""
-    )
+    # CSV:  URL → scraper metadata → CSV metadata rows (rows 1-2).
+    # XLSX: URL → scraper metadata → XLSX metadata rows (rows 1-2).
+    #       XLSX needs the full file buffered (ZIP-based), so we do it now and
+    #       reuse the buffer for parsing — avoids a second GCS download.
+    xlsx_buf: io.BytesIO = io.BytesIO()
+    if is_xlsx:
+        xlsx_buf = io.BytesIO(blob.download_as_bytes())
+        hospital_npi = (
+            extract_npi_from_url(mrf_url)
+            or meta.get("hospital_npi")
+            or extract_npi_from_xlsx_meta(xlsx_buf)
+            or ""
+        )
+        xlsx_buf.seek(0)
+    else:
+        hospital_npi = (
+            ("" if is_csv else _read_mrf_npi(blob))
+            or extract_npi_from_url(mrf_url)
+            or meta.get("hospital_npi")
+            or (is_csv and _read_csv_meta_npi(blob))
+            or ""
+        )
+
     if not hospital_npi:
         logger.warning(
             "[%s] No NPI from JSON, URL, or metadata — marking failed (url=%s)",
@@ -631,18 +649,27 @@ def process_blob_with_meta(
     staging_uri = f"gs://{GCS_BUCKET}/{staging_blob_name}"
 
     try:
-        with _open_mrf_blob(blob) as f:
-            if is_csv:
-                rows = stream_charges_csv(
-                    f, hospital_npi, pricing_effective_year, scraped_at,
+        if is_xlsx:
+            row_count = _write_ndjson_to_gcs(
+                stream_charges_xlsx(
+                    xlsx_buf, hospital_npi, pricing_effective_year, scraped_at,
                     source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                ),
+                staging_bucket, staging_blob_name,
+            )
+        else:
+            with _open_mrf_blob(blob) as f:
+                charge_iter = (
+                    stream_charges_csv(
+                        f, hospital_npi, pricing_effective_year, scraped_at,
+                        source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                    ) if is_csv else
+                    stream_charges_v2(
+                        f, hospital_npi, pricing_effective_year, scraped_at,
+                        source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                    )
                 )
-            else:
-                rows = stream_charges_v2(
-                    f, hospital_npi, pricing_effective_year, scraped_at,
-                    source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
-                )
-            row_count = _write_ndjson_to_gcs(rows, staging_bucket, staging_blob_name)
+                row_count = _write_ndjson_to_gcs(charge_iter, staging_bucket, staging_blob_name)
 
         if row_count == 0:
             logger.warning("[%s] No charge rows parsed — skipping load", label)

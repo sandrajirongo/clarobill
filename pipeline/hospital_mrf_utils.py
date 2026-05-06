@@ -808,3 +808,118 @@ def stream_charges_csv(
             hospital_npi, bad_rows, row_count + bad_rows,
         )
     logger.info("Parsed %d CSV charge rows for NPI %s", row_count, hospital_npi)
+
+
+def extract_npi_from_xlsx_meta(file_obj: BinaryIO) -> str:
+    """Extract NPI from CMS-standard XLSX metadata rows (rows 1 and 2).
+
+    XLSX MRFs mirror the CSV structure: row 1 has metadata column names,
+    row 2 has values. file_obj must be seekable (BytesIO); openpyxl requires
+    random access since XLSX is a ZIP container.
+
+    Returns a 10-digit NPI string or empty string.
+    """
+    import openpyxl  # deferred — not every parse path needs XLSX
+
+    try:
+        wb = openpyxl.load_workbook(file_obj, read_only=True, data_only=True)
+        ws = wb.active
+        if ws is None:
+            return ""
+        rows = ws.iter_rows(values_only=True)
+        meta_header = next(rows, None)
+        meta_values = next(rows, None)
+        if not meta_header or not meta_values:
+            return ""
+        h = [str(c).strip().lower() if c is not None else "" for c in meta_header]
+        v = [str(c).strip() if c is not None else "" for c in meta_values]
+        return _extract_npi_from_csv_meta(h, v)
+    except Exception as exc:
+        logger.warning("XLSX meta NPI extraction failed: %s", exc)
+        return ""
+
+
+def stream_charges_xlsx(
+    file_obj: BinaryIO,
+    hospital_npi: str,
+    pricing_effective_year: int,
+    scraped_at: str,
+    source_mrf_url: str | None = None,
+    source_gcs_uri: str | None = None,
+) -> Iterator[ChargeRow]:
+    """Stream ChargeRow objects from a CMS-standard Excel (XLSX) MRF.
+
+    XLSX files are ZIP-based and require seekable input — callers must
+    buffer the blob into BytesIO before calling this function.
+
+    The CMS standard XLSX mirrors the CSV structure:
+      Row 1: hospital metadata column names
+      Row 2: hospital metadata values (NPI, last_updated_on, etc.)
+      Row 3: charge column names including dynamic payer columns
+      Row 4+: one charge row per procedure/item
+
+    Raises CsvVendorNotIdentified if row 3 doesn't contain the required
+    standard_charge|gross and standard_charge|discounted_cash columns.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(file_obj, read_only=True, data_only=True)
+    ws = wb.active
+    if ws is None:
+        logger.warning("XLSX has no active sheet for NPI %s", hospital_npi)
+        return
+
+    rows_iter = ws.iter_rows(values_only=True)
+
+    meta_header = next(rows_iter, None)
+    if meta_header is None:
+        return
+    meta_values = next(rows_iter, None)
+    if meta_values is None:
+        return
+
+    if not hospital_npi:
+        h = [str(c).strip().lower() if c is not None else "" for c in meta_header]
+        v = [str(c).strip() if c is not None else "" for c in meta_values]
+        hospital_npi = _extract_npi_from_csv_meta(h, v)
+
+    charge_header = next(rows_iter, None)
+    if charge_header is None:
+        return
+
+    raw_cols = [str(c).strip() if c is not None else "" for c in charge_header]
+    cols = [c.lower() for c in raw_cols]
+
+    if not is_cms_standard_csv(cols):
+        raise CsvVendorNotIdentified(
+            "XLSX header row 3 missing standard_charge|gross or "
+            "standard_charge|discounted_cash — not a CMS standard XLSX"
+        )
+
+    payer_groups = detect_payer_groups(raw_cols)
+
+    row_count = 0
+    bad_rows = 0
+    for raw_row in rows_iter:
+        values = [str(c).strip() if c is not None else "" for c in raw_row]
+        if not any(values):
+            continue
+        row = dict(zip(cols, values))
+        try:
+            for charge_row in _expand_csv_row(
+                row, payer_groups, hospital_npi, pricing_effective_year,
+                scraped_at, source_mrf_url, source_gcs_uri,
+            ):
+                yield charge_row
+                row_count += 1
+        except Exception as exc:  # noqa: BLE001
+            bad_rows += 1
+            if bad_rows <= 5:
+                logger.warning("Skipping malformed XLSX row for NPI %s: %s", hospital_npi, exc)
+
+    if bad_rows:
+        logger.warning(
+            "NPI %s XLSX: %d bad rows skipped out of %d total",
+            hospital_npi, bad_rows, row_count + bad_rows,
+        )
+    logger.info("Parsed %d XLSX charge rows for NPI %s", row_count, hospital_npi)
