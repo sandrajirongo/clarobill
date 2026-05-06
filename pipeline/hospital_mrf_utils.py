@@ -30,6 +30,8 @@ from csv_vendors import (
     PayerGroup,
     detect_payer_groups,
     is_cms_standard_csv,
+    normalize_col,
+    normalize_cols,
 )
 
 _UTF8_BOM = b"\xef\xbb\xbf"
@@ -338,6 +340,10 @@ def sniff_mrf_format(
     if url_lower.endswith(".xml") or "xml" in ct_lower:
         return "xml"
 
+    # Tab-delimited CDM exports (.txt) — detect by tab density in first 512 bytes.
+    if b"\t" in stripped[:512] and b"\n" in stripped[:512]:
+        return "tsv"
+
     return "unknown"
 
 
@@ -348,7 +354,7 @@ def sniff_mrf_format(
 # because in the entire historic archive we found zero real chargemaster
 # PDFs — they were all landing pages, good-faith-estimate notices, or
 # patient-billing brochures.
-ACCEPTED_MRF_FORMATS = frozenset({"json", "csv", "zip", "xlsx", "xml"})
+ACCEPTED_MRF_FORMATS = frozenset({"json", "csv", "zip", "xlsx", "xml", "tsv"})
 
 
 def detect_mrf_version(root: dict[str, Any]) -> str | None:
@@ -767,7 +773,7 @@ def stream_charges_csv(
     # the per-row lookup dict, since fixed columns like "standard_charge|gross"
     # must be looked up case-insensitively.
     raw_cols = [c.strip() for c in charge_header]
-    cols = [c.lower() for c in raw_cols]
+    cols = normalize_cols(raw_cols)
 
     if not is_cms_standard_csv(cols):
         raise CsvVendorNotIdentified(
@@ -888,7 +894,7 @@ def stream_charges_xlsx(
         return
 
     raw_cols = [str(c).strip() if c is not None else "" for c in charge_header]
-    cols = [c.lower() for c in raw_cols]
+    cols = normalize_cols(raw_cols)
 
     if not is_cms_standard_csv(cols):
         raise CsvVendorNotIdentified(
@@ -923,3 +929,84 @@ def stream_charges_xlsx(
             hospital_npi, bad_rows, row_count + bad_rows,
         )
     logger.info("Parsed %d XLSX charge rows for NPI %s", row_count, hospital_npi)
+
+
+def stream_charges_tsv(
+    file_obj: BinaryIO,
+    hospital_npi: str,
+    pricing_effective_year: int,
+    scraped_at: str,
+    source_mrf_url: str | None = None,
+    source_gcs_uri: str | None = None,
+) -> Iterator[ChargeRow]:
+    """Stream ChargeRow objects from a tab-delimited CDM (Charge Description Master) file.
+
+    CDM exports (typically .txt) have no CMS metadata rows — just a plain
+    tab-separated header + data rows. Column names are normalized via
+    _COLUMN_ALIASES so non-standard headers (Item Number, Charge Amount, etc.)
+    map to their CMS equivalents before lookup.
+
+    Yields one ChargeRow per data row. Rows missing both code and description
+    are skipped. Negotiated / payer columns are not present in CDM format.
+    """
+    import csv as _csv
+
+    reader = _csv.reader(
+        io.TextIOWrapper(file_obj, encoding="utf-8-sig", errors="replace"),
+        delimiter="\t",
+    )
+
+    header = next(reader, None)
+    if header is None:
+        return
+
+    cols = normalize_cols(header)
+    desc_col = "description" if "description" in cols else None
+    code_col = "code|1" if "code|1" in cols else None
+    gross_col = "standard_charge|gross" if "standard_charge|gross" in cols else None
+    cash_col = "standard_charge|discounted_cash" if "standard_charge|discounted_cash" in cols else None
+
+    row_count = 0
+    bad_rows = 0
+    for raw_row in reader:
+        if not any(v.strip() for v in raw_row):
+            continue
+        row: dict[str, str] = dict(zip(cols, raw_row))
+        try:
+            description = row.get(desc_col or "", "").strip() if desc_col else ""
+            code = row.get(code_col or "", "").strip() if code_col else ""
+            if not description and not code:
+                continue
+            gross = _parse_float(row.get(gross_col or "", "")) if gross_col else None
+            cash = _parse_float(row.get(cash_col or "", "")) if cash_col else None
+            yield ChargeRow(
+                pricing_effective_year=pricing_effective_year,
+                hospital_npi=hospital_npi,
+                code_type="CDM" if not code else "LOCAL",
+                code=code or "",
+                description=description,
+                gross_charge=gross,
+                discounted_cash_price=cash,
+                min_negotiated=None,
+                max_negotiated=None,
+                payer_name=None,
+                plan_name=None,
+                negotiated_charge=None,
+                negotiated_type=None,
+                setting="inpatient",
+                source_mrf_url=source_mrf_url,
+                source_gcs_uri=source_gcs_uri,
+                scraped_at=scraped_at,
+            )
+            row_count += 1
+        except Exception as exc:  # noqa: BLE001
+            bad_rows += 1
+            if bad_rows <= 5:
+                logger.warning("Skipping malformed TSV row for NPI %s: %s", hospital_npi, exc)
+
+    if bad_rows:
+        logger.warning(
+            "NPI %s TSV: %d bad rows skipped out of %d total",
+            hospital_npi, bad_rows, row_count + bad_rows,
+        )
+    logger.info("Parsed %d TSV charge rows for NPI %s", row_count, hospital_npi)

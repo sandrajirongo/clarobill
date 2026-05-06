@@ -51,6 +51,7 @@ from hospital_mrf_utils import (
     extract_npi_from_url,
     extract_npi_from_xlsx_meta,
     stream_charges_csv,
+    stream_charges_tsv,
     stream_charges_v2,
     stream_charges_xlsx,
 )
@@ -123,7 +124,7 @@ ARCHIVE_INDEX_TABLE = f"{GCP_PROJECT}.{BQ_DATASET}.mrf_archive_index"
 FLUSH_EVERY_BLOBS = 100   # flush after this many successful parses
 FLUSH_EVERY_SECS  = 300   # or after 5 minutes, whichever comes first
 
-_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip", ".csv", ".csv.gz", ".xlsx")
+_PARSEABLE_EXTENSIONS = (".json", ".json.gz", ".json.gzip", ".csv", ".csv.gz", ".xlsx", ".txt", ".txt.gz")
 
 
 def build_clients() -> tuple[bigquery.Client, storage.Client]:
@@ -494,6 +495,8 @@ def _sniff_blob_format(blob: storage.Blob) -> str:
         return "xlsx"
     if s.startswith(b"%PDF"):
         return "pdf"
+    if b"\t" in s[:512] and b"\n" in s[:512]:
+        return "tsv"
     return "unknown"
 
 
@@ -570,15 +573,18 @@ def process_blob_with_meta(
         return False
 
     is_csv = blob.name.lower().endswith((".csv", ".csv.gz"))
+    is_tsv = blob.name.lower().endswith((".txt", ".txt.gz"))
     is_xlsx = False
 
-    # Content sniff for non-CSV blobs — the scraper saved whatever the source
-    # URL returned, so a .json blob may contain HTML, XLSX, or PDF. CSV has no
-    # magic bytes so the extension is the only reliable signal.
-    if not is_csv:
+    # Content sniff for non-CSV/non-TSV blobs — the scraper saved whatever the
+    # source URL returned, so a .json blob may contain HTML, XLSX, or PDF. CSV
+    # and TSV have no magic bytes so the extension is the only reliable signal.
+    if not is_csv and not is_tsv:
         fmt = _sniff_blob_format(blob)
         if fmt == "xlsx":
             is_xlsx = True
+        elif fmt == "tsv":
+            is_tsv = True
         elif fmt != "json":
             logger.warning(
                 "[%s] Content is %s, not JSON — marking failed (path was %s)",
@@ -595,7 +601,7 @@ def process_blob_with_meta(
 
     # JSON: read last_updated_on from MRF root for effective-year resolution.
     # CSV/XLSX: no JSON root — http_last_modified or calendar year fallback.
-    json_last_updated = None if (is_csv or is_xlsx) else _read_mrf_date(blob)
+    json_last_updated = None if (is_csv or is_tsv or is_xlsx) else _read_mrf_date(blob)
     http_last_modified = meta.get("last_modified") or None
     pricing_effective_year, year_source = effective_year.resolve_year(
         json_last_updated_on=json_last_updated,
@@ -617,7 +623,17 @@ def process_blob_with_meta(
     #       reuse the buffer for parsing — avoids a second GCS download.
     xlsx_buf: io.BytesIO = io.BytesIO()
     if is_xlsx:
-        xlsx_buf = io.BytesIO(blob.download_as_bytes())
+        raw_xlsx = blob.download_as_bytes()
+        # CHI Health and similar systems store gzip-compressed XLSX under
+        # .json.gz extensions. _sniff_blob_format peeks inside the gzip and
+        # returns "xlsx" (PK magic), but blob.download_as_bytes() returns the
+        # outer gzip bytes. openpyxl needs the raw ZIP, so we decompress here.
+        if blob.name.lower().endswith((".gz", ".gzip")):
+            try:
+                raw_xlsx = gzip.decompress(raw_xlsx)
+            except OSError:
+                pass
+        xlsx_buf = io.BytesIO(raw_xlsx)
         hospital_npi = (
             extract_npi_from_url(mrf_url)
             or meta.get("hospital_npi")
@@ -627,7 +643,7 @@ def process_blob_with_meta(
         xlsx_buf.seek(0)
     else:
         hospital_npi = (
-            ("" if is_csv else _read_mrf_npi(blob))
+            ("" if (is_csv or is_tsv) else _read_mrf_npi(blob))
             or extract_npi_from_url(mrf_url)
             or meta.get("hospital_npi")
             or (is_csv and _read_csv_meta_npi(blob))
@@ -659,16 +675,21 @@ def process_blob_with_meta(
             )
         else:
             with _open_mrf_blob(blob) as f:
-                charge_iter = (
-                    stream_charges_csv(
-                        f, hospital_npi, pricing_effective_year, scraped_at,
-                        source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
-                    ) if is_csv else
-                    stream_charges_v2(
+                if is_csv:
+                    charge_iter = stream_charges_csv(
                         f, hospital_npi, pricing_effective_year, scraped_at,
                         source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
                     )
-                )
+                elif is_tsv:
+                    charge_iter = stream_charges_tsv(
+                        f, hospital_npi, pricing_effective_year, scraped_at,
+                        source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                    )
+                else:
+                    charge_iter = stream_charges_v2(
+                        f, hospital_npi, pricing_effective_year, scraped_at,
+                        source_mrf_url=source_mrf_url, source_gcs_uri=source_gcs_uri,
+                    )
                 row_count = _write_ndjson_to_gcs(charge_iter, staging_bucket, staging_blob_name)
 
         if row_count == 0:

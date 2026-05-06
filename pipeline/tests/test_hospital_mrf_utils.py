@@ -358,7 +358,7 @@ class TestSniffMrfFormat:
     # --- Acceptance set ---
 
     def test_accepted_formats_set(self) -> None:
-        assert ACCEPTED_MRF_FORMATS == {"json", "csv", "zip", "xlsx", "xml"}
+        assert ACCEPTED_MRF_FORMATS == {"json", "csv", "zip", "xlsx", "xml", "tsv"}
 
     def test_pdf_not_in_accepted(self) -> None:
         # Every real archive PDF observed was a landing page or notice,
