@@ -76,7 +76,8 @@ _STOPWORDS = frozenset({
     "the", "of", "and", "a", "at", "for", "in", "on", "an",
     "hospital", "medical", "health", "healthcare", "center", "centre",
     "campus", "facility", "system", "services", "incorporated", "inc",
-    "llc", "corp", "company", "co", "ltd",
+    "llc", "lp", "llp", "plc", "pllc", "pa", "pc",
+    "corp", "company", "co", "ltd",
 })
 
 # When NPPES has multiple rows scoring identically for the same slug, we
@@ -269,20 +270,20 @@ def resolve(
         # is-canonical-hospital-name desc, shorter-name desc). The
         # canonical-hospital tiebreak prefers e.g. "X HOSPITAL" over
         # "X HOSPITAL PHARMACY" when both score identically.
-        scored: list[tuple[int, float, int, str, str]] = []
+        scored: list[tuple[int, float, int, str, str, frozenset[str]]] = []
         for npi, name, name_tokens in nppes_pre:
             if slug_tokens.isdisjoint(name_tokens):
                 continue
             shared, score = score_match(slug_tokens, name_tokens)
             looks_canonical = 0 if any(h in name.upper() for h in _NON_HOSPITAL_NAME_HINTS) else 1
-            scored.append((shared, score, looks_canonical, npi, name))
+            scored.append((shared, score, looks_canonical, npi, name, name_tokens))
 
         if not scored:
             rejected.append((url, "<no NPPES candidate shares any token>", 0.0, 0.0))
             continue
 
         scored.sort(key=lambda x: (-x[0], -x[1], -x[2], len(x[4])))
-        best_shared, best_score, _, best_npi, best_name = scored[0]
+        best_shared, best_score, _, best_npi, best_name, best_name_tokens = scored[0]
         # Compute margin against the next candidate that scored *differently*.
         # When NPPES has multiple identically-named rows for the same hospital
         # (parent + branches), they all score 1.0 and naive margin is 0 even
@@ -310,7 +311,6 @@ def resolve(
         # hundreds of names; 'pelham', 'heywood', 'kadlec' uniquely identify
         # a single hospital.
         if best_shared < 2:
-            best_name_tokens = _tokenize(best_name)
             shared_tokens = slug_tokens & best_name_tokens
             if not shared_tokens:
                 rejected.append((url, best_name, best_score, margin))
@@ -318,6 +318,22 @@ def resolve(
             rarest = min(token_freq.get(t, 999_999) for t in shared_tokens)
             if rarest > rare_token_threshold:
                 rejected.append((url, f"{best_name} (token too common: freq={rarest})", best_score, margin))
+                continue
+
+        # Extra-name-token safety: if the NPPES name contains rare tokens not
+        # present in the slug, those tokens identify a MORE SPECIFIC (and thus
+        # different) facility than the slug describes. The correct hospital is
+        # simply absent from the NPPES hospital-taxonomy subset; assigning this
+        # NPI would be wrong. See recover_no_npi_archive_blobs.py for the
+        # canonical example (community-hospital-of-san-bernardino vs.
+        # SAN BERNARDINO MOUNTAINS COMMUNITY HOSPITAL).
+        extra_name_tokens = best_name_tokens - slug_tokens
+        if extra_name_tokens:
+            rarest_extra = min(token_freq.get(t, 999_999) for t in extra_name_tokens)
+            if rarest_extra <= rare_token_threshold:
+                rejected.append((url,
+                    f"{best_name} (rare extra name token absent from slug, freq={rarest_extra})",
+                    best_score, margin))
                 continue
 
         accepted.append(Match(
