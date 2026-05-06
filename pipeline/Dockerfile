@@ -31,9 +31,10 @@ WORKDIR /app
 COPY pipeline/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pipeline source — five files at /app/ root.
-COPY pipeline/archive_writer.py    /app/
-COPY pipeline/effective_year.py    /app/
+# Pipeline source — all .py files at /app/ root.
+COPY pipeline/archive_writer.py     /app/
+COPY pipeline/csv_vendors.py        /app/
+COPY pipeline/effective_year.py     /app/
 COPY pipeline/hospital_mrf_utils.py /app/
 COPY pipeline/parse_hospital_mrfs.py /app/
 COPY pipeline/scrape_hospital_mrfs.py /app/
