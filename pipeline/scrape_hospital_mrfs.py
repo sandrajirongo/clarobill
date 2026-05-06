@@ -49,7 +49,15 @@ import archive_writer
 from hospital_mrf_utils import ACCEPTED_MRF_FORMATS, sniff_mrf_format
 
 # SF5 (Phase 8.4): centralised DML helper. See parse_hospital_mrfs.py for context.
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "scripts" / "mrf_discovery"))
+# Two-candidate sys.path so the import works in container (/app/scripts/) and dev.
+_THIS_SCRAPE = __import__("pathlib").Path(__file__).resolve()
+for _bq_candidate in (
+    _THIS_SCRAPE.parent / "scripts" / "mrf_discovery",
+    _THIS_SCRAPE.parent.parent / "scripts" / "mrf_discovery",
+):
+    if (_bq_candidate / "bq_checkpoint.py").exists():
+        sys.path.insert(0, str(_bq_candidate))
+        break
 from bq_checkpoint import run_dml_with_count  # noqa: E402
 
 logging.basicConfig(

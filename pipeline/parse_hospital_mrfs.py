@@ -55,10 +55,16 @@ from hospital_mrf_utils import (
 from csv_vendors import CsvVendorNotIdentified
 
 # SF5 (Phase 8.4): centralised DML helper that asserts num_dml_affected_rows.
-# pipeline/ runs as a Cloud Run Job; the script-style import path adds the
-# scripts/mrf_discovery dir to sys.path so the M13 helper at
-# scripts/mrf_discovery/bq_checkpoint.py can be imported here.
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "scripts" / "mrf_discovery"))
+# Two-candidate sys.path so the import works both in the container (/app/scripts/)
+# and in dev (<repo-root>/scripts/). Mirrors the pattern in archive_writer.py.
+_THIS_PARSE = __import__("pathlib").Path(__file__).resolve()
+for _bq_candidate in (
+    _THIS_PARSE.parent / "scripts" / "mrf_discovery",         # container: /app/scripts/mrf_discovery/
+    _THIS_PARSE.parent.parent / "scripts" / "mrf_discovery",  # dev: <repo>/scripts/mrf_discovery/
+):
+    if (_bq_candidate / "bq_checkpoint.py").exists():
+        sys.path.insert(0, str(_bq_candidate))
+        break
 from bq_checkpoint import run_dml_with_count  # noqa: E402
 
 logging.basicConfig(

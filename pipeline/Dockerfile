@@ -45,6 +45,7 @@ COPY pipeline/scrape_hospital_mrfs.py /app/
 # real Python package.
 COPY scripts/mrf_discovery/__init__.py        /app/scripts/mrf_discovery/__init__.py
 COPY scripts/mrf_discovery/archive_layout.py  /app/scripts/mrf_discovery/archive_layout.py
+COPY scripts/mrf_discovery/bq_checkpoint.py   /app/scripts/mrf_discovery/bq_checkpoint.py
 
 ENV LOG_LEVEL=INFO
 
