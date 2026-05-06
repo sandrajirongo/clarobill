@@ -265,10 +265,20 @@ def resolve(
 
     rejected_reasons entries are (url, slug, reason_string).
     """
-    # Pre-tokenize entire NPPES corpus once.
+    # Pre-tokenize entire NPPES corpus once and build token frequency index.
     nppes_pre: list[tuple[str, str, frozenset[str]]] = [
         (npi, name, _tokenize(name)) for npi, name in nppes
     ]
+    # token_freq[t] = number of distinct NPPES hospital names containing token t.
+    # Used to reject single-token slug matches where the token is too generic
+    # to identify a specific facility (e.g. "mercy" appears in 200+ names even
+    # though "MERCY HEALTH" is the only name that REDUCES to just {mercy} after
+    # stopwords — the uniqueness is an artifact of stopword removal, not a
+    # genuine identifier).
+    token_freq: dict[str, int] = {}
+    for _, _, toks in nppes_pre:
+        for t in toks:
+            token_freq[t] = token_freq.get(t, 0) + 1
 
     accepted: list[Match] = []
     rejected: list[tuple[str, str, str]] = []
@@ -356,6 +366,22 @@ def resolve(
                 f"{len(unique_names)} distinct NPPES hospitals score 1.00 "
                 f"(geographic ambiguity): {names_found}"))
             continue
+
+        # Single-token safety: a slug that reduces to exactly one meaningful
+        # word is only a safe identifier when that word is rare in the NPPES
+        # corpus. "mercy" appears in 200+ hospital names — the uniqueness of
+        # "MERCY HEALTH" (the only name that REDUCES to {mercy} after stopwords)
+        # is an artefact of stopword removal, not a genuine facility identifier.
+        # This is different from "gouverneur" or "rumford" which each appear in
+        # only 1-2 NPPES names and genuinely identify a single hospital.
+        if len(slug_tokens) == 1:
+            sole_token = next(iter(slug_tokens))
+            freq = token_freq.get(sole_token, 0)
+            if freq > 5:
+                rejected.append((url, slug,
+                    f"single-token slug '{sole_token}' is too generic "
+                    f"(appears in {freq} NPPES hospital names)"))
+                continue
 
         # Unique perfect match. Also verify margin vs the best non-perfect
         # runner-up — guards against edge cases where the 1.00 match is a
