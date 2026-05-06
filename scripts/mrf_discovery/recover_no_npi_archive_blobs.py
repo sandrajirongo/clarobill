@@ -299,6 +299,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true",
                     help="Write resolutions to BQ; default is dry-run.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Preview matches without writing (default behaviour; explicit flag for clarity).")
     ap.add_argument("--min-score", type=float, default=0.5,
                     help="Min Jaccard score for acceptance (default 0.5).")
     ap.add_argument("--min-margin", type=float, default=0.1,
