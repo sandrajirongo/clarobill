@@ -391,7 +391,7 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-007 | Build reusable JSON-LD schema component | **DONE** | — |
 | T-016 | Create content brief template + freshness protocol | todo | — |
 | T-018 | Set up Lighthouse CI gate | todo | — |
-| T-008 | Add sitewide Organization + WebSite JSON-LD to layout | todo | T-007 |
+| T-008 | Add sitewide Organization + WebSite JSON-LD to layout | **DONE** | T-007 |
 | T-009 | Build dynamic `sitemap.ts` | todo | T-001 |
 | T-010 | Audit + fix SSR on all public marketing routes | todo | — |
 | T-011 | Add hreflang tags to all public pages | todo | T-010 |
@@ -462,7 +462,7 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | `apps/web/public/llms.txt` | AI guidance file (T-006) | **DONE** |
 | `apps/web/src/components/json-ld.tsx` | Reusable JSON-LD component (T-007) | **DONE** |
 | `apps/web/src/app/sitemap.ts` | Dynamic sitemap (T-009) | todo |
-| `apps/web/src/app/layout.tsx` | Sitewide JSON-LD injection (T-008) | needs update |
+| `apps/web/src/app/layout.tsx` | Sitewide JSON-LD injection (T-008) | **DONE** |
 | `apps/web/src/middleware.ts` | Must whitelist every new public route group | needs update |
 | `apps/web/src/app/pricing/page.tsx` | Currently `'use client'` — must be refactored (T-010) | needs fix |
 | `apps/web/src/app/methodology/page.tsx` | /methodology page (T-002) | todo |
