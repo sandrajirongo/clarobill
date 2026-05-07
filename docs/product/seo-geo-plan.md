@@ -411,10 +411,10 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 
 | ID | Title | Status | Depends on |
 |----|-------|--------|------------|
-| T-019 | Add JSON-LD to existing blog posts | todo | T-007 |
-| T-020 | Create `/authors/[slug]` author bio pages | todo | T-007, T-013 |
-| T-021 | Build `/pricing` JSON-LD + SSR fix | todo | T-007, T-010 |
-| T-022 | Build `/free-medical-bill-check` conversion page | todo | T-007, T-010 |
+| T-019 | Add JSON-LD to existing blog posts | **DONE** — Article+BreadcrumbList+FAQPage on all 8 /learn articles | T-007 |
+| T-020 | Create `/authors/[slug]` author bio pages | **DONE** — `/authors/sandra-jirongo` with Person schema | T-007, T-013 |
+| T-021 | Build `/pricing` JSON-LD + SSR fix | **DONE** — Product+Offer+FAQPage+BreadcrumbList; SSR was already correct | T-007, T-010 |
+| T-022 | Build `/free-medical-bill-check` conversion page | **DONE** — hero, 8 checks, how-it-works, FAQ, FAQPage schema | T-007, T-010 |
 | T-023 | Upgrade `/upload` page for SEO | todo | T-007, T-010 |
 | T-024 | Write remaining 22 `/learn/*` pillar articles (1/week) | todo | T-015, T-016, T-017 |
 | T-025 | Build 5 comparison pages | todo | T-007, T-010 |

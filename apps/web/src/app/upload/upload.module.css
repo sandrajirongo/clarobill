@@ -1,0 +1,46 @@
+.formatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+.formatCard {
+  background: #fff;
+  border: 1px solid rgba(45,74,42,0.1);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+.formatLabel {
+  font-family: var(--font-syne, sans-serif);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--forest, #2d4a2a);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+.formatDetail {
+  font-size: 0.82rem;
+  color: var(--txt2, #4a5544);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.trustList {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.trustItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--txt2, #4a5544);
+}
+.trustItem svg {
+  flex-shrink: 0;
+  color: var(--forest, #2d4a2a);
+}
