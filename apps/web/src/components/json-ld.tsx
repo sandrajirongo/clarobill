@@ -6,6 +6,7 @@
 export type SchemaOrg =
   | OrganizationSchema
   | WebSiteSchema
+  | WebPageSchema
   | ArticleSchema
   | BreadcrumbListSchema
   | FAQPageSchema
@@ -34,6 +35,14 @@ export interface WebSiteSchema {
     target: string;
     'query-input': string;
   };
+}
+
+export interface WebPageSchema {
+  '@type': 'WebPage' | 'MedicalWebPage';
+  name: string;
+  description?: string;
+  url?: string;
+  author?: { '@type': 'Organization' | 'Person'; name: string; url?: string };
 }
 
 export interface ArticleSchema {
@@ -73,10 +82,12 @@ export interface ProductSchema {
   '@type': 'Product';
   name: string;
   description?: string;
+  url?: string;
   brand?: { '@type': 'Brand'; name: string };
   offers: {
     '@type': 'Offer';
     name?: string;
+    description?: string;
     price: string;
     priceCurrency: string;
     availability?: string;
@@ -90,6 +101,8 @@ export interface PersonSchema {
   jobTitle?: string;
   description?: string;
   sameAs?: string[];
+  worksFor?: { '@type': 'Organization'; name: string; url?: string };
+  knowsAbout?: string[];
 }
 
 export interface DefinedTermSchema {
