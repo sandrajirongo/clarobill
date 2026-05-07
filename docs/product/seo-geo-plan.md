@@ -387,8 +387,8 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | ID | Title | Status | Depends on |
 |----|-------|--------|------------|
 | T-001 | Fix `robots.ts` with full AI bot allow-list | **DONE** | — |
-| T-006 | Create `public/llms.txt` | todo | — |
-| T-007 | Build reusable JSON-LD schema component | todo | — |
+| T-006 | Create `public/llms.txt` | **DONE** | — |
+| T-007 | Build reusable JSON-LD schema component | **DONE** | — |
 | T-016 | Create content brief template + freshness protocol | todo | — |
 | T-018 | Set up Lighthouse CI gate | todo | — |
 | T-008 | Add sitewide Organization + WebSite JSON-LD to layout | todo | T-007 |
@@ -459,8 +459,8 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | File | Role | Status |
 |------|------|--------|
 | `apps/web/src/app/robots.ts` | AI bot allow-list (T-001) | **DONE** |
-| `apps/web/public/llms.txt` | AI guidance file (T-006) | todo |
-| `apps/web/src/components/json-ld.tsx` | Reusable JSON-LD component (T-007) | todo |
+| `apps/web/public/llms.txt` | AI guidance file (T-006) | **DONE** |
+| `apps/web/src/components/json-ld.tsx` | Reusable JSON-LD component (T-007) | **DONE** |
 | `apps/web/src/app/sitemap.ts` | Dynamic sitemap (T-009) | todo |
 | `apps/web/src/app/layout.tsx` | Sitewide JSON-LD injection (T-008) | needs update |
 | `apps/web/src/middleware.ts` | Must whitelist every new public route group | needs update |
