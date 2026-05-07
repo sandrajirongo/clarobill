@@ -6,7 +6,7 @@ import s from './learn.module.css';
 export const metadata: Metadata = {
   title: 'Medical Billing Guides: Understand Your Bill and Fight Errors | ClaroBill',
   description:
-    'Plain-English guides on reading medical bills, understanding your rights under federal law, disputing charges, and finding billing errors. Grounded in federal pricing data and hospital-published rate information.',
+    'Plain-English guides on reading medical bills, understanding your rights under federal law, disputing charges, and finding billing errors.',
   alternates: {
     canonical: 'https://www.clarobill.com/learn',
     languages: {
@@ -131,8 +131,7 @@ export default function LearnPage(): JSX.Element {
         <p className={s.lead}>
           Roughly 80 percent of medical bills contain at least one error. These guides cover every stage
           of the billing dispute process, from reading your itemized statement to sending a dispute letter
-          backed by federal law. Every article is grounded in federal pricing data and hospital-published
-          rate information required by law.
+          backed by a verifiable citation.
         </p>
       </div>
 
@@ -153,8 +152,8 @@ export default function LearnPage(): JSX.Element {
       <div className={s.cta}>
         <p className={s.ctaTitle}>Have a bill you need to check now?</p>
         <p className={s.ctaBody}>
-          ClaroBill checks your bill against federal pricing data and your hospital&apos;s
-          published rates, then generates a dispute letter with a citation for every finding.
+          ClaroBill analyzes your bill for errors and overcharges, then generates a dispute
+          letter with a verifiable citation for every finding.
         </p>
         <Link href="/auth/sign-up" className={s.ctaLink}>Check my bill for free</Link>
       </div>

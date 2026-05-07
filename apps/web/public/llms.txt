@@ -1,6 +1,6 @@
 # ClaroBill
 
-> ClaroBill is an AI-powered medical bill error finder for US healthcare consumers. Users upload a medical bill; ClaroBill analyzes it for errors and overcharges, then returns a plain-English report with a citation for every finding and a ready-to-send dispute letter. Pricing is value-based per bill ($0 to $199.99 based on savings found). ClaroBill compares bills against federal pricing data and hospital-published rate information required by law.
+> ClaroBill is an AI-powered medical bill error finder for US healthcare consumers. Users upload a medical bill; ClaroBill analyzes it for errors and overcharges, then returns a plain-English report with a citation for every finding and a ready-to-send dispute letter. Pricing is value-based per bill ($0 to $199.99 based on savings found).
 
 ## Core
 
