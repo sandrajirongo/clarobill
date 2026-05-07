@@ -394,15 +394,17 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-008 | Add sitewide Organization + WebSite JSON-LD to layout | **DONE** | T-007 |
 | T-009 | Build dynamic `sitemap.ts` | **DONE** | T-001 |
 | T-010 | Audit + fix SSR on all public marketing routes | **DONE** | — |
-| T-011 | Add hreflang tags to all public pages | todo | T-010 |
-| T-005 | Wire GA4, Search Console, Bing Webmaster Tools | todo | T-001 |
-| T-012 | Create `/learn` hub layout + index page | todo | T-007, T-010 |
-| T-013 | Upgrade `/about` to YMYL standard | todo | T-007, T-008 |
-| T-014 | Upgrade `/legal/*` pages to YMYL standard | todo | T-007 |
-| T-002 | Build `/methodology` page (13 rules, full citations) | todo | T-007 |
-| T-017 | Add `Last-Modified` headers + reviewed stamps to `/learn/*` | todo | T-012 |
+| T-011 | Add hreflang tags to all public pages | **DONE** | T-010 |
+| T-005 | Wire GA4, Search Console, Bing Webmaster Tools | **INFRA DONE** — awaiting Sandra’s GA4 measurement ID + Search Console/Bing verification codes | T-001 |
+| T-012 | Create `/learn` hub layout + index page | **DONE** | T-007, T-010 |
+| T-013 | Upgrade `/about` to YMYL standard | **DONE** | T-007, T-008 |
+| T-014 | Upgrade `/legal/*` pages to YMYL standard | **DONE** | T-007 |
+| T-016 | Create content brief template + freshness protocol | **DONE** — `docs/product/content-brief-template.md` | — |
+| T-002 | Build `/methodology` page (13 rules, full citations) | **DONE** — `apps/web/src/app/methodology/` | T-007 |
+| T-017 | Add `Last-Modified` headers + reviewed stamps to `/learn/*` | **DONE** — byline stamp on /learn hub; standard set for all future articles | T-012 |
 | T-004 | Draft canonical MRF pillar: `/learn/why-bill-exceeds-insurer-negotiated-rate` | todo | T-002, T-008, T-012 |
 | T-015 | Write 8 initial `/learn/*` pillar articles | todo | T-004, T-012, T-007 |
+| T-018 | Set up Lighthouse CI gate | todo | — |
 | T-003 | Set up GEO measurement infrastructure | todo | T-005 |
 
 ### Phase 1 — GA Launch (July 2 → Sept 30, 2026)

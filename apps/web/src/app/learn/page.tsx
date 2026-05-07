@@ -125,6 +125,12 @@ export default function LearnPage(): JSX.Element {
     <article>
       <JsonLd schema={[BREADCRUMB, HUB_ARTICLE]} />
 
+      <div className={s.articleByline}>
+        <span>Last reviewed: May 2026</span>
+        <span>·</span>
+        <span>Sandra Jirongo</span>
+      </div>
+
       <h1 className={s.articleH1}>Understand your bill. Know your rights. Fight errors.</h1>
 
       <p className={s.articleLead}>
