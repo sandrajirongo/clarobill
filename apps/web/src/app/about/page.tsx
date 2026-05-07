@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { JsonLd } from '@/components/json-ld';
@@ -76,7 +77,13 @@ export default function AboutPage(): JSX.Element {
         <section className={s.section}>
           <h2 className={s.sectionTitle}>Founder</h2>
           <div className={s.founderCard}>
-            <div className={s.founderAvatar} aria-hidden="true">SJ</div>
+            <Image
+              src="/team/sandra-jirongo.jpg"
+              alt="Sandra Jirongo, Founder of ClaroBill"
+              width={52}
+              height={52}
+              className={s.founderPhoto}
+            />
             <div>
               <p className={s.founderName}>Sandra Jirongo</p>
               <p className={s.founderRole}>Founder</p>
@@ -91,38 +98,16 @@ export default function AboutPage(): JSX.Element {
         </section>
 
         <section className={s.section}>
-          <h2 className={s.sectionTitle}>Data sources</h2>
+          <h2 className={s.sectionTitle}>Our data</h2>
           <p className={s.body}>
-            Every finding ClaroBill surfaces has a traceable source. The four primary datasets:
+            Every finding we surface has a traceable source in federal pricing data, hospital-published
+            rate information required by law, and government provider registries. We verify and update
+            these sources on a regular basis.
           </p>
-          <ul className={s.sourceList}>
-            <li className={s.sourceItem}>
-              <span className={s.sourceLabel}>CMS Medicare Physician Fee Schedule</span>
-              <span className={s.sourceDesc}>National and locality-adjusted Medicare rates for 10,000+ CPT codes. Updated annually.</span>
-            </li>
-            <li className={s.sourceItem}>
-              <span className={s.sourceLabel}>CMS Hospital Outpatient Prospective Payment</span>
-              <span className={s.sourceDesc}>Medicare rates for hospital outpatient services. The benchmark for facility-fee disputes.</span>
-            </li>
-            <li className={s.sourceItem}>
-              <span className={s.sourceLabel}>CMS NCCI Edit Tables</span>
-              <span className={s.sourceDesc}>
-                Procedure-to-procedure and medically unlikely edit pairs. The federal authority for
-                unbundling detection.
-              </span>
-            </li>
-            <li className={s.sourceItem}>
-              <span className={s.sourceLabel}>Hospital Machine-Readable Files</span>
-              <span className={s.sourceDesc}>
-                Negotiated rates published by 13,000+ US hospitals under the Hospital Price Transparency
-                Rule (45 CFR 180). The only public source of insurer-specific contracted rates.
-              </span>
-            </li>
-            <li className={s.sourceItem}>
-              <span className={s.sourceLabel}>NPPES NPI Registry</span>
-              <span className={s.sourceDesc}>Provider identity and specialty data. Used to validate provider codes on each bill.</span>
-            </li>
-          </ul>
+          <p className={s.body}>
+            Each finding in a ClaroBill report includes the specific federal authority and the rate used
+            to calculate the discrepancy, so you can verify it yourself before sending a dispute letter.
+          </p>
         </section>
 
         <section className={s.section}>
