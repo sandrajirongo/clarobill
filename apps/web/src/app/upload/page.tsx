@@ -34,7 +34,7 @@ const HOW_TO_SCHEMA = {
   step: [
     { '@type': 'HowToStep' as const, name: 'Create a free account', text: 'Sign in or create a free ClaroBill account. No credit card required.' },
     { '@type': 'HowToStep' as const, name: 'Upload your bill', text: 'Upload your bill as a PDF or photo. We accept hospital bills, physician bills, and Explanations of Benefits.' },
-    { '@type': 'HowToStep' as const, name: 'Get your audit report', text: 'ClaroBill analyzes every line item and flags errors with federal rule citations. You receive a full report and a ready-to-send dispute letter.' },
+    { '@type': 'HowToStep' as const, name: 'Get your audit report', text: 'ClaroBill analyzes every line item and flags errors with full citations. You receive a complete audit report and a ready-to-send dispute letter.' },
   ],
 };
 
@@ -63,8 +63,8 @@ export default function UploadPage(): JSX.Element {
           <div className={s.eyebrow}>Free analysis &middot; No credit card</div>
           <h1 className={s.h1}>Upload your medical bill</h1>
           <p className={s.lead}>
-            ClaroBill audits every line item for errors and overcharges. Each finding references
-            the specific federal rule violated. If no errors are found, you pay nothing.
+            ClaroBill audits every line item for errors and overcharges. Each finding is fully
+            documented and cited. If no errors are found, you pay nothing.
           </p>
           <Link href="/auth/sign-in" className={s.ctaBtn}>
             Upload my bill. It&apos;s free.

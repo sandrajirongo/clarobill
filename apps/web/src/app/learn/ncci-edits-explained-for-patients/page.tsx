@@ -245,8 +245,8 @@ function Cta(): JSX.Element {
     <div className={s.ctaBox}>
       <p className={s.ctaTitle}>Find unbundling errors in your bill</p>
       <p className={s.ctaNote}>
-        ClaroBill checks every CPT code pair against current NCCI edit tables, flags unbundling
-        violations, and writes a dispute letter citing the specific federal edit.
+        ClaroBill analyzes your bill for bundling and coding errors automatically, then writes
+        your dispute letter with the relevant citations.
       </p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>Analyze my bill. It&rsquo;s free</Link>
     </div>

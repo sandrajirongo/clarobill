@@ -155,7 +155,7 @@ function Cta(): JSX.Element {
   return (
     <div className={s.ctaBox}>
       <p className={s.ctaTitle}>Find these errors in your bill</p>
-      <p className={s.ctaNote}>ClaroBill runs a deep audit across every line item, flagging duplicates, upcoding, unbundling, and overcharges. Then it writes your dispute letter automatically.</p>
+      <p className={s.ctaNote}>ClaroBill analyzes every line item for billing errors and overcharges, then writes your dispute letter automatically.</p>
       <Link href="/auth/sign-in" className={s.ctaBtn}>Analyze my bill. It's free</Link>
     </div>
   );

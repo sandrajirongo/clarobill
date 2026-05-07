@@ -45,7 +45,7 @@ const FAQ_SCHEMA = {
     {
       '@type': 'Question' as const,
       name: 'Is Goodbill or ClaroBill better for large bills?',
-      acceptedAnswer: { '@type': 'Answer' as const, text: "For very large bills (over $20,000) involving denied insurance claims or complex medical necessity disputes, Goodbill's human expert review and insurer negotiation experience may be worth the higher contingency fee. For common billing errors on bills of any size, ClaroBill's deterministic analysis is faster and significantly cheaper." },
+      acceptedAnswer: { '@type': 'Answer' as const, text: "For very large bills (over $20,000) involving denied insurance claims or complex medical necessity disputes, Goodbill's human expert review and insurer negotiation experience may be worth the higher contingency fee. For common billing errors on bills of any size, ClaroBill's automated analysis is faster and significantly cheaper." },
     },
     {
       '@type': 'Question' as const,

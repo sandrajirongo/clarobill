@@ -92,7 +92,7 @@ export default function AppVsAdvocate(): JSX.Element {
             <tr><td>Typical cost</td><td className={c.win}>$0–$200 flat</td><td className={c.lose}>25–35% of savings</td></tr>
             <tr><td>Speed</td><td className={c.win}>Minutes</td><td className={c.lose}>Days to weeks</td></tr>
             <tr><td>Duplicate charges</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
-            <tr><td>Upcoding</td><td className={c.win}>Yes (deterministic)</td><td className={c.win}>Yes (expert judgment)</td></tr>
+            <tr><td>Upcoding</td><td className={c.win}>Yes</td><td className={c.win}>Yes (expert judgment)</td></tr>
             <tr><td>Procedure bundling errors</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
             <tr><td>Denied insurance claims</td><td className={c.lose}>No</td><td className={c.win}>Yes</td></tr>
             <tr><td>Peer-to-peer insurer review</td><td className={c.lose}>No</td><td className={c.win}>Yes</td></tr>

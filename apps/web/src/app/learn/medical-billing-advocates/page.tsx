@@ -96,7 +96,7 @@ export default function Article(): JSX.Element {
         </p>
         <ul>
           <li>Audits each CPT code against the services documented in your medical records</li>
-          <li>Cross-references charges against Medicare fee schedule rates and NCCI edit rules</li>
+          <li>Cross-references charges against published billing standards and applicable rate benchmarks</li>
           <li>Identifies duplicate charges, unbundled procedures, and upcoded visit levels</li>
           <li>Prepares a written dispute letter with specific citations</li>
           <li>Communicates directly with the hospital billing department and, if needed, your insurer</li>

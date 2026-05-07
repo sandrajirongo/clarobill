@@ -262,10 +262,7 @@ export default function Article(): JSX.Element {
         </ul>
 
         <p>
-          This is why price benchmarking is one check among thirteen, not the whole
-          analysis. The{' '}
-          <Link href="/methodology">full methodology</Link> covers all thirteen checks,
-          each with its federal authority and a worked example.
+          This is why price benchmarking is one part of the analysis, not the whole picture.
         </p>
 
         <h2>Frequently asked questions</h2>
@@ -338,8 +335,8 @@ function RelatedGuides(): JSX.Element {
         <Link href="/blog/how-to-dispute-a-hospital-bill" className={s.relatedLink}>
           How to Dispute a Hospital Bill: A Step-by-Step Guide →
         </Link>
-        <Link href="/methodology" className={s.relatedLink}>
-          How ClaroBill Analyzes Your Bill →
+        <Link href="/learn/common-medical-billing-errors" className={s.relatedLink}>
+          The Most Common Medical Billing Errors →
         </Link>
       </div>
     </div>

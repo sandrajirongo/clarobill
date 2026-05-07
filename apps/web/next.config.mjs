@@ -4,7 +4,22 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  async redirects() {
+    return [
+      {
+        source: '/methodology',
+        destination: '/about',
+        permanent: true,
+      },
+      {
+        source: '/free-medical-bill-check',
+        destination: '/upload',
+        permanent: true,
+      },
+    ];
+  },
+};
 
 export default withSentryConfig(withNextIntl(nextConfig), {
   // Suppresses Sentry CLI output during builds

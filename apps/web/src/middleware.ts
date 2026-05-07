@@ -19,9 +19,7 @@ const PUBLIC_EXACT = new Set([
   '/',
   '/pricing',
   '/about',
-  '/methodology',        // T-002
   '/how-it-works',       // T-022
-  '/free-medical-bill-check', // T-022
   '/demo',
   '/logo-test',
   '/icon',
