@@ -1,6 +1,58 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '../../blog/blog.module.css';
+import { JsonLd } from '@/components/json-ld';
+
+const ARTICLE_SCHEMA = {
+  '@type': 'Article' as const,
+  headline: "What Are CPT Codes? A Patient's Guide",
+  description: 'CPT codes are the five-digit numbers that determine what your medical care costs. Here is how they work, how they get abused, and how to check whether yours are right.',
+  url: 'https://www.clarobill.com/learn/what-are-cpt-codes',
+  datePublished: '2026-04-07',
+  dateModified: '2026-05-07',
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
+};
+
+const BREADCRUMB_SCHEMA = {
+  '@type': 'BreadcrumbList' as const,
+  itemListElement: [
+    { '@type': 'ListItem' as const, position: 1, name: 'Home', item: 'https://www.clarobill.com' },
+    { '@type': 'ListItem' as const, position: 2, name: 'Guides', item: 'https://www.clarobill.com/learn' },
+    { '@type': 'ListItem' as const, position: 3, name: "What Are CPT Codes? A Patient's Guide", item: 'https://www.clarobill.com/learn/what-are-cpt-codes' },
+  ],
+};
+
+const FAQ_SCHEMA = {
+  '@type': 'FAQPage' as const,
+  mainEntity: [
+    {
+      '@type': 'Question' as const,
+      name: 'What is a CPT code?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'CPT stands for Current Procedural Terminology. CPT codes are five-digit numbers maintained by the American Medical Association that describe specific medical, surgical, and diagnostic services. Every CPT code maps to a dollar amount on insurance fee schedules, so the code on your bill directly determines what you are charged and what your insurance pays.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'Who assigns CPT codes to a medical bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Physicians or their billing staff select the CPT code that best describes the service performed, based on documentation in the medical record. The code must match the complexity and nature of the documented service. Selecting a higher-complexity code than the documentation supports is called upcoding and is a compliance violation.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is upcoding in medical billing?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Upcoding is when a provider bills for a more complex or more expensive service than what was actually performed. For example, billing CPT 99215, a high-complexity visit reimbursed at approximately $182 under the 2026 Medicare fee schedule, for a routine 10-minute follow-up that should be coded at 99213, which reimburses at approximately $90.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'Why does the same CPT code cost different amounts at different hospitals?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'CPT codes standardize what was done but not what anyone charges for it. Each provider sets their own chargemaster rates before any insurance negotiation. Your insurer applies their contracted discount from those rates. Uninsured patients and out-of-network visits can be billed at or near the chargemaster rate, which is often several times the Medicare fee schedule amount for the identical service.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is CPT Modifier 59?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Modifier 59 is appended to a CPT code to indicate that two procedures that would normally form a National Correct Coding Initiative (NCCI) edit pair were performed under distinct circumstances — a separate anatomical site, a separate session, or a different practitioner. It is a legitimate override when properly documented, but CMS has identified modifier 59 as the most frequently misused modifier in the Medicare program.' },
+    },
+  ],
+};
 
 export const metadata: Metadata = {
   title: "What Are CPT Codes? A Patient's Guide: ClaroBill",
@@ -14,6 +66,8 @@ export const metadata: Metadata = {
 export default function Article(): JSX.Element {
   return (
     <article>
+      <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
       <div className={s.articleByline}>
         <span>April 7, 2026</span>
         <span>·</span>

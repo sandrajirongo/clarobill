@@ -1,6 +1,58 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '../../blog/blog.module.css';
+import { JsonLd } from '@/components/json-ld';
+
+const ARTICLE_SCHEMA = {
+  '@type': 'Article' as const,
+  headline: 'How to Dispute a Hospital Bill: A Step-by-Step Guide',
+  description: 'A practical guide to disputing hospital billing errors. From requesting your itemized bill to writing a dispute letter that gets results.',
+  url: 'https://www.clarobill.com/learn/how-to-dispute-a-hospital-bill',
+  datePublished: '2026-04-17',
+  dateModified: '2026-05-07',
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
+};
+
+const BREADCRUMB_SCHEMA = {
+  '@type': 'BreadcrumbList' as const,
+  itemListElement: [
+    { '@type': 'ListItem' as const, position: 1, name: 'Home', item: 'https://www.clarobill.com' },
+    { '@type': 'ListItem' as const, position: 2, name: 'Guides', item: 'https://www.clarobill.com/learn' },
+    { '@type': 'ListItem' as const, position: 3, name: 'How to Dispute a Hospital Bill', item: 'https://www.clarobill.com/learn/how-to-dispute-a-hospital-bill' },
+  ],
+};
+
+const FAQ_SCHEMA = {
+  '@type': 'FAQPage' as const,
+  mainEntity: [
+    {
+      '@type': 'Question' as const,
+      name: 'How do I get an itemized hospital bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Call the hospital billing department and ask specifically for an itemized statement listing all charges with CPT and revenue codes. In most states this must be provided free of charge. You can also ask for the UB-04 claim form, which is the standard form submitted to your insurer and contains all codes and charges.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is the difference between a hospital bill and an Explanation of Benefits?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'A hospital bill comes from the provider and shows what was charged. An Explanation of Benefits (EOB) comes from your insurer and shows what they agreed to pay and what you owe after their negotiated discount. Reconcile both documents before paying anything — discrepancies between them often reveal billing errors.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'How do I write a hospital bill dispute letter?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Your letter should include your name, account number, and date of service; the specific CPT codes and dollar amounts you dispute; the rule being violated such as an NCCI edit, Medicare fee schedule rate, or duplicate charge; the amount you believe you owe; and a request for a written response within 30 days. Send it by certified mail or email with a read receipt and keep a copy.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'How long do I have to dispute a hospital bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Most hospitals give you 60 to 180 days from the statement date to submit a dispute. If you are waiting on your EOB or medical records, request a written extension from the billing department before the deadline.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What if the hospital refuses to correct the bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Escalate to your insurer\'s formal appeals process, file a complaint with your state insurance commissioner for balance billing or No Surprises Act violations, or contact the hospital\'s patient financial ombudsman. Keep all dispute correspondence in writing. Most hospitals resolve documented disputes within 30 to 60 days when a specific rule violation is cited.' },
+    },
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide: ClaroBill',
@@ -14,6 +66,8 @@ export const metadata: Metadata = {
 export default function Article(): JSX.Element {
   return (
     <article>
+      <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
       <div className={s.articleByline}>
         <span>April 17, 2026</span>
         <span>·</span>

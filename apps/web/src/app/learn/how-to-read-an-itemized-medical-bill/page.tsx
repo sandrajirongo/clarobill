@@ -1,6 +1,58 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '../../blog/blog.module.css';
+import { JsonLd } from '@/components/json-ld';
+
+const ARTICLE_SCHEMA = {
+  '@type': 'Article' as const,
+  headline: 'How to Read an Itemized Medical Bill',
+  description: 'What the columns, codes, and dollar amounts on your itemized medical bill actually mean. Plus how to find the errors hiding in plain sight.',
+  url: 'https://www.clarobill.com/learn/how-to-read-an-itemized-medical-bill',
+  datePublished: '2026-04-07',
+  dateModified: '2026-05-07',
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
+};
+
+const BREADCRUMB_SCHEMA = {
+  '@type': 'BreadcrumbList' as const,
+  itemListElement: [
+    { '@type': 'ListItem' as const, position: 1, name: 'Home', item: 'https://www.clarobill.com' },
+    { '@type': 'ListItem' as const, position: 2, name: 'Guides', item: 'https://www.clarobill.com/learn' },
+    { '@type': 'ListItem' as const, position: 3, name: 'How to Read an Itemized Medical Bill', item: 'https://www.clarobill.com/learn/how-to-read-an-itemized-medical-bill' },
+  ],
+};
+
+const FAQ_SCHEMA = {
+  '@type': 'FAQPage' as const,
+  mainEntity: [
+    {
+      '@type': 'Question' as const,
+      name: 'What is an itemized medical bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'An itemized medical bill, sometimes called an itemized statement or UB-04 form, lists every charge individually with the specific procedure code, date of service, quantity, and dollar amount attached. Most patients only receive a summary bill automatically. You must specifically request the itemized version from the hospital billing department.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'How do I request an itemized hospital bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Call the hospital billing department and ask for a complete itemized statement listing all charges with CPT and revenue codes. In most states, itemized bills must be provided free of charge. You can also ask for the UB-04 claim form, which is the form submitted to your insurer and contains all codes, dates, and charge amounts.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is a CPT code on a medical bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'CPT codes are five-digit numbers that describe the exact procedure or service performed. They directly determine how much your insurance pays and what you owe. If the description on your bill does not match your experience of the visit, that discrepancy may indicate upcoding — billing for a more complex service than what occurred.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is the difference between billed amount and allowed amount on a medical bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'The billed amount is what the provider charged before any discounts or adjustments. The allowed amount is the negotiated rate between your insurer and the provider. The difference is written off by the provider. You are not responsible for the difference — you only owe your share of the allowed amount, such as your copay or coinsurance.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'How can I tell if there are errors on my itemized bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Look for the same CPT code appearing twice on the same date (duplicate charges), services billed on dates you were not at the facility, a visit complexity code that does not match how long or involved your appointment was, and charges you cannot match to anything that actually happened during your care.' },
+    },
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'How to Read an Itemized Medical Bill: ClaroBill',
@@ -14,6 +66,8 @@ export const metadata: Metadata = {
 export default function Article(): JSX.Element {
   return (
     <article>
+      <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
       <div className={s.articleByline}>
         <span>April 7, 2026</span>
         <span>·</span>

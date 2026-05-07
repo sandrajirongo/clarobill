@@ -1,6 +1,58 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '../../blog/blog.module.css';
+import { JsonLd } from '@/components/json-ld';
+
+const ARTICLE_SCHEMA = {
+  '@type': 'Article' as const,
+  headline: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One',
+  description: 'Medical billing advocates can recover thousands from hospital errors. But they typically charge 25 to 35 percent of what they save you. Here is when they make sense.',
+  url: 'https://www.clarobill.com/learn/medical-billing-advocates',
+  datePublished: '2026-04-17',
+  dateModified: '2026-05-07',
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
+};
+
+const BREADCRUMB_SCHEMA = {
+  '@type': 'BreadcrumbList' as const,
+  itemListElement: [
+    { '@type': 'ListItem' as const, position: 1, name: 'Home', item: 'https://www.clarobill.com' },
+    { '@type': 'ListItem' as const, position: 2, name: 'Guides', item: 'https://www.clarobill.com/learn' },
+    { '@type': 'ListItem' as const, position: 3, name: 'Medical Billing Advocates', item: 'https://www.clarobill.com/learn/medical-billing-advocates' },
+  ],
+};
+
+const FAQ_SCHEMA = {
+  '@type': 'FAQPage' as const,
+  mainEntity: [
+    {
+      '@type': 'Question' as const,
+      name: 'What does a medical billing advocate do?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'A medical billing advocate reviews your itemized bill and Explanation of Benefits, identifies errors such as duplicate charges, upcoded visits, and unbundled procedures, prepares dispute letters with specific federal citations, and communicates with the hospital billing department and your insurer on your behalf through multiple rounds of review if necessary.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'How much do medical billing advocates charge?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Most medical billing advocates work on contingency, taking 25 to 35 percent of whatever they save you. Some charge a flat hourly rate of $75 to $150 per hour, or a flat project fee of $300 to $600 for simpler reviews. Confirm all fee structures in writing before engaging an advocate.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'Are medical billing advocates licensed?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'The medical billing advocacy industry is not licensed in most states. There is no standardized certification, no regulatory body, and no required disclosure of conflicts of interest. Before hiring anyone, ask about their specific experience with your type of bill, request references, and clarify what they charge if they find nothing.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'When is it worth hiring a medical billing advocate?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Consider a human advocate for bills over $20,000 where errors are likely and each recovered error has significant dollar value; for denied insurance claims requiring formal appeals or peer-to-peer reviews; for medical necessity disputes; or when billing fraud is suspected rather than coding error.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'Can I dispute a medical bill without hiring a professional advocate?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Yes. For the most common billing errors such as duplicate charges, unbundled CPT codes, and price outliers, the rules are publicly published and disputes follow predictable templates. A well-formatted dispute letter citing the specific federal rule violation resolves most mechanical errors without professional help.' },
+    },
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One: ClaroBill',
@@ -14,6 +66,8 @@ export const metadata: Metadata = {
 export default function Article(): JSX.Element {
   return (
     <article>
+      <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
       <div className={s.articleByline}>
         <span>April 17, 2026</span>
         <span>·</span>

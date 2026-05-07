@@ -402,9 +402,9 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-016 | Create content brief template + freshness protocol | **DONE** — `docs/product/content-brief-template.md` | — |
 | T-002 | Build `/methodology` page (13 rules, full citations) | **DONE** — `apps/web/src/app/methodology/` | T-007 |
 | T-017 | Add `Last-Modified` headers + reviewed stamps to `/learn/*` | **DONE** — byline stamp on /learn hub; standard set for all future articles | T-012 |
-| T-004 | Draft canonical MRF pillar: `/learn/why-bill-exceeds-insurer-negotiated-rate` | todo | T-002, T-008, T-012 |
-| T-015 | Write 8 initial `/learn/*` pillar articles | todo | T-004, T-012, T-007 |
-| T-018 | Set up Lighthouse CI gate | todo | — |
+| T-004 | Draft canonical MRF pillar: `/learn/why-bill-exceeds-insurer-negotiated-rate` | **DONE** | T-002, T-008, T-012 |
+| T-015 | Write 8 initial `/learn/*` pillar articles | **DONE** — 8 articles live under /learn/ | T-004, T-012, T-007 |
+| T-018 | Set up Lighthouse CI gate | **DONE** — `.github/workflows/lighthouse.yml` + `.lighthouserc.js` | — |
 | T-003 | Set up GEO measurement infrastructure | todo | T-005 |
 
 ### Phase 1 — GA Launch (July 2 → Sept 30, 2026)

@@ -1,6 +1,58 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '../../blog/blog.module.css';
+import { JsonLd } from '@/components/json-ld';
+
+const ARTICLE_SCHEMA = {
+  '@type': 'Article' as const,
+  headline: 'The Most Common Medical Billing Errors (And How to Dispute Them)',
+  description: 'Duplicate charges, upcoded visits, unbundled procedures. Here is what each billing error looks like on a real bill and exactly what to say when you dispute it.',
+  url: 'https://www.clarobill.com/learn/common-medical-billing-errors',
+  datePublished: '2026-04-07',
+  dateModified: '2026-05-07',
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
+};
+
+const BREADCRUMB_SCHEMA = {
+  '@type': 'BreadcrumbList' as const,
+  itemListElement: [
+    { '@type': 'ListItem' as const, position: 1, name: 'Home', item: 'https://www.clarobill.com' },
+    { '@type': 'ListItem' as const, position: 2, name: 'Guides', item: 'https://www.clarobill.com/learn' },
+    { '@type': 'ListItem' as const, position: 3, name: 'Common Medical Billing Errors', item: 'https://www.clarobill.com/learn/common-medical-billing-errors' },
+  ],
+};
+
+const FAQ_SCHEMA = {
+  '@type': 'FAQPage' as const,
+  mainEntity: [
+    {
+      '@type': 'Question' as const,
+      name: 'What are the most common medical billing errors?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'The most common billing errors on hospital and physician bills are: duplicate charges (the same CPT code billed twice on the same date), upcoding (billing a higher-complexity service than what was performed), unbundling (billing component codes separately instead of as a single bundled code), charges for services not rendered, and balance billing from out-of-network providers for care where you had no choice of provider.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is upcoding and how do I dispute it?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Upcoding is when a provider bills for a more complex, more expensive service than what was actually performed. To dispute it, compare the CPT code on your bill to the Medicare fee schedule documentation requirements for that code. CPT 99215, for example, requires documented high-complexity medical decision-making or at least 40 minutes of total time. If the visit note does not support the code, request the documentation and ask for a corrected claim.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is unbundling in medical billing?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Unbundling is when a provider bills two or more CPT codes separately for procedures that should be billed as a single, bundled code under CMS National Correct Coding Initiative (NCCI) rules. For example, CPT 29877 (knee arthroscopy with debridement) is a component of CPT 29881 (knee arthroscopy with meniscectomy) and cannot be billed separately on the same date without a valid modifier.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'How do I identify a duplicate charge on a medical bill?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Look for the same CPT code appearing more than once on the same date of service on your itemized bill. Also look for an unusually high quantity next to a procedure code where the service was only performed once. Common examples include lab codes such as CPT 85025 (complete blood count) appearing twice on a single day, or medication quantities that exceed what you could have received during your stay.' },
+    },
+    {
+      '@type': 'Question' as const,
+      name: 'What is balance billing and is it legal?',
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Balance billing is when an out-of-network provider charges you the difference between their billed amount and what your insurance pays. The No Surprises Act, which took effect January 1, 2022, prohibits balance billing for most emergency services and for non-emergency services where you had no meaningful choice of provider, such as when an out-of-network anesthesiologist operates at an in-network facility. File a complaint with your state insurance commissioner if you receive a prohibited balance bill.' },
+    },
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'The Most Common Medical Billing Errors (And How to Dispute Them): ClaroBill',
@@ -14,6 +66,8 @@ export const metadata: Metadata = {
 export default function Article(): JSX.Element {
   return (
     <article>
+      <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
       <div className={s.articleByline}>
         <span>April 7, 2026</span>
         <span>·</span>
