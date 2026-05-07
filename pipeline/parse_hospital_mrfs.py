@@ -1060,10 +1060,18 @@ def process_archive_index_pending(
             logger.error("[archive_index %s] Failed: %s", gcs_uri, exc, exc_info=True)
             failed += 1
             if mrf_url:
-                update_archive_index_status(
-                    bq, mrf_url, "failed",
-                    error=f"archive_index_driver: {type(exc).__name__}: {exc}"[:1000],
-                )
+                try:
+                    update_archive_index_status(
+                        bq, mrf_url, "failed",
+                        error=f"archive_index_driver: {type(exc).__name__}: {exc}"[:1000],
+                    )
+                except Exception as status_exc:
+                    # BQ concurrent-update errors must not propagate out of the
+                    # per-row handler — the blob stays pending and will be retried
+                    # on the next run.
+                    logger.warning(
+                        "[archive_index %s] Could not record failure: %s", gcs_uri, status_exc
+                    )
 
         if buffer.needs_flush():
             buffer.flush(bq)
