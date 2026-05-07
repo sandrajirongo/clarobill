@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { JsonLd } from '@/components/json-ld';
 
 export const metadata: Metadata = {
   title: 'Terms of Service: Clarobill',
@@ -9,11 +10,22 @@ export const metadata: Metadata = {
   },
 };
 
+const ORG_SCHEMA = {
+  '@type': 'Organization' as const,
+  name: 'ClaroBill',
+  url: 'https://www.clarobill.com',
+  description: 'AI-powered medical bill error finder.',
+};
+
 export default function TermsOfServicePage(): JSX.Element {
   return (
     <article>
+      <JsonLd schema={ORG_SCHEMA} />
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Terms of Service</h1>
-      <p className="text-sm text-gray-500 mb-8">Effective date: April 7, 2026. Last updated: April 7, 2026.</p>
+      <p className="text-sm text-gray-500 mb-8">
+        Effective date: April 7, 2026. Last updated: April 7, 2026.{' '}
+        <span>Last reviewed: May 2026.</span>
+      </p>
 
       <p className="text-gray-700 mb-6">
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of ClaroBill (&ldquo;Service,&rdquo;
