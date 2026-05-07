@@ -40,18 +40,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly',
       priority: 0.8,
     },
-    {
-      url: `${BASE}/free-medical-bill-check`,
-      lastModified: NOW,
-      changeFrequency: 'monthly',
-      priority: 0.9,
-    },
-    {
-      url: `${BASE}/methodology`,
-      lastModified: NOW,
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
+
+
     {
       url: `${BASE}/about`,
       lastModified: NOW,

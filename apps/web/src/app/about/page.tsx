@@ -101,7 +101,7 @@ export default function AboutPage(): JSX.Element {
             and the exact dollar discrepancy, so you can verify it independently before sending a
             dispute letter. That citation trail is what gets hospitals to correct bills.
           </p>
-          <p><Link href="/methodology">Read the full methodology</Link></p>
+
 
           <h2>Your data stays yours</h2>
           <p>

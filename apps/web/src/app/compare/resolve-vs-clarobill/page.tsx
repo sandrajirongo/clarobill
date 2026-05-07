@@ -117,8 +117,8 @@ export default function ResolveVsClarobill(): JSX.Element {
         <h2>What ClaroBill does</h2>
         <p>
           ClaroBill analyzes the itemized bill itself, looking for errors in the charges before
-          a dollar is paid. If a charge is a duplicate, upcoded, or violates an NCCI bundling rule,
-          ClaroBill flags it with a specific citation and generates the dispute letter. This happens
+          a dollar is paid. If a charge is a duplicate, incorrect, or overpriced, ClaroBill flags
+          it with a specific citation and generates the dispute letter. This happens
           before the bill reaches final status.
         </p>
         <p>

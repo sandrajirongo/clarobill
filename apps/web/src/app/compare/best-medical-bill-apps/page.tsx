@@ -40,17 +40,17 @@ const FAQ_SCHEMA = {
     {
       '@type': 'Question' as const,
       name: 'What is the best app to check a medical bill for errors?',
-      acceptedAnswer: { '@type': 'Answer' as const, text: 'For most patients, ClaroBill is the best starting point: it analyzes every line item deterministically against federal rules, generates a dispute letter with citations, and charges a flat fee only when errors are found. For very large bills involving denied claims or insurer negotiations, Goodbill\'s human expert model is worth considering despite the higher contingency fee.' },
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'For most patients, ClaroBill is the best starting point: it analyzes every line item automatically, generates a dispute letter with citations, and charges a flat fee only when errors are found. For very large bills involving denied claims or insurer negotiations, Goodbill\'s human expert model is worth considering despite the higher contingency fee.' },
     },
     {
       '@type': 'Question' as const,
       name: 'Is there a free medical bill review app?',
-      acceptedAnswer: { '@type': 'Answer' as const, text: 'ClaroBill runs the analysis for free on every bill. You only pay a flat fee if errors worth disputing are found. CheckMedBill.com offers a free dispute letter generator but does not automatically detect errors. Doing it yourself is also free if you are willing to spend the time researching CPT codes and NCCI rules manually.' },
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'ClaroBill runs the analysis for free on every bill. You only pay a flat fee if errors worth disputing are found. CheckMedBill.com offers a free dispute letter generator but does not automatically detect errors. Doing it yourself is also free if you are willing to spend the time researching billing codes and rules manually.' },
     },
     {
       '@type': 'Question' as const,
       name: 'How accurate are AI medical bill review apps?',
-      acceptedAnswer: { '@type': 'Answer' as const, text: 'Deterministic rules-based systems like ClaroBill are highly accurate for the errors they are designed to detect (duplicates, upcoding, unbundling, price outliers) because each finding is a verifiable fact matched against a federal rule or published rate. AI systems that use generative models to interpret bills are less consistent and may produce false positives. ClaroBill\'s approach is deterministic first, with AI used only for interpretation of complex cases.' },
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'ClaroBill is highly accurate for the errors it is designed to detect because each finding is a verifiable fact, not a guess. AI systems that use generative models to interpret bills are less consistent and may produce false positives. ClaroBill\'s approach prioritizes verifiable findings with citations over probabilistic interpretation.' },
     },
   ],
 };
@@ -60,7 +60,7 @@ const OPTIONS = [
     name: 'ClaroBill',
     cost: '$0–$199.99 flat',
     speed: 'Minutes',
-    errorDetection: 'Deterministic rules engine',
+    errorDetection: 'Automated analysis',
     disputeLetter: 'Yes — with citations',
     deniedClaims: 'No',
     best: 'Most patients — mechanical errors on any bill size',
@@ -87,7 +87,7 @@ const OPTIONS = [
     name: 'DIY',
     cost: 'Free',
     speed: 'Hours of research',
-    errorDetection: 'Manual — requires CPT/NCCI knowledge',
+    errorDetection: 'Manual — requires billing code expertise',
     disputeLetter: 'Write your own',
     deniedClaims: 'With enough research',
     best: 'Patients with billing knowledge and time',
@@ -141,9 +141,9 @@ export default function BestMedicalBillApps(): JSX.Element {
 
         <h2>ClaroBill</h2>
         <p>
-          ClaroBill uses a deterministic rules engine to check every CPT code against federal fee
-          schedules, NCCI edit tables, and duplicate detection logic. Every finding references the
-          specific rule violated. The dispute letter is generated automatically and is ready to send.
+          ClaroBill uses automated analysis to check every charge against applicable benchmarks
+          and detect common billing errors. Every finding references the specific rule violated.
+          The dispute letter is generated automatically and is ready to send.
         </p>
         <p>
           Cost: free to analyze, flat fee only if errors are found ($0 to $199.99 depending on
@@ -171,9 +171,8 @@ export default function BestMedicalBillApps(): JSX.Element {
 
         <h2>Doing it yourself</h2>
         <p>
-          DIY is free and gives you full control. You request the itemized bill, look up CPT codes
-          against the Medicare fee schedule, check pairs against the NCCI edit tables, and write
-          your own dispute letter. Our{' '}
+          DIY is free and gives you full control. You request the itemized bill, research the
+          applicable billing rules and rates, and write your own dispute letter. Our{' '}
           <Link href="/learn/common-medical-billing-errors">billing errors guide</Link> and{' '}
           <Link href="/learn/how-to-dispute-a-hospital-bill">dispute guide</Link> cover the full
           process. The downside is time: a thorough manual audit of a complex hospital bill takes

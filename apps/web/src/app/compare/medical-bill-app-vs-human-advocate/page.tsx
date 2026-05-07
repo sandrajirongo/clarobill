@@ -40,7 +40,7 @@ const FAQ_SCHEMA = {
     {
       '@type': 'Question' as const,
       name: 'When should I use a medical bill review app instead of a human advocate?',
-      acceptedAnswer: { '@type': 'Answer' as const, text: 'Use an app for bills under $20,000 with mechanical errors: duplicate charges, upcoded visit levels, unbundled procedures, or price outliers. Apps analyze these in minutes at a fraction of the cost of a human advocate. Human advocates add value for complex cases involving denied claims, large surgical bills, or situations requiring direct insurer negotiation.' },
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Use an app for bills under $20,000 with common billing errors. Apps analyze these in minutes at a fraction of the cost of a human advocate. Human advocates add value for complex cases involving denied claims, large surgical bills, or situations requiring direct insurer negotiation.' },
     },
     {
       '@type': 'Question' as const,
@@ -93,7 +93,7 @@ export default function AppVsAdvocate(): JSX.Element {
             <tr><td>Speed</td><td className={c.win}>Minutes</td><td className={c.lose}>Days to weeks</td></tr>
             <tr><td>Duplicate charges</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
             <tr><td>Upcoding</td><td className={c.win}>Yes (deterministic)</td><td className={c.win}>Yes (expert judgment)</td></tr>
-            <tr><td>Unbundling / NCCI edits</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
+            <tr><td>Procedure bundling errors</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
             <tr><td>Denied insurance claims</td><td className={c.lose}>No</td><td className={c.win}>Yes</td></tr>
             <tr><td>Peer-to-peer insurer review</td><td className={c.lose}>No</td><td className={c.win}>Yes</td></tr>
             <tr><td>Negotiates with provider</td><td className={c.lose}>No</td><td className={c.win}>Yes</td></tr>
@@ -104,9 +104,8 @@ export default function AppVsAdvocate(): JSX.Element {
         </table>
 
         <div className={c.verdict}>
-          <strong>Use an app when:</strong> Your bill has mechanical errors (duplicates, upcoding,
-          unbundling, price outliers) and is under $20,000. The app is faster, cheaper, and
-          produces a cited dispute letter in minutes.
+          <strong>Use an app when:</strong> Your bill has common billing errors and is under
+          $20,000. The app is faster, cheaper, and produces a cited dispute letter in minutes.
           <br /><br />
           <strong>Use a human advocate when:</strong> Your claim was denied by your insurer,
           the bill exceeds $20,000 and involves complex surgical coding, or the hospital has
@@ -115,10 +114,9 @@ export default function AppVsAdvocate(): JSX.Element {
 
         <h2>What apps do well</h2>
         <p>
-          The most common billing errors (duplicates, upcoded visit levels, unbundled procedure
-          codes) follow predictable patterns that a rules engine can detect deterministically. An
-          app checking CPT 99215 documentation requirements does exactly what a human coder would
-          do, but in milliseconds and at scale across every line item simultaneously.
+          The most common billing errors follow predictable patterns that automated analysis can
+          detect reliably. An app reviewing each charge does exactly what a human coder would do,
+          but in minutes and at scale across every line item simultaneously.
         </p>
         <p>
           For these errors, an app produces a dispute letter with a specific federal citation

@@ -35,9 +35,9 @@ const PERSON_SCHEMA = {
   knowsAbout: [
     'Medical billing',
     'Hospital price transparency',
-    'CPT coding',
-    'Medicare fee schedules',
-    'National Correct Coding Initiative',
+    'Medical billing error detection',
+    'Patient billing rights',
+    'Healthcare payment systems',
     'Healthcare data engineering',
   ],
 };
@@ -124,9 +124,8 @@ export default function AuthorPage(): JSX.Element {
         <p>
           With a background in data engineering and large-scale data pipelines, she built the
           infrastructure to process publicly available hospital pricing data at scale and apply it
-          deterministically to individual patient bills. Every finding ClaroBill surfaces includes
-          a specific citation: the federal rule violated, the rate that should have applied, and
-          the exact language for a dispute letter.
+          automatically to individual patient bills. Every finding ClaroBill surfaces includes
+          a specific citation and the exact dollar discrepancy for each error found.
         </p>
         <p>
           The guides below reflect what she learned while building ClaroBill and what she wishes

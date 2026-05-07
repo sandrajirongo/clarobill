@@ -2,8 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { JsonLd } from '@/components/json-ld';
-import { MethodologyTrustBlock } from '@/components/methodology-trust-block';
-import s from '../free-medical-bill-check/free-check.module.css';
+import s from './shell.module.css';
 import u from './upload.module.css';
 
 export const metadata: Metadata = {
@@ -114,7 +113,7 @@ export default function UploadPage(): JSX.Element {
             <div className={s.howStep}>
               <div className={s.howNum}>2</div>
               <p className={s.howTitle}>Rules engine checks each line</p>
-              <p className={s.howBody}>Each charge is compared against federal fee schedules, NCCI edit tables, and duplicate detection.</p>
+              <p className={s.howBody}>Each charge is reviewed for accuracy against applicable benchmarks.</p>
             </div>
             <div className={s.howStep}>
               <div className={s.howNum}>3</div>
@@ -122,12 +121,6 @@ export default function UploadPage(): JSX.Element {
               <p className={s.howBody}>Every error flagged includes the specific rule violated and the corrected amount. The letter is ready to send.</p>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className={s.checksSection}>
-        <div className={s.checksInner}>
-          <MethodologyTrustBlock />
         </div>
       </section>
 

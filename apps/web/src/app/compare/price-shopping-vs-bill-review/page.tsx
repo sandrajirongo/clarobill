@@ -45,7 +45,7 @@ const FAQ_SCHEMA = {
     {
       '@type': 'Question' as const,
       name: 'Can I use price shopping data to dispute a bill after the fact?',
-      acceptedAnswer: { '@type': 'Answer' as const, text: 'Sometimes. If you were charged significantly more than the published rate for your insurer in the hospital\'s machine-readable file, that discrepancy is disputable. For most billing errors, however, the dispute is based on NCCI rules, fee schedule rates, and duplicate detection rather than price comparison.' },
+      acceptedAnswer: { '@type': 'Answer' as const, text: 'Sometimes. If you were charged significantly more than the published rate for your insurer in the hospital\'s machine-readable file, that discrepancy is disputable. For most billing errors, however, the dispute is based on applicable billing rules, standard rates, and error detection rather than price comparison.' },
     },
     {
       '@type': 'Question' as const,
@@ -123,8 +123,8 @@ export default function PriceShoppingVsBillReview(): JSX.Element {
         <h2>What medical bill review does</h2>
         <p>
           Medical bill review operates on the bill you already have. A tool like ClaroBill takes
-          your itemized statement and runs it through a rules engine checking each CPT code against
-          federal fee schedules, NCCI edit tables, and duplicate detection logic.
+          your itemized statement and checks each charge automatically against applicable
+          benchmarks and billing rules.
         </p>
         <p>
           Unlike price shopping, bill review catches errors that were introduced in the billing
