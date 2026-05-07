@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getLocale } from 'next-intl/server';
 import { PostHogProvider } from '@/components/posthog-provider';
+import { JsonLd } from '@/components/json-ld';
 import './globals.css';
 
 // Fraunces: optical-size axis required for variable font
@@ -37,6 +38,30 @@ export const viewport: Viewport = {
 // for image sub-resources. Override locally with NEXT_PUBLIC_SITE_URL when
 // previewing shares against a tunnel or staging deployment.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.clarobill.com';
+
+const ORGANIZATION_SCHEMA = {
+  '@type': 'Organization' as const,
+  name: 'ClaroBill',
+  url: 'https://www.clarobill.com',
+  description:
+    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills against 13 deterministic rule checks and hospital Machine-Readable Files to find overcharges, duplicate charges, and coding errors, then generates a dispute letter with a deterministic citation trail.',
+  sameAs: [
+    'https://www.instagram.com/clarobill/',
+    'https://x.com/clarobillai',
+    'https://www.linkedin.com/company/clarobill/',
+  ],
+};
+
+const WEBSITE_SCHEMA = {
+  '@type': 'WebSite' as const,
+  name: 'ClaroBill',
+  url: 'https://www.clarobill.com',
+  potentialAction: {
+    '@type': 'SearchAction' as const,
+    target: 'https://www.clarobill.com/learn?q={search_term_string}',
+    'query-input': 'required name=search_term_string',
+  },
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -77,6 +102,7 @@ export default async function RootLayout({
     // next-intl locale is passed via NextIntlClientProvider for UI string translation.
     <html lang="en" className={`${fraunces.variable} ${syne.variable}`}>
       <body>
+        <JsonLd schema={[ORGANIZATION_SCHEMA, WEBSITE_SCHEMA]} />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Suspense>
             <PostHogProvider>{children}</PostHogProvider>
