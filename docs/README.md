@@ -18,6 +18,7 @@ Start here. Every doc lives under one of the categories below.
 | How does CI work? | `operations/` | [ci-cd.md](operations/ci-cd.md) |
 | What does the user see? | `product/` | [user-workflow.md](product/user-workflow.md) |
 | What's the price model? | `product/` | [pricing.md](product/pricing.md) |
+| What's the SEO/GEO plan and task list? | `product/` | [seo-geo-plan.md](product/seo-geo-plan.md) |
 | Why was X built that way? | `decisions/` | ADRs by date |
 | What broke and why? | `postmortems/` | postmortems by date |
 | What's next on the backlog? | `future-improvements/` | one file per backlog item |
