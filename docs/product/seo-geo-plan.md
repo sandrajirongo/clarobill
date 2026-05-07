@@ -11,7 +11,7 @@
 
 - Task list: see §9 (50 tasks, T-001 → T-050)
 - Current phase: **Phase 0** (pre-GA, now → June 30, 2026)
-- Next immediate task: **T-001** done. Next: **T-006** (llms.txt) or **T-007** (JSON-LD component).
+- Next immediate task: **T-036** (`/error/[type]/[scenario]` programmatic pages) or **T-037** (`/tools/dispute-letter-generator`).
 - GEO monitoring doc: `docs/product/geo-monitoring.md` (to be created at T-003)
 - Content brief template: `docs/product/content-brief-template.md` (to be created at T-016)
 
@@ -416,7 +416,7 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-013 | Upgrade `/about` to YMYL standard | **DONE** | T-007, T-008 |
 | T-014 | Upgrade `/legal/*` pages to YMYL standard | **DONE** | T-007 |
 | T-016 | Create content brief template + freshness protocol | **DONE** — `docs/product/content-brief-template.md` | — |
-| T-002 | Build `/methodology` page (13 rules, full citations) | **DONE** — `apps/web/src/app/methodology/` | T-007 |
+| T-002 | Build `/methodology` page (13 rules, full citations) | **DELETED** — page exposed IP; removed 2026-05-07; 301 redirect /methodology → /about added to `next.config.mjs` | T-007 |
 | T-017 | Add `Last-Modified` headers + reviewed stamps to `/learn/*` | **DONE** — byline stamp on /learn hub; standard set for all future articles | T-012 |
 | T-004 | Draft canonical MRF pillar: `/learn/why-bill-exceeds-insurer-negotiated-rate` | **DONE** | T-002, T-008, T-012 |
 | T-015 | Write 8 initial `/learn/*` pillar articles | **DONE** — 8 articles live under /learn/ | T-004, T-012, T-007 |
@@ -440,9 +440,9 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-029 | Set up HARO/Qwoted outreach workflow | todo | T-002, T-013 |
 | T-030 | Launch on Product Hunt, IndieHackers, HN | todo | T-005 |
 | T-031 | Update sitemap to include all Phase 1 routes | **DONE** (all current Phase 1 routes in sitemap.ts) | T-009, T-024, T-025, T-026, T-027 |
-| T-032 | Add HowTo + DefinedTerm schema stacking to `/methodology` | **DONE** | T-002, T-007 |
-| T-033 | Build "How we know" inline component | **DONE** | T-024 |
-| T-034 | Add `/methodology` trust block to all conversion pages | **DONE** | T-002, T-022, T-023 |
+| T-032 | Add HowTo + DefinedTerm schema stacking to `/methodology` | **N/A** — /methodology deleted for IP reasons | T-002, T-007 |
+| T-033 | Build "How we know" inline component | **DONE** — component built at `src/components/how-we-know.tsx`; not yet embedded in /learn articles (deferred) | T-024 |
+| T-034 | Add `/methodology` trust block to all conversion pages | **DONE** — trust block on /upload; /methodology link removed from block | T-002, T-022, T-023 |
 
 ### Phase 2 — Oct → Dec 2026
 
@@ -483,7 +483,8 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | `apps/web/src/app/layout.tsx` | Sitewide JSON-LD injection (T-008) | **DONE** |
 | `apps/web/src/middleware.ts` | Must whitelist every new public route group | needs update |
 | `apps/web/src/app/pricing/page.tsx` | Currently `'use client'` — must be refactored (T-010) | needs fix |
-| `apps/web/src/app/methodology/page.tsx` | /methodology page (T-002) | todo |
+| `apps/web/next.config.mjs` | 301 redirects for deleted pages (/methodology → /about, /free-medical-bill-check → /upload) | **DONE** |
+| `apps/web/public/llms.txt` | Updated — removed deleted page links, fixed all stale /learn slugs | **DONE** |
 | `docs/product/content-brief-template.md` | Content brief template (T-016) | todo |
 | `docs/product/geo-monitoring.md` | GEO monitoring spec (T-003) | todo |
 
