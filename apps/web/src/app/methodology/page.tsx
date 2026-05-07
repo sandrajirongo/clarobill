@@ -24,6 +24,42 @@ const BREADCRUMB = {
   ],
 };
 
+const HOWTO: import('@/components/json-ld').HowToSchema = {
+  '@type': 'HowTo',
+  name: 'How ClaroBill Audits a Medical Bill',
+  description: '13 deterministic checks run against every line item. Each check cites a specific federal rule and produces an exact dollar discrepancy.',
+  step: [
+    { '@type': 'HowToStep', name: 'Duplicate charge detection', text: 'Identifies CPT or HCPCS codes that appear more than once on the same date of service with no clinical justification. Authority: CMS Claims Processing Manual, Chapter 4.', url: 'https://www.clarobill.com/methodology#duplicate-charge-detection' },
+    { '@type': 'HowToStep', name: 'Price outlier detection', text: 'Compares each billed charge to the Medicare Physician Fee Schedule benchmark for the same code and locality. Flags charges that materially exceed the published rate. Authority: CMS MPFS.', url: 'https://www.clarobill.com/methodology#price-outlier-detection' },
+    { '@type': 'HowToStep', name: 'NCCI Procedure-to-Procedure unbundling', text: 'Checks every code pair against the CMS NCCI PTP edit table. Flags pairs where one code should be bundled into the other with no overriding modifier. Authority: CMS NCCI Policy Manual.', url: 'https://www.clarobill.com/methodology#ncci-unbundling' },
+    { '@type': 'HowToStep', name: 'NCCI Medically Unlikely Edits', text: 'Verifies that the units billed for each code do not exceed the CMS Medically Unlikely Edit (MUE) threshold for that code and service setting. Authority: CMS NCCI MUE table.', url: 'https://www.clarobill.com/methodology#ncci-mue' },
+    { '@type': 'HowToStep', name: 'Balance billing — No Surprises Act', text: 'Checks whether out-of-network charges at in-network facilities exceed the patient\'s in-network cost-sharing, which is prohibited under the No Surprises Act (42 U.S.C. § 300gg-111).', url: 'https://www.clarobill.com/methodology#balance-billing' },
+    { '@type': 'HowToStep', name: 'Charges for services not rendered', text: 'Cross-references billed line items against the itemized bill and any available clinical records for discrepancies between what was billed and what was documented as performed.', url: 'https://www.clarobill.com/methodology#services-not-rendered' },
+    { '@type': 'HowToStep', name: 'Outpatient facility fee misclassification', text: 'Verifies that the place-of-service modifier matches the actual care setting. An office-visit code billed with a facility modifier generates a higher payment rate and may be incorrect. Authority: CMS Place of Service code set.', url: 'https://www.clarobill.com/methodology#facility-fee-misclassification' },
+    { '@type': 'HowToStep', name: 'Global surgery period violations', text: 'Flags post-operative services billed separately within the global surgery period for the primary procedure code. Authority: CMS Global Surgery policy (Medicare Claims Processing Manual, Chapter 12).', url: 'https://www.clarobill.com/methodology#global-surgery' },
+    { '@type': 'HowToStep', name: 'Modifier misuse', text: 'Verifies that modifiers appended to procedure codes are clinically appropriate and do not override NCCI edits without valid justification. Authority: CMS Modifier guidelines.', url: 'https://www.clarobill.com/methodology#modifier-misuse' },
+    { '@type': 'HowToStep', name: 'Fragmented billing — 72-hour rule', text: 'Detects pre-admission outpatient services billed separately within 72 hours of an inpatient admission when they should be included in the DRG payment. Authority: CMS 3-day payment window policy.', url: 'https://www.clarobill.com/methodology#72-hour-rule' },
+    { '@type': 'HowToStep', name: 'Units and quantity errors', text: 'Checks whether the number of units billed for drugs, supplies, or time-based services is consistent with the documented administration or clinical records.', url: 'https://www.clarobill.com/methodology#units-errors' },
+    { '@type': 'HowToStep', name: 'Invalid or obsolete codes', text: 'Validates every CPT and HCPCS code against the code set effective for the date of service. Codes that were retired or not yet effective on the service date are flagged. Authority: AMA CPT annual release; CMS HCPCS.', url: 'https://www.clarobill.com/methodology#invalid-codes' },
+    { '@type': 'HowToStep', name: 'Negotiated rate excess', text: 'Where the insurer\'s negotiated rate is available via hospital machine-readable files, checks whether the patient was billed more than the contracted rate for their plan. Authority: CMS Price Transparency Rule (45 CFR Part 180).', url: 'https://www.clarobill.com/methodology#negotiated-rate-excess' },
+  ],
+};
+
+const DEFINED_TERMS: import('@/components/json-ld').DefinedTermSetSchema = {
+  '@type': 'DefinedTermSet',
+  name: 'Medical Billing Terms',
+  hasDefinedTerm: [
+    { '@type': 'DefinedTerm', name: 'CPT code', description: 'Current Procedural Terminology code. A 5-digit numeric code maintained by the AMA that identifies a medical procedure or service billed to an insurer.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'NCCI', description: 'National Correct Coding Initiative. A CMS program that publishes edit tables defining which procedure code pairs may not be billed together and the maximum units allowed per code.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'Medicare Physician Fee Schedule', description: 'The CMS schedule of payment amounts for over 10,000 procedures covered under Medicare Part B, updated quarterly. Used as the national benchmark for detecting price outliers.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'Modifier', description: 'A 2-digit code appended to a CPT code to indicate that a service was altered in some way without changing its definition. Some modifiers can override NCCI bundling edits when clinically justified.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'Global surgery period', description: 'The pre- and post-operative window during which follow-up services are considered included in the payment for the primary surgical procedure and may not be billed separately.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'Medically Unlikely Edit (MUE)', description: 'A CMS-published maximum unit value for a CPT or HCPCS code per date of service. Billing units that exceed the MUE threshold are flagged as unlikely to be medically necessary.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'Balance billing', description: 'The practice of billing a patient for the difference between a provider\'s charge and the amount paid by the insurer. Prohibited in most circumstances under the No Surprises Act for emergency and certain OON services.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+    { '@type': 'DefinedTerm', name: 'DRG', description: 'Diagnosis-Related Group. A classification system used for inpatient hospital billing under Medicare that groups diagnoses into fixed-payment categories, bundling most services into a single payment.', inDefinedTermSet: 'https://www.clarobill.com/methodology' },
+  ],
+};
+
 const ARTICLE = {
   '@type': 'Article' as const,
   headline: 'How ClaroBill Analyzes Your Medical Bill',
@@ -39,7 +75,7 @@ const ARTICLE = {
 export default function MethodologyPage(): JSX.Element {
   return (
     <article>
-      <JsonLd schema={[BREADCRUMB, ARTICLE]} />
+      <JsonLd schema={[BREADCRUMB, ARTICLE, HOWTO, DEFINED_TERMS]} />
 
       <div className={s.articleByline}>
         <span>Last reviewed: May 2026</span>

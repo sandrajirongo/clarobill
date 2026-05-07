@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { JsonLd } from '@/components/json-ld';
 import { isBetaMode } from '@/lib/beta';
+import { MethodologyTrustBlock } from '@/components/methodology-trust-block';
 import s from './free-check.module.css';
 
 export const metadata: Metadata = {
@@ -175,11 +176,7 @@ export default function FreeCheckPage(): JSX.Element {
               </div>
             ))}
           </div>
-          <p className={s.methodologyLink}>
-            For the full methodology, federal citations, and worked examples for each check,
-            see the{' '}
-            <Link href="/methodology">methodology page</Link>.
-          </p>
+          <MethodologyTrustBlock />
         </div>
       </section>
 

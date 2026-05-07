@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { JsonLd } from '@/components/json-ld';
+import { MethodologyTrustBlock } from '@/components/methodology-trust-block';
 import s from '../free-medical-bill-check/free-check.module.css';
 import u from './upload.module.css';
 
@@ -121,6 +122,12 @@ export default function UploadPage(): JSX.Element {
               <p className={s.howBody}>Every error flagged includes the specific rule violated and the corrected amount. The letter is ready to send.</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className={s.checksSection}>
+        <div className={s.checksInner}>
+          <MethodologyTrustBlock />
         </div>
       </section>
 

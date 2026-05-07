@@ -1,0 +1,53 @@
+.box {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--sage);
+  border-radius: 0 var(--r-xl) var(--r-xl) 0;
+  padding: .85rem 1rem;
+  margin: 1.25rem 0;
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  margin-top: .1rem;
+  color: var(--sage);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+.label {
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--txt3);
+}
+
+.rule {
+  font-weight: 600;
+  color: var(--txt);
+}
+
+.meta {
+  color: var(--txt3);
+}
+
+.meta a {
+  color: var(--sage);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color .15s;
+}
+
+.meta a:hover { color: var(--sage-l); }

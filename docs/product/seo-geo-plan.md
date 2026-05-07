@@ -214,6 +214,22 @@ Ship at GA launch. Disproportionately cited by AI engines (listicle/scorecard st
 - Weeks 13–52: 2 posts/week (1 new + 1 update)
 - Mix: 50% deep guides, 25% original data posts, 15% news commentary, 10% case studies
 
+**Article ideas (12 initial posts):**
+1. What is upcoding? How hospitals inflate bills with wrong CPT codes
+2. How to read your Explanation of Benefits (EOB) — a field-by-field guide
+3. Balance billing: what it is, when it's illegal, and how to fight it
+4. Hospital financial assistance programs — how to qualify and apply (most hospitals never advertise these)
+5. The No Surprises Act two years in — what it fixed and what it didn't
+6. What is a hospital chargemaster? Why the sticker price is fiction
+7. DRG billing explained: how hospitals bundle inpatient charges
+8. How insurance companies negotiate hospital rates — and what that means for your bill
+9. What happens if you can't pay a medical bill: a 180-day timeline
+10. Medical billing codes decoded: CPT vs. ICD-10 vs. HCPCS vs. DRG
+11. How to request your medical records (and why you need them before disputing a bill)
+12. When to hire a medical billing attorney vs. an advocate vs. doing it yourself
+
+**Voice notes:** Keep YC discipline tone for data/evidence posts. Speedrun velocity tone (punchy, declarative) for how-to posts. Every post needs at least 3 cited sources and one worked example with real CPT codes or dollar amounts.
+
 ### Auditability moat — §3.6
 
 **(a) /methodology page (T-002):** 13 rules, each with what it checks, federal authority cited, data source, worked example, SQL/citation pattern. Highest-leverage single content asset — YMYL trust anchor + AI citation magnet + proof point vs. Goodbill/Resolve.
@@ -420,13 +436,13 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-025 | Build 5 comparison pages | **DONE** | T-007, T-010 |
 | T-026 | Build `/tools/cpt-code-lookup` tool page | **SKIP (TBD)** — CPT descriptions are AMA-copyrighted IP; commercial use requires AMA license ($5k+/yr). Legal to show CMS rate data only. Revisit if AMA license acquired or scope narrowed to rates-only. | T-007, T-009 |
 | T-027 | Build 50 `/learn/state/[state]/patient-billing-rights` pages | **DONE** | T-012, T-007 |
-| T-028 | Write 12 initial blog posts (1/week for 12 weeks) | todo | T-019, T-020 |
+| T-028 | Write 12 initial blog posts (1/week for 12 weeks) | **IDEAS LOGGED** (content TBD) | T-019, T-020 |
 | T-029 | Set up HARO/Qwoted outreach workflow | todo | T-002, T-013 |
 | T-030 | Launch on Product Hunt, IndieHackers, HN | todo | T-005 |
-| T-031 | Update sitemap to include all Phase 1 routes | todo | T-009, T-024, T-025, T-026, T-027 |
-| T-032 | Add HowTo + DefinedTerm schema stacking to `/methodology` | todo | T-002, T-007 |
-| T-033 | Build "How we know" inline component | todo | T-024 |
-| T-034 | Add `/methodology` trust block to all conversion pages | todo | T-002, T-022, T-023 |
+| T-031 | Update sitemap to include all Phase 1 routes | **DONE** (all current Phase 1 routes in sitemap.ts) | T-009, T-024, T-025, T-026, T-027 |
+| T-032 | Add HowTo + DefinedTerm schema stacking to `/methodology` | **DONE** | T-002, T-007 |
+| T-033 | Build "How we know" inline component | **DONE** | T-024 |
+| T-034 | Add `/methodology` trust block to all conversion pages | **DONE** | T-002, T-022, T-023 |
 
 ### Phase 2 — Oct → Dec 2026
 
