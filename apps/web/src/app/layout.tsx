@@ -45,7 +45,7 @@ const ORGANIZATION_SCHEMA = {
   name: 'ClaroBill',
   url: 'https://www.clarobill.com',
   description:
-    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills against 13 deterministic rule checks and hospital Machine-Readable Files to find overcharges, duplicate charges, and coding errors, then generates a dispute letter with a deterministic citation trail.',
+    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills to find overcharges, duplicate charges, and coding errors, then generates a dispute letter with a citation for every finding.',
   sameAs: [
     'https://www.instagram.com/clarobill/',
     'https://x.com/clarobillai',

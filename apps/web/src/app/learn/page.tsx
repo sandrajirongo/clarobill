@@ -6,7 +6,7 @@ import s from './learn.module.css';
 export const metadata: Metadata = {
   title: 'Medical Billing Guides: Understand Your Bill and Fight Errors | ClaroBill',
   description:
-    'Plain-English guides on reading medical bills, understanding your rights under federal law, disputing charges, and finding billing errors. Built on CMS fee schedules and hospital machine-readable files.',
+    'Plain-English guides on reading medical bills, understanding your rights under federal law, disputing charges, and finding billing errors. Grounded in federal pricing data and hospital-published rate information.',
   alternates: {
     canonical: 'https://www.clarobill.com/learn',
     languages: {
@@ -107,14 +107,15 @@ const PILLARS = [
     id: 'hospital-pricing-data',
     title: 'Hospital pricing data',
     description:
-      'Under the Hospital Price Transparency Rule, every US hospital is required to publish a machine-readable file listing their negotiated rates. ClaroBill ingests these files for over 13,000 hospitals so your bill can be compared against what your insurer actually agreed to pay. These guides explain the data, how it is structured, and what discrepancies mean.',
+      'Under the Hospital Price Transparency Rule, every US hospital is required to publish their negotiated rates. These guides explain what that data is, how to read it, and how to use it when disputing a charge.',
+
     topics: [
       'Hospital machine-readable files explained',
       'Negotiated rate vs. chargemaster vs. Medicare',
       'NCCI edits for patients',
       'CMS Medicare fee schedule vs. your bill',
       'How to build an audit trail for a bill dispute',
-      'Chargemaster effective dating',
+      'How hospitals set and change their prices',
     ],
   },
 ] as const;
@@ -130,8 +131,8 @@ export default function LearnPage(): JSX.Element {
         <p className={s.lead}>
           Roughly 80 percent of medical bills contain at least one error. These guides cover every stage
           of the billing dispute process, from reading your itemized statement to sending a dispute letter
-          backed by federal law. Every article draws on CMS fee schedules, NCCI edit tables, and
-          negotiated-rate machine-readable files from over 13,000 US hospitals.
+          backed by federal law. Every article is grounded in federal pricing data and hospital-published
+          rate information required by law.
         </p>
       </div>
 
@@ -152,7 +153,7 @@ export default function LearnPage(): JSX.Element {
       <div className={s.cta}>
         <p className={s.ctaTitle}>Have a bill you need to check now?</p>
         <p className={s.ctaBody}>
-          ClaroBill runs 13 deterministic rule checks against CMS data and your hospital&apos;s
+          ClaroBill checks your bill against federal pricing data and your hospital&apos;s
           published rates, then generates a dispute letter with a citation for every finding.
         </p>
         <Link href="/auth/sign-up" className={s.ctaLink}>Check my bill for free</Link>

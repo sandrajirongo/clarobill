@@ -8,7 +8,7 @@ import s from './about.module.css';
 export const metadata: Metadata = {
   title: 'About ClaroBill: AI Medical Bill Error Finder',
   description:
-    'ClaroBill was built to fix a broken system. Learn about our mission, how the rules engine works, and why the hospital machine-readable file dataset is the foundation of every dispute letter we generate.',
+    'ClaroBill was built to fix a broken system. Learn about our mission, how we analyze medical bills, and what makes our approach different.',
   alternates: {
     canonical: 'https://www.clarobill.com/about',
     languages: {
@@ -24,7 +24,7 @@ const FOUNDER_SCHEMA = {
   url: 'https://www.clarobill.com/about',
   jobTitle: 'Founder',
   description:
-    'Founder of ClaroBill. Built the rules engine and hospital MRF ingestion pipeline to give patients the same data their insurers have at the negotiating table.',
+    'Founder of ClaroBill. Built the product to give patients access to the same pricing data their insurers use at the negotiating table.',
 };
 
 const ORG_SCHEMA = {
@@ -32,7 +32,7 @@ const ORG_SCHEMA = {
   name: 'ClaroBill',
   url: 'https://www.clarobill.com',
   description:
-    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills against 13 deterministic rule checks and hospital machine-readable files to find overcharges, duplicate charges, and coding errors.',
+    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills to find overcharges, duplicate charges, and coding errors, then generates a dispute letter with a citation for every finding.',
   sameAs: [
     'https://www.instagram.com/clarobill/',
     'https://x.com/clarobillai',
@@ -48,7 +48,7 @@ export default function AboutPage(): JSX.Element {
 
       <main className={s.main}>
         <p className={s.eyebrow}>About ClaroBill</p>
-        <h1 className={s.pageTitle}>A rules engine built to read the bill the way your hospital does.</h1>
+        <h1 className={s.pageTitle}>Built to read your bill the way your hospital does.</h1>
         <p className={s.lead}>
           Roughly 80 percent of US medical bills contain at least one error. The problem is not malice. It is
           complexity: thousands of CPT codes, insurer-specific contract rates, unbundling rules, and
@@ -68,9 +68,9 @@ export default function AboutPage(): JSX.Element {
             Almost no one built on it.
           </p>
           <p className={s.body}>
-            ClaroBill does. The full stack, a data pipeline covering 13,800 hospitals, a rules engine,
-            OCR, payment flow, and dispute letters, shipped in three months. Every analysis compares your
-            bill against the rates your hospital actually agreed to charge your insurer.
+            ClaroBill does. The full product, from analysis to dispute letter, shipped in three months.
+            Every analysis compares your bill against the rates your hospital actually agreed to
+            charge your insurer.
           </p>
         </section>
 
@@ -89,8 +89,8 @@ export default function AboutPage(): JSX.Element {
               <p className={s.founderRole}>Founder</p>
               <p className={s.founderBio}>
                 Sandra built ClaroBill after her own medical bill sent her through weeks of unanswered
-                calls and codes she could not decode. She designed the rules engine and the hospital
-                machine-readable file ingestion pipeline that powers every analysis. The full stack
+                calls and codes she could not decode. She designed the analysis approach and the
+                pricing data infrastructure that powers every ClaroBill report. The full product
                 shipped solo in three months.
               </p>
             </div>
@@ -113,10 +113,9 @@ export default function AboutPage(): JSX.Element {
         <section className={s.section}>
           <h2 className={s.sectionTitle}>How the analysis works</h2>
           <p className={s.body}>
-            ClaroBill does not use a black-box AI model to decide whether a charge is wrong. Every finding
-            is produced by a deterministic rule with a named federal authority and a specific data source.
-            The dispute letter we generate cites the rule, the authority, and the exact dollar discrepancy.
-            That citation trail is what gets hospitals to correct bills.
+            ClaroBill does not guess. Every finding in your report includes the federal authority and
+            the specific rate used to calculate the discrepancy, so you can verify it independently
+            before sending a dispute letter. That citation trail is what gets hospitals to correct bills.
           </p>
           <p className={s.body}>
             <Link href="/methodology" className={s.methLink}>Read the full methodology</Link>
