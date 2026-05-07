@@ -1,0 +1,34 @@
+# ClaroBill
+
+> ClaroBill is an AI-powered medical bill error finder for US healthcare consumers. Users upload a medical bill; ClaroBill analyzes it against 13 deterministic rule checks (duplicate charges, unbundling via NCCI edits, MUE limits, Medicare fee schedule outliers, MRF negotiated-rate ceilings, chargemaster comparisons, effective-dated coding, and more) plus AI review, and returns a plain-English error report with a deterministic citation trail and a ready-to-send dispute letter. Pricing is value-based per bill ($0 to $199.99 based on savings found). ClaroBill is the only consumer tool that compares bills against the hospital's own Machine-Readable File chargemaster in force on the bill's actual service date.
+
+## Core
+
+- [How ClaroBill works](https://www.clarobill.com/how-it-works)
+- [Pricing](https://www.clarobill.com/pricing)
+- [Free medical bill check](https://www.clarobill.com/free-medical-bill-check)
+- [Sample report](https://www.clarobill.com/sample-report)
+- [Upload a bill](https://www.clarobill.com/upload)
+
+## Methodology
+
+- [How ClaroBill detects errors (13-rule methodology)](https://www.clarobill.com/methodology)
+- [Common medical billing errors](https://www.clarobill.com/learn/common-medical-billing-errors)
+- [How we use hospital Machine-Readable Files (MRFs)](https://www.clarobill.com/learn/hospital-machine-readable-files-explained)
+- [NCCI edits explained for patients](https://www.clarobill.com/learn/ncci-edits-explained-for-patients)
+- [Why your bill may exceed your insurer's negotiated rate](https://www.clarobill.com/learn/why-bill-exceeds-insurer-negotiated-rate)
+
+## Reference content
+
+- [Glossary of medical billing terms](https://www.clarobill.com/learn/medical-billing-codes-explained)
+- [How to dispute a medical bill](https://www.clarobill.com/learn/how-to-dispute-medical-bill)
+- [No Surprises Act guide](https://www.clarobill.com/learn/no-surprises-act)
+- [State-by-state patient billing rights](https://www.clarobill.com/learn/state)
+- [How to read an itemized hospital bill](https://www.clarobill.com/learn/how-to-read-itemized-hospital-bill)
+
+## Trust and legal
+
+- [About ClaroBill](https://www.clarobill.com/about)
+- [Privacy policy and HIPAA practices](https://www.clarobill.com/legal/privacy)
+- [Terms of service](https://www.clarobill.com/legal/terms)
+- [Disclaimer](https://www.clarobill.com/legal/disclaimer)
