@@ -155,7 +155,7 @@ export default function LearnPage(): JSX.Element {
           ClaroBill analyzes your bill for errors and overcharges, then generates a dispute
           letter with a verifiable citation for every finding.
         </p>
-        <Link href="/auth/sign-up" className={s.ctaLink}>Check my bill for free</Link>
+        <Link href="/auth/sign-in" className={s.ctaLink}>Check my bill for free</Link>
       </div>
     </>
   );
