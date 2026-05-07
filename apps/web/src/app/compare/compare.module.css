@@ -1,0 +1,61 @@
+.scorecard {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin: 1.5rem 0 0.5rem;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border, #ddd9d0);
+}
+.scorecard th {
+  padding: 0.75rem 1rem;
+  font-family: var(--font-syne, sans-serif);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--forest, #2d4a2a);
+  color: #fff;
+  text-align: left;
+}
+.scorecard th:not(:first-child) { text-align: center; }
+.scorecard td {
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--border, #ddd9d0);
+  color: var(--txt2, #4a5544);
+  line-height: 1.45;
+  vertical-align: top;
+}
+.scorecard td:not(:first-child) { text-align: center; }
+.scorecard tr:nth-child(even) td { background: rgba(45,74,42,0.03); }
+.scorecard tr.highlight td {
+  background: rgba(200,240,96,0.12);
+  font-weight: 500;
+  color: var(--txt, #1a1f19);
+}
+.scorecard .win {
+  color: var(--forest, #2d4a2a);
+  font-weight: 600;
+}
+.scorecard .lose { color: var(--txt3, #6b7566); }
+.scorecard .neutral { color: var(--txt2, #4a5544); }
+
+.verdict {
+  background: var(--forest, #2d4a2a);
+  color: rgba(255,255,255,0.9);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+.verdict strong { color: var(--lime, #c8f060); }
+
+.disclaimer {
+  font-size: 0.78rem;
+  color: var(--txt3, #6b7566);
+  border-top: 1px solid var(--border, #ddd9d0);
+  padding-top: 1rem;
+  margin-top: 2rem;
+  line-height: 1.6;
+}

@@ -97,5 +97,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
-  return [...staticRoutes, ...learnRoutes];
+  const compareRoutes: MetadataRoute.Sitemap = [
+    'goodbill-vs-clarobill',
+    'resolve-vs-clarobill',
+    'medical-bill-app-vs-human-advocate',
+    'price-shopping-vs-bill-review',
+    'best-medical-bill-apps',
+  ].map((slug) => ({
+    url: `${BASE}/compare/${slug}`,
+    lastModified: NOW,
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
+  }));
+
+  return [...staticRoutes, ...learnRoutes, ...compareRoutes];
 }
