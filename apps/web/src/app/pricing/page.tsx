@@ -1,10 +1,43 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
+import { JsonLd } from '@/components/json-ld';
 import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import { PricingFaq } from './pricing-faq';
-import { TIERS, HOW_STEPS } from './pricing-data';
+import { TIERS, HOW_STEPS, FAQS } from './pricing-data';
 import s from './pricing.module.css';
+
+const PRICING_SCHEMAS = [
+  {
+    '@type': 'BreadcrumbList' as const,
+    itemListElement: [
+      { '@type': 'ListItem' as const, position: 1, name: 'Home', item: 'https://www.clarobill.com' },
+      { '@type': 'ListItem' as const, position: 2, name: 'Pricing', item: 'https://www.clarobill.com/pricing' },
+    ],
+  },
+  {
+    '@type': 'Product' as const,
+    name: 'ClaroBill Medical Bill Analysis',
+    description:
+      'AI-powered medical bill error detection and dispute letter generation. Free analysis on every bill. Pay a one-time flat fee only when errors worth disputing are found.',
+    url: 'https://www.clarobill.com/pricing',
+    offers: [
+      { '@type': 'Offer' as const, name: 'Clean Bill', price: '0', priceCurrency: 'USD', description: 'No billing errors found worth disputing. Free, always.' },
+      { '@type': 'Offer' as const, name: 'Small Win', price: '14.99', priceCurrency: 'USD', description: '$21 to $100 in billing errors found.' },
+      { '@type': 'Offer' as const, name: 'Standard Fix', price: '79.99', priceCurrency: 'USD', description: '$101 to $500 in billing errors found.' },
+      { '@type': 'Offer' as const, name: 'Major Fix', price: '129.99', priceCurrency: 'USD', description: '$501 to $1,500 in billing errors found.' },
+      { '@type': 'Offer' as const, name: 'Heavy Hitter', price: '199.99', priceCurrency: 'USD', description: 'Over $1,500 in billing errors found.' },
+    ],
+  },
+  {
+    '@type': 'FAQPage' as const,
+    mainEntity: FAQS.map((f) => ({
+      '@type': 'Question' as const,
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer' as const, text: f.a },
+    })),
+  },
+];
 
 export const metadata: Metadata = {
   title: 'Pricing: ClaroBill',
@@ -19,6 +52,7 @@ export default function PricingPage(): JSX.Element {
   const beta = isBetaMode();
   return (
     <div className={s.shell}>
+      <JsonLd schema={PRICING_SCHEMAS} />
 
       <MarketingNav activePath="/pricing" />
 

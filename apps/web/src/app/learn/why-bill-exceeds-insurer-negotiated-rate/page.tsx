@@ -33,7 +33,7 @@ const ARTICLE = {
   url: 'https://www.clarobill.com/learn/why-bill-exceeds-insurer-negotiated-rate',
   datePublished: '2026-05-07',
   dateModified: '2026-05-07',
-  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/authors/sandra-jirongo' },
   publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
 };
 

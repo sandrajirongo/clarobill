@@ -17,6 +17,12 @@ const LEARN_SLUGS = [
 export default function sitemap(): MetadataRoute.Sitemap {
   const staticRoutes: MetadataRoute.Sitemap = [
     {
+      url: `${BASE}/authors/sandra-jirongo`,
+      lastModified: NOW,
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    },
+    {
       url: BASE,
       lastModified: NOW,
       changeFrequency: 'weekly',

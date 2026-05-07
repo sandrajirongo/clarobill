@@ -10,7 +10,7 @@ const ARTICLE_SCHEMA = {
   url: 'https://www.clarobill.com/learn/medical-billing-advocates',
   datePublished: '2026-04-17',
   dateModified: '2026-05-07',
-  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/authors/sandra-jirongo' },
   publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
 };
 

@@ -24,7 +24,7 @@ const ARTICLE_SCHEMA = {
   url: 'https://www.clarobill.com/learn/ncci-edits-explained-for-patients',
   datePublished: '2026-05-07',
   dateModified: '2026-05-07',
-  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/authors/sandra-jirongo' },
   publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
 };
 
