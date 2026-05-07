@@ -45,7 +45,7 @@ export function MarketingNav({ activePath }: MarketingNavProps): JSX.Element {
   const links = [
     { href: '/',         label: 'Home'      },
     { href: '/pricing',  label: 'Pricing'   },
-    { href: '/blog',     label: 'Resources' },
+    { href: '/learn',    label: 'Resources' },
   ];
 
   return (

@@ -37,19 +37,98 @@ const HUB_ARTICLE = {
   publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
 };
 
-const PILLARS = [
+interface Article {
+  slug: string;
+  title: string;
+  description: string;
+  date: string;
+  readMins: number;
+}
+
+const PUBLISHED_ARTICLES: Article[] = [
+  {
+    slug: 'how-to-dispute-a-hospital-bill',
+    title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide',
+    description: 'A practical guide to disputing hospital billing errors. From requesting your itemized bill to writing a dispute letter that actually gets results.',
+    date: 'April 17, 2026',
+    readMins: 9,
+  },
+  {
+    slug: 'medical-billing-advocates',
+    title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One',
+    description: 'Advocates can recover real money from billing errors. But they typically keep 25-35% of what they save you. Here is when hiring one makes sense.',
+    date: 'April 17, 2026',
+    readMins: 7,
+  },
+  {
+    slug: 'how-to-read-an-itemized-medical-bill',
+    title: 'How to Read an Itemized Medical Bill',
+    description: 'What the columns, codes, and dollar amounts actually mean. Plus how to spot the line items that should not be there.',
+    date: 'April 7, 2026',
+    readMins: 7,
+  },
+  {
+    slug: 'common-medical-billing-errors',
+    title: 'The Most Common Medical Billing Errors (And How to Dispute Them)',
+    description: 'Duplicate charges, upcoded visits, unbundled procedures. Here is what each one looks like on a real bill and what to say when you dispute it.',
+    date: 'April 7, 2026',
+    readMins: 8,
+  },
+  {
+    slug: 'what-are-cpt-codes',
+    title: "What Are CPT Codes? A Patient's Guide",
+    description: 'The five-digit numbers on your bill determine what you pay. Here is how they work, why they get abused, and how to check whether yours are right.',
+    date: 'April 7, 2026',
+    readMins: 6,
+  },
+  {
+    slug: 'why-bill-exceeds-insurer-negotiated-rate',
+    title: 'Why Your Bill Is Higher Than What Your Insurer Pays',
+    description: 'Chargemaster rates, negotiated rates, and Medicare rates. Understanding the gap between what hospitals charge and what they accept is the first step to disputing it.',
+    date: 'May 7, 2026',
+    readMins: 9,
+  },
+  {
+    slug: 'hospital-machine-readable-files-explained',
+    title: 'Hospital Machine-Readable Files: What They Are and How to Use Them',
+    description: 'Every US hospital is required by federal law to publish its negotiated rates. Here is how to find that file, read it, and use the numbers to dispute an overcharge.',
+    date: 'May 7, 2026',
+    readMins: 8,
+  },
+  {
+    slug: 'ncci-edits-explained-for-patients',
+    title: 'NCCI Edits: The Federal Rules That Prevent Billing Abuse',
+    description: 'The National Correct Coding Initiative defines which CPT codes can and cannot be billed together. Here is what that means for your bill and how to use it in a dispute.',
+    date: 'May 7, 2026',
+    readMins: 7,
+  },
+];
+
+interface Topic {
+  label: string;
+  href?: string;
+}
+
+interface Pillar {
+  id: string;
+  title: string;
+  description: string;
+  topics: Topic[];
+}
+
+const PILLARS: Pillar[] = [
   {
     id: 'billing-errors',
     title: 'Billing errors',
     description:
-      'The most common errors on hospital and physician bills, how to identify them on your itemized statement, and what each error means for what you owe. Duplicate charges, upcoded visits, and unbundled procedures together account for the majority of actionable disputes.',
+      'The most common errors on hospital and physician bills, how to identify them on your itemized statement, and what each error means for what you owe.',
     topics: [
-      'Common medical billing errors',
-      'Duplicate charges',
-      'Upcoding',
-      'Unbundling',
-      'Balance billing',
-      'Phantom charges',
+      { label: 'Common medical billing errors', href: '/learn/common-medical-billing-errors' },
+      { label: 'Duplicate charges' },
+      { label: 'Upcoding' },
+      { label: 'Unbundling', href: '/learn/ncci-edits-explained-for-patients' },
+      { label: 'Balance billing' },
+      { label: 'Phantom charges' },
     ],
   },
   {
@@ -58,11 +137,11 @@ const PILLARS = [
     description:
       'How to dispute charges, from requesting your itemized bill through sending a formal dispute letter. Covers state-specific timelines, how to escalate to your state insurance commissioner, and what to do when a hospital sends your account to collections.',
     topics: [
-      'How to dispute a medical bill',
-      'Dispute letter templates',
-      'How to negotiate a hospital bill',
-      'Medical debt and credit reports',
-      'Medical debt collections rights',
+      { label: 'How to dispute a medical bill', href: '/learn/how-to-dispute-a-hospital-bill' },
+      { label: 'Medical billing advocates', href: '/learn/medical-billing-advocates' },
+      { label: 'Dispute letter templates' },
+      { label: 'Medical debt and credit reports' },
+      { label: 'Medical debt collections rights' },
     ],
   },
   {
@@ -71,37 +150,24 @@ const PILLARS = [
     description:
       'Federal and state laws that protect you as a patient. The No Surprises Act, the Hospital Price Transparency Rule, and your statutory right to an itemized bill are legal tools most patients never use because they do not know they exist.',
     topics: [
-      'No Surprises Act',
-      'Hospital Price Transparency Rule',
-      'Right to an itemized bill',
-      'Charity care and financial assistance',
-      'State patient billing rights',
+      { label: 'No Surprises Act' },
+      { label: 'Hospital Price Transparency Rule', href: '/learn/hospital-machine-readable-files-explained' },
+      { label: 'Right to an itemized bill' },
+      { label: 'Charity care and financial assistance' },
+      { label: 'State patient billing rights' },
     ],
   },
   {
     id: 'reading-bills',
     title: 'Reading your bill',
     description:
-      'What the columns, codes, and dollar amounts on a medical bill actually mean. CPT codes, revenue codes, the difference between billed charges and allowed amounts, and how to read an Explanation of Benefits (EOB) alongside the itemized bill.',
+      'What the columns, codes, and dollar amounts on a medical bill actually mean. CPT codes, revenue codes, the difference between billed charges and allowed amounts, and how to read an Explanation of Benefits alongside the itemized bill.',
     topics: [
-      'How to read an itemized hospital bill',
-      'CPT codes explained',
-      'Explanation of Benefits (EOB)',
-      'Medicare fee schedule vs. billed charges',
-      'Revenue codes and facility fees',
-    ],
-  },
-  {
-    id: 'scenarios',
-    title: 'Specific billing scenarios',
-    description:
-      'Billing errors look different depending on the type of care. Emergency room bills, surgery bills, childbirth bills, and surprise anesthesiology charges each have their own error patterns and dispute paths.',
-    topics: [
-      'Emergency room bills',
-      'Surprise anesthesiology bills',
-      'Childbirth and maternity billing',
-      'Surgery bill errors',
-      'Ambulance billing',
+      { label: 'How to read an itemized hospital bill', href: '/learn/how-to-read-an-itemized-medical-bill' },
+      { label: 'CPT codes explained', href: '/learn/what-are-cpt-codes' },
+      { label: 'Explanation of Benefits (EOB)' },
+      { label: 'Medicare fee schedule vs. billed charges', href: '/learn/why-bill-exceeds-insurer-negotiated-rate' },
+      { label: 'Revenue codes and facility fees' },
     ],
   },
   {
@@ -110,15 +176,12 @@ const PILLARS = [
     description:
       'Under the Hospital Price Transparency Rule, every US hospital is required to publish their negotiated rates. These guides explain what that data is, how to read it, and how to use it when disputing a charge.',
     topics: [
-      'Hospital machine-readable files explained',
-      'Negotiated rate vs. chargemaster vs. Medicare',
-      'NCCI edits for patients',
-      'CMS Medicare fee schedule vs. your bill',
-      'How to build an audit trail for a bill dispute',
-      'How hospitals set and change their prices',
+      { label: 'Hospital machine-readable files explained', href: '/learn/hospital-machine-readable-files-explained' },
+      { label: 'Negotiated rate vs. chargemaster vs. Medicare', href: '/learn/why-bill-exceeds-insurer-negotiated-rate' },
+      { label: 'NCCI edits for patients', href: '/learn/ncci-edits-explained-for-patients' },
     ],
   },
-] as const;
+];
 
 export default function LearnPage(): JSX.Element {
   return (
@@ -139,14 +202,37 @@ export default function LearnPage(): JSX.Element {
         backed by a verifiable citation.
       </p>
 
+      <div className={s.articleGrid}>
+        {PUBLISHED_ARTICLES.map((article) => (
+          <div key={article.slug} className={s.articleCard}>
+            <Link href={`/learn/${article.slug}`} className={s.articleCardTitle}>
+              {article.title}
+            </Link>
+            <p className={s.articleCardDesc}>{article.description}</p>
+            <div className={s.byline}>
+              <span>{article.date}</span>
+              <span>·</span>
+              <span>{article.readMins} min read</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className={s.articleBody}>
+        <h2>What these guides cover</h2>
         {PILLARS.map((pillar) => (
           <section key={pillar.id} id={pillar.id}>
-            <h2>{pillar.title}</h2>
+            <h3>{pillar.title}</h3>
             <p>{pillar.description}</p>
             <ul className={ls.topics}>
               {pillar.topics.map((topic) => (
-                <li key={topic} className={ls.topic}>{topic}</li>
+                <li key={topic.label} className={ls.topic}>
+                  {topic.href ? (
+                    <Link href={topic.href} className={ls.topicLink}>{topic.label}</Link>
+                  ) : (
+                    topic.label
+                  )}
+                </li>
               ))}
             </ul>
           </section>

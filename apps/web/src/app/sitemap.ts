@@ -3,12 +3,15 @@ import type { MetadataRoute } from 'next';
 const BASE = 'https://www.clarobill.com';
 const NOW = new Date();
 
-const BLOG_SLUGS = [
+const LEARN_SLUGS = [
   'common-medical-billing-errors',
   'how-to-dispute-a-hospital-bill',
   'how-to-read-an-itemized-medical-bill',
   'medical-billing-advocates',
   'what-are-cpt-codes',
+  'why-bill-exceeds-insurer-negotiated-rate',
+  'hospital-machine-readable-files-explained',
+  'ncci-edits-explained-for-patients',
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -56,12 +59,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
-      url: `${BASE}/blog`,
-      lastModified: NOW,
-      changeFrequency: 'weekly',
-      priority: 0.7,
-    },
-    {
       url: `${BASE}/legal/privacy`,
       lastModified: NOW,
       changeFrequency: 'yearly',
@@ -81,22 +78,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  const blogRoutes: MetadataRoute.Sitemap = BLOG_SLUGS.map((slug) => ({
-    url: `${BASE}/blog/${slug}`,
-    lastModified: NOW,
-    changeFrequency: 'monthly' as const,
-    priority: 0.7,
-  }));
-
-  const learnRoutes: MetadataRoute.Sitemap = [
-    'why-bill-exceeds-insurer-negotiated-rate',
-    // add slugs here as /learn/* articles are published
-  ].map((slug) => ({
+  const learnRoutes: MetadataRoute.Sitemap = LEARN_SLUGS.map((slug) => ({
     url: `${BASE}/learn/${slug}`,
     lastModified: NOW,
     changeFrequency: 'monthly' as const,
     priority: 0.7,
   }));
 
-  return [...staticRoutes, ...blogRoutes, ...learnRoutes];
+  return [...staticRoutes, ...learnRoutes];
 }
