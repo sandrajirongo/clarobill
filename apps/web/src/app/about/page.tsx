@@ -58,15 +58,18 @@ export default function AboutPage(): JSX.Element {
         <section className={s.section}>
           <h2 className={s.sectionTitle}>Why we built this</h2>
           <p className={s.body}>
-            The US hospital billing system is designed to be opaque. Patients receive bills weeks after
-            discharge with codes they cannot decode, amounts that differ from their EOB, and no way to
-            verify whether the charges are correct. Most patients pay without question. Those who dispute
-            often do so without the data their insurer already has.
+            My own medical bill is what kicked this off. The product I wished existed did not, so I built it.
           </p>
           <p className={s.body}>
-            ClaroBill was built to put that data in the hands of the patient. Every analysis runs the same
-            13 deterministic checks that a hospital billing auditor would run, then compares each line item
-            against what the hospital published in their federally mandated machine-readable file.
+            In 2021, the federal Hospital Price Transparency Rule came into effect, requiring every US
+            hospital to publish their negotiated rates in a machine-readable file. For the first time,
+            patients had legal access to the same pricing data their insurers use at the negotiating table.
+            Almost no one built on it.
+          </p>
+          <p className={s.body}>
+            ClaroBill does. The full stack, a data pipeline covering 13,800 hospitals, a rules engine,
+            OCR, payment flow, and dispute letters, shipped in three months. Every analysis compares your
+            bill against the rates your hospital actually agreed to charge your insurer.
           </p>
         </section>
 
@@ -78,9 +81,10 @@ export default function AboutPage(): JSX.Element {
               <p className={s.founderName}>Sandra Jirongo</p>
               <p className={s.founderRole}>Founder</p>
               <p className={s.founderBio}>
-                Sandra built ClaroBill after encountering the gap between what hospitals charge and what
-                the public data says they should. She designed the rules engine and the hospital
-                machine-readable file ingestion pipeline that powers every ClaroBill analysis.
+                Sandra built ClaroBill after her own medical bill sent her through weeks of unanswered
+                calls and codes she could not decode. She designed the rules engine and the hospital
+                machine-readable file ingestion pipeline that powers every analysis. The full stack
+                shipped solo in three months.
               </p>
             </div>
           </div>
