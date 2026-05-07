@@ -6,24 +6,23 @@
 
 - [How ClaroBill works](https://www.clarobill.com/how-it-works)
 - [Pricing](https://www.clarobill.com/pricing)
-- [Free medical bill check](https://www.clarobill.com/free-medical-bill-check)
+- [Upload a medical bill for review](https://www.clarobill.com/upload)
 - [Sample report](https://www.clarobill.com/sample-report)
-- [Upload a bill](https://www.clarobill.com/upload)
 
-## Methodology
+## Analysis
 
-- [How ClaroBill detects billing errors](https://www.clarobill.com/methodology)
 - [Common medical billing errors](https://www.clarobill.com/learn/common-medical-billing-errors)
 - [Hospital pricing data and how patients can use it](https://www.clarobill.com/learn/hospital-machine-readable-files-explained)
 - [Why your bill may exceed your insurer's negotiated rate](https://www.clarobill.com/learn/why-bill-exceeds-insurer-negotiated-rate)
 
 ## Reference content
 
-- [Glossary of medical billing terms](https://www.clarobill.com/learn/medical-billing-codes-explained)
-- [How to dispute a medical bill](https://www.clarobill.com/learn/how-to-dispute-medical-bill)
-- [No Surprises Act guide](https://www.clarobill.com/learn/no-surprises-act)
-- [State-by-state patient billing rights](https://www.clarobill.com/learn/state)
-- [How to read an itemized hospital bill](https://www.clarobill.com/learn/how-to-read-itemized-hospital-bill)
+- [What are CPT codes](https://www.clarobill.com/learn/what-are-cpt-codes)
+- [How to dispute a hospital bill](https://www.clarobill.com/learn/how-to-dispute-a-hospital-bill)
+- [NCCI edits explained for patients](https://www.clarobill.com/learn/ncci-edits-explained-for-patients)
+- [Medical billing advocates](https://www.clarobill.com/learn/medical-billing-advocates)
+- [How to read an itemized medical bill](https://www.clarobill.com/learn/how-to-read-an-itemized-medical-bill)
+- [Patient billing rights by state (example: California)](https://www.clarobill.com/learn/state/california/patient-billing-rights)
 
 ## Trust and legal
 
