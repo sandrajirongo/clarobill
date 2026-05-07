@@ -3,6 +3,10 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Privacy Policy: Clarobill',
   description: 'Clarobill Privacy Policy. Learn how we collect, use, and protect your data, including medical bill information.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/legal/privacy',
+    languages: { 'en': 'https://www.clarobill.com/legal/privacy', 'x-default': 'https://www.clarobill.com/legal/privacy' },
+  },
 };
 
 export default function PrivacyPolicyPage(): JSX.Element {

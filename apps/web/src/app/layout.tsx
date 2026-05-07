@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { GoogleAnalytics } from '@/components/google-analytics';
 import { Fraunces, Syne } from 'next/font/google';
 import { Suspense } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -88,6 +89,12 @@ export const metadata: Metadata = {
     description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
     images: ['/opengraph-image'],
   },
+  ...(process.env.GOOGLE_SITE_VERIFICATION && {
+    verification: {
+      google: process.env.GOOGLE_SITE_VERIFICATION,
+      other: { 'msvalidate.01': process.env.BING_SITE_VERIFICATION ?? '' },
+    },
+  }),
 };
 
 export default async function RootLayout({
@@ -102,6 +109,7 @@ export default async function RootLayout({
     // next-intl locale is passed via NextIntlClientProvider for UI string translation.
     <html lang="en" className={`${fraunces.variable} ${syne.variable}`}>
       <body>
+        <GoogleAnalytics />
         <JsonLd schema={[ORGANIZATION_SCHEMA, WEBSITE_SCHEMA]} />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Suspense>

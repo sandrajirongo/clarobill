@@ -1,9 +1,19 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import { PricingFaq } from './pricing-faq';
 import { TIERS, HOW_STEPS } from './pricing-data';
 import s from './pricing.module.css';
+
+export const metadata: Metadata = {
+  title: 'Pricing: ClaroBill',
+  description: 'Simple, transparent pricing for medical bill analysis. Find errors in your bill and dispute them with a professional letter.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/pricing',
+    languages: { 'en': 'https://www.clarobill.com/pricing', 'x-default': 'https://www.clarobill.com/pricing' },
+  },
+};
 
 export default function PricingPage(): JSX.Element {
   const beta = isBetaMode();

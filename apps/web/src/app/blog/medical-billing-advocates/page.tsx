@@ -5,6 +5,10 @@ import s from '../blog.module.css';
 export const metadata: Metadata = {
   title: 'Medical Billing Advocates: What They Do, What They Charge, and Whether You Need One: Clarobill',
   description: 'Medical billing advocates can recover thousands from hospital errors. But they typically charge 25–35% of what they save you. Here is when they make sense and when they do not.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/blog/medical-billing-advocates',
+    languages: { 'en': 'https://www.clarobill.com/blog/medical-billing-advocates', 'x-default': 'https://www.clarobill.com/blog/medical-billing-advocates' },
+  },
 };
 
 export default function Article(): JSX.Element {

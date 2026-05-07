@@ -5,6 +5,10 @@ import s from '../blog.module.css';
 export const metadata: Metadata = {
   title: 'How to Read an Itemized Medical Bill: Clarobill',
   description: 'What the columns, codes, and dollar amounts on your itemized medical bill actually mean. Plus how to find the errors hiding in plain sight.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/blog/how-to-read-an-itemized-medical-bill',
+    languages: { 'en': 'https://www.clarobill.com/blog/how-to-read-an-itemized-medical-bill', 'x-default': 'https://www.clarobill.com/blog/how-to-read-an-itemized-medical-bill' },
+  },
 };
 
 export default function Article(): JSX.Element {

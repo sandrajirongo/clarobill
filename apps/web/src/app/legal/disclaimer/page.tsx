@@ -3,6 +3,10 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Medical and Legal Disclaimer: Clarobill',
   description: 'Important disclaimer: Clarobill provides billing analysis only and is not a substitute for medical or legal advice.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/legal/disclaimer',
+    languages: { 'en': 'https://www.clarobill.com/legal/disclaimer', 'x-default': 'https://www.clarobill.com/legal/disclaimer' },
+  },
 };
 
 export default function DisclaimerPage(): JSX.Element {

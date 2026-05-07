@@ -10,6 +10,10 @@ import { SocialsRow } from '@/components/socials-row';
 export const metadata: Metadata = {
   title: 'ClaroBill: Find Errors in Your Medical Bill',
   description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+  alternates: {
+    canonical: 'https://www.clarobill.com',
+    languages: { 'en': 'https://www.clarobill.com', 'x-default': 'https://www.clarobill.com' },
+  },
 };
 
 const LOGOS = [

@@ -6,6 +6,10 @@ import s from './blog.module.css';
 export const metadata: Metadata = {
   title: 'Medical Billing Resources: Clarobill',
   description: 'Guides on reading medical bills, understanding CPT codes, and disputing billing errors. Plain English, no jargon.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/blog',
+    languages: { 'en': 'https://www.clarobill.com/blog', 'x-default': 'https://www.clarobill.com/blog' },
+  },
 };
 
 interface Article {

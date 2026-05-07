@@ -5,6 +5,10 @@ import s from '../blog.module.css';
 export const metadata: Metadata = {
   title: "What Are CPT Codes? A Patient's Guide: Clarobill",
   description: 'CPT codes are the five-digit numbers that determine what your medical care costs. Here is how they work, how they get abused, and how to check whether yours are right.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/blog/what-are-cpt-codes',
+    languages: { 'en': 'https://www.clarobill.com/blog/what-are-cpt-codes', 'x-default': 'https://www.clarobill.com/blog/what-are-cpt-codes' },
+  },
 };
 
 export default function Article(): JSX.Element {

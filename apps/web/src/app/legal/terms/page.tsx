@@ -3,6 +3,10 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Terms of Service: Clarobill',
   description: 'Clarobill Terms of Service. Read the terms governing your use of Clarobill medical bill analysis.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/legal/terms',
+    languages: { 'en': 'https://www.clarobill.com/legal/terms', 'x-default': 'https://www.clarobill.com/legal/terms' },
+  },
 };
 
 export default function TermsOfServicePage(): JSX.Element {

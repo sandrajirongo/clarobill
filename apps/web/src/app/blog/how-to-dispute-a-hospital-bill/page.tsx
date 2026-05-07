@@ -5,6 +5,10 @@ import s from '../blog.module.css';
 export const metadata: Metadata = {
   title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide: Clarobill',
   description: 'A practical guide to disputing hospital billing errors. From requesting your itemized bill to writing a dispute letter that gets results.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/blog/how-to-dispute-a-hospital-bill',
+    languages: { 'en': 'https://www.clarobill.com/blog/how-to-dispute-a-hospital-bill', 'x-default': 'https://www.clarobill.com/blog/how-to-dispute-a-hospital-bill' },
+  },
 };
 
 export default function Article(): JSX.Element {

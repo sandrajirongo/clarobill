@@ -5,6 +5,10 @@ import s from '../blog.module.css';
 export const metadata: Metadata = {
   title: 'The Most Common Medical Billing Errors (And How to Dispute Them): Clarobill',
   description: 'Duplicate charges, upcoded visits, unbundled procedures. Here is what each billing error looks like on a real bill and exactly what to say when you dispute it.',
+  alternates: {
+    canonical: 'https://www.clarobill.com/blog/common-medical-billing-errors',
+    languages: { 'en': 'https://www.clarobill.com/blog/common-medical-billing-errors', 'x-default': 'https://www.clarobill.com/blog/common-medical-billing-errors' },
+  },
 };
 
 export default function Article(): JSX.Element {
