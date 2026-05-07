@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { JsonLd } from '@/components/json-ld';
 import s from './about.module.css';
+import bs from '../blog/blog.module.css';
 
 export const metadata: Metadata = {
   title: 'About ClaroBill: AI Medical Bill Error Finder',
@@ -47,31 +48,16 @@ export default function AboutPage(): JSX.Element {
       <MarketingNav activePath="/about" />
 
       <main className={s.main}>
-        <p className={s.eyebrow}>About ClaroBill</p>
-        <h1 className={s.pageTitle}>Built to read your bill the way your hospital does.</h1>
-        <p className={s.lead}>
+        <h1 className={bs.articleH1}>Built to read your bill the way your hospital does.</h1>
+
+        <p className={bs.articleLead}>
           Roughly 80 percent of US medical bills contain at least one error. The problem is not malice. It is
           complexity: thousands of codes, insurer-specific contract rates, and pricing information
           that hospitals hold but patients rarely know how to access. ClaroBill closes that gap.
         </p>
 
-        <section className={s.section}>
-          <h2 className={s.sectionTitle}>Why we built this</h2>
-          <p className={s.body}>
-            My own medical bill is what kicked this off. The product I wished existed did not, so I built it.
-          </p>
-          <p className={s.body}>
-            In 2021, a federal rule came into effect giving patients new access to pricing information
-            their insurers had long relied on at the negotiating table. Almost no one built on it.
-          </p>
-          <p className={s.body}>
-            ClaroBill does. The full product, from analysis to dispute letter, shipped in three months.
-            Every analysis gives you what you need to dispute a charge with confidence.
-          </p>
-        </section>
-
-        <section className={s.section}>
-          <h2 className={s.sectionTitle}>Founder</h2>
+        <div className={bs.articleBody}>
+          <h2>Founder</h2>
           <div className={s.founderCard}>
             <Image
               src="/team/sandra-jirongo.jpg"
@@ -84,48 +70,55 @@ export default function AboutPage(): JSX.Element {
               <p className={s.founderName}>Sandra Jirongo</p>
               <p className={s.founderRole}>Founder</p>
               <p className={s.founderBio}>
-                Sandra built ClaroBill after her own medical bill sent her through weeks of unanswered
-                calls and codes she could not decode. She designed the analysis approach and the
-                proprietary infrastructure that powers every ClaroBill report. The full product
-                shipped solo in three months.
+                Seasoned data engineer based in Silicon Valley. Built the tool she needed.
               </p>
             </div>
           </div>
-        </section>
 
-        <section className={s.section}>
-          <h2 className={s.sectionTitle}>Our data</h2>
-          <p className={s.body}>
+          <h2>Why we built this</h2>
+          <p>
+            My own medical bill is what kicked this off. The product I wished existed did not, so I built it.
+          </p>
+          <p>
+            In 2021, a federal rule came into effect giving patients new access to pricing information
+            their insurers had long relied on at the negotiating table. Almost no one built on it.
+            ClaroBill does. Every analysis gives you what you need to dispute a charge with confidence.
+          </p>
+
+          <h2>Our data</h2>
+          <p>
             Every finding we surface is traceable and verifiable. We maintain and update our
             reference data on a regular basis.
           </p>
-          <p className={s.body}>
+          <p>
             Each finding in a ClaroBill report includes a citation and the exact dollar discrepancy,
             so you can verify it yourself before sending a dispute letter.
           </p>
-        </section>
 
-        <section className={s.section}>
-          <h2 className={s.sectionTitle}>How the analysis works</h2>
-          <p className={s.body}>
+          <h2>How the analysis works</h2>
+          <p>
             ClaroBill does not guess. Every finding in your report is backed by a specific citation
             and the exact dollar discrepancy, so you can verify it independently before sending a
             dispute letter. That citation trail is what gets hospitals to correct bills.
           </p>
-          <p className={s.body}>
-            <Link href="/methodology" className={s.methLink}>Read the full methodology</Link>
-          </p>
-        </section>
+          <p><Link href="/methodology">Read the full methodology</Link></p>
 
-        <section className={s.section}>
-          <h2 className={s.sectionTitle}>What we are not</h2>
-          <p className={s.body}>
+          <h2>Your data stays yours</h2>
+          <p>
+            We do not train on your data. We do not sell it. Your bill is used to generate your report
+            and nothing else. Trust and transparency are at the heart of what we do.
+          </p>
+
+          <h2>What we are not</h2>
+          <p>
             ClaroBill is a billing analysis tool. We are not a medical practice, law firm, or financial
             advisor. Our output is a report that identifies potential errors and a draft dispute letter for
             your personal use. See our{' '}
-            <Link href="/legal/disclaimer" className={s.methLink}>Medical and Legal Disclaimer</Link>.
+            <Link href="/legal/disclaimer">Medical and Legal Disclaimer</Link>.
           </p>
-        </section>
+        </div>
+
+        <Cta />
       </main>
 
       <footer className={s.footer}>
@@ -140,6 +133,19 @@ export default function AboutPage(): JSX.Element {
           </nav>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function Cta(): JSX.Element {
+  return (
+    <div className={bs.ctaBox}>
+      <p className={bs.ctaTitle}>Ready to check your bill?</p>
+      <p className={bs.ctaNote}>
+        Upload your itemized bill and ClaroBill will identify every error, with a citation
+        and the exact dollar discrepancy for each finding.
+      </p>
+      <Link href="/auth/sign-in" className={bs.ctaBtn}>Check my bill for free</Link>
     </div>
   );
 }

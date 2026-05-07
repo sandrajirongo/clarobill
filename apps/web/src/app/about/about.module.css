@@ -49,64 +49,6 @@
   color: var(--forest, #2d4a2a);
 }
 
-/* Page sections */
-
-.eyebrow {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--txt2);
-  margin: 0 0 0.75rem;
-}
-
-.pageTitle {
-  font-family: var(--font-fraunces);
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
-  font-weight: 600;
-  color: var(--forest, #2d4a2a);
-  line-height: 1.15;
-  margin: 0 0 1.1rem;
-}
-
-.lead {
-  font-size: 1.05rem;
-  color: var(--txt2);
-  line-height: 1.75;
-  max-width: 680px;
-  margin: 0 0 3rem;
-  padding-bottom: 3rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.section {
-  margin-bottom: 3rem;
-  padding-bottom: 3rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.section:last-of-type {
-  border-bottom: none;
-}
-
-.sectionTitle {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--forest, #2d4a2a);
-  margin: 0 0 0.9rem;
-}
-
-.body {
-  font-size: 0.95rem;
-  color: var(--txt2);
-  line-height: 1.75;
-  margin: 0 0 0.9rem;
-}
-
-.body:last-child {
-  margin-bottom: 0;
-}
-
 .founderCard {
   display: flex;
   gap: 1.25rem;
@@ -122,6 +64,7 @@
   height: 52px;
   border-radius: 50%;
   object-fit: cover;
+  object-position: top;
   flex-shrink: 0;
 }
 
@@ -143,48 +86,4 @@
   color: var(--txt2);
   line-height: 1.7;
   margin: 0;
-}
-
-.sourceList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.sourceItem {
-  display: flex;
-  gap: 0.75rem;
-  align-items: baseline;
-  font-size: 0.9rem;
-}
-
-.sourceLabel {
-  font-weight: 600;
-  color: var(--forest, #2d4a2a);
-  white-space: nowrap;
-  min-width: 200px;
-}
-
-.sourceDesc {
-  color: var(--txt2);
-  line-height: 1.5;
-}
-
-.methLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-weight: 600;
-  color: var(--forest, #2d4a2a);
-  text-decoration: none;
-  font-size: 0.95rem;
-  border-bottom: 1px solid currentColor;
-  transition: opacity 0.15s;
-}
-
-.methLink:hover {
-  opacity: 0.75;
 }

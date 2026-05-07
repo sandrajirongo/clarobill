@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
-import s from './learn.module.css';
+import s from '../blog/blog.module.css';
 
 export default function LearnLayout({
   children,

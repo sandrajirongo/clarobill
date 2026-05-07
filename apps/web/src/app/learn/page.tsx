@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { JsonLd } from '@/components/json-ld';
-import s from './learn.module.css';
+import s from '../blog/blog.module.css';
+import ls from './learn.module.css';
 
 export const metadata: Metadata = {
   title: 'Medical Billing Guides: Understand Your Bill and Fight Errors | ClaroBill',
@@ -108,7 +109,6 @@ const PILLARS = [
     title: 'Hospital pricing data',
     description:
       'Under the Hospital Price Transparency Rule, every US hospital is required to publish their negotiated rates. These guides explain what that data is, how to read it, and how to use it when disputing a charge.',
-
     topics: [
       'Hospital machine-readable files explained',
       'Negotiated rate vs. chargemaster vs. Medicare',
@@ -122,41 +122,45 @@ const PILLARS = [
 
 export default function LearnPage(): JSX.Element {
   return (
-    <>
+    <article>
       <JsonLd schema={[BREADCRUMB, HUB_ARTICLE]} />
 
-      <div className={s.hero}>
-        <p className={s.eyebrow}>Medical billing guides</p>
-        <h1 className={s.title}>Understand your bill. Know your rights. Fight errors.</h1>
-        <p className={s.lead}>
-          Roughly 80 percent of medical bills contain at least one error. These guides cover every stage
-          of the billing dispute process, from reading your itemized statement to sending a dispute letter
-          backed by a verifiable citation.
-        </p>
-      </div>
+      <h1 className={s.articleH1}>Understand your bill. Know your rights. Fight errors.</h1>
 
-      <div className={s.pillars}>
+      <p className={s.articleLead}>
+        Roughly 80 percent of medical bills contain at least one error. These guides cover every stage
+        of the billing dispute process, from reading your itemized statement to sending a dispute letter
+        backed by a verifiable citation.
+      </p>
+
+      <div className={s.articleBody}>
         {PILLARS.map((pillar) => (
-          <section key={pillar.id} id={pillar.id} className={s.pillar}>
-            <h2 className={s.pillarTitle}>{pillar.title}</h2>
-            <p className={s.pillarDesc}>{pillar.description}</p>
-            <ul className={s.topics}>
+          <section key={pillar.id} id={pillar.id}>
+            <h2>{pillar.title}</h2>
+            <p>{pillar.description}</p>
+            <ul className={ls.topics}>
               {pillar.topics.map((topic) => (
-                <li key={topic} className={s.topic}>{topic}</li>
+                <li key={topic} className={ls.topic}>{topic}</li>
               ))}
             </ul>
           </section>
         ))}
       </div>
 
-      <div className={s.cta}>
-        <p className={s.ctaTitle}>Have a bill you need to check now?</p>
-        <p className={s.ctaBody}>
-          ClaroBill analyzes your bill for errors and overcharges, then generates a dispute
-          letter with a verifiable citation for every finding.
-        </p>
-        <Link href="/auth/sign-in" className={s.ctaLink}>Check my bill for free</Link>
-      </div>
-    </>
+      <Cta />
+    </article>
+  );
+}
+
+function Cta(): JSX.Element {
+  return (
+    <div className={s.ctaBox}>
+      <p className={s.ctaTitle}>Have a bill you need to check now?</p>
+      <p className={s.ctaNote}>
+        ClaroBill analyzes your bill for errors and overcharges, then generates a dispute
+        letter with a verifiable citation for every finding.
+      </p>
+      <Link href="/auth/sign-in" className={s.ctaBtn}>Check my bill for free</Link>
+    </div>
   );
 }
