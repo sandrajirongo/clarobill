@@ -88,9 +88,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
-  // /learn/*, /compare/*, /cpt/*, /hospital/*, /state/* routes will be
-  // added here as those page groups are built (T-012, T-024, T-025, T-027,
-  // T-035, T-046).
+  const learnRoutes: MetadataRoute.Sitemap = [
+    'why-bill-exceeds-insurer-negotiated-rate',
+    // add slugs here as /learn/* articles are published
+  ].map((slug) => ({
+    url: `${BASE}/learn/${slug}`,
+    lastModified: NOW,
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
+  }));
 
-  return [...staticRoutes, ...blogRoutes];
+  return [...staticRoutes, ...blogRoutes, ...learnRoutes];
 }

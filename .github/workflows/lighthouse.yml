@@ -1,0 +1,58 @@
+name: Lighthouse CI
+
+# Runs nightly and on manual trigger. Not on every push — the build takes
+# ~4 minutes and Vercel deploys async so there’s no gate to block.
+# Instead this surfaces regressions the morning after they ship.
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 08:00 UTC daily (midnight PT)
+  workflow_dispatch:       # manual trigger from Actions tab
+
+concurrency:
+  group: lighthouse
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    name: Core Web Vitals audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: cd apps/web && npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321'
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-key'
+          NEXT_PUBLIC_BETA_MODE: 'true'
+
+      - name: Start server
+        run: cd apps/web && npm run start &
+        env:
+          PORT: 3000
+
+      - name: Wait for server
+        run: npx wait-on http://localhost:3000 --timeout 30000
+
+      - name: Run Lighthouse CI
+        run: npx @lhci/cli@0.14.x autorun --config=.lighthouserc.js
+
+      - name: Upload LHCI results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-results
+          path: .lighthouseci/
+          retention-days: 30
