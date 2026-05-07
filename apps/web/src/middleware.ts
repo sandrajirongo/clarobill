@@ -1,8 +1,33 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-// Routes that do NOT require authentication
-const PUBLIC_ROUTES = ['/', '/auth/sign-in', '/auth/sign-up', '/auth/callback', '/legal', '/logo-test', '/pricing'];
+// Routes that do NOT require authentication.
+// Add new public marketing/content routes here rather than scattering checks below.
+const PUBLIC_PREFIXES = [
+  '/auth/',
+  '/legal/',
+  '/blog',
+  '/learn',       // hub + all /learn/* pillars
+  '/compare',     // T-025 comparison pages
+  '/cpt/',        // T-035 programmatic CPT pages
+  '/hospital/',   // T-046 programmatic hospital pages
+  '/tools/',      // T-026/T-037/T-045 free tools
+  '/ref/',
+];
+
+const PUBLIC_EXACT = new Set([
+  '/',
+  '/pricing',
+  '/about',
+  '/methodology',        // T-002
+  '/how-it-works',       // T-022
+  '/free-medical-bill-check', // T-022
+  '/demo',
+  '/logo-test',
+  '/icon',
+  '/apple-icon',
+  '/opengraph-image',
+]);
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -67,22 +92,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(dashboardUrl);
   }
 
-  const isPublicRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith('/auth/') || pathname.startsWith('/legal/')
-  )
-    || pathname === '/icon'
-    || pathname === '/apple-icon'
-    // /opengraph-image is fetched by social scrapers (iMessage, WhatsApp, Slack,
-    // Twitter, Facebook) when a URL is shared. Auth-redirecting it returns a 307
-    // which scrapers don't follow → blank preview cards. Must stay public.
-    || pathname === '/opengraph-image'
-    // /demo is the unlisted product walkthrough surface used in pitch decks
-    // and investor outreach. Reachable only via direct link (not in nav,
-    // footer, or sitemap). Stays public so investors don't hit a sign-in
-    // wall when clicking the deck CTA.
-    || pathname === '/demo'
-    || pathname.startsWith('/blog')
-    || pathname.startsWith('/ref/');
+  const isPublicRoute =
+    PUBLIC_EXACT.has(pathname) ||
+    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
   if (!user && !isPublicRoute) {
     const signInUrl = request.nextUrl.clone();
