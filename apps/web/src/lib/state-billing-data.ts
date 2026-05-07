@@ -1,0 +1,398 @@
+export interface StateData {
+  stateCode: string;
+  name: string;
+  slug: string;
+  agencyName: string;
+  agencyUrl: string;
+  agencyPhone?: string;
+  stateProtections: string[];
+}
+
+export const STATE_DATA: StateData[] = [
+  {
+    stateCode: 'AL', name: 'Alabama', slug: 'alabama',
+    agencyName: 'Alabama Department of Insurance',
+    agencyUrl: 'https://www.aldoi.gov',
+    agencyPhone: '(334) 269-3550',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'AK', name: 'Alaska', slug: 'alaska',
+    agencyName: 'Alaska Division of Insurance',
+    agencyUrl: 'https://www.commerce.alaska.gov/web/ins',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'AZ', name: 'Arizona', slug: 'arizona',
+    agencyName: 'Arizona Department of Insurance and Financial Institutions',
+    agencyUrl: 'https://difi.az.gov',
+    agencyPhone: '(602) 364-2499',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'AR', name: 'Arkansas', slug: 'arkansas',
+    agencyName: 'Arkansas Insurance Department',
+    agencyUrl: 'https://www.insurance.arkansas.gov',
+    agencyPhone: '(800) 282-9134',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'CA', name: 'California', slug: 'california',
+    agencyName: 'California Department of Managed Health Care',
+    agencyUrl: 'https://www.dmhc.ca.gov',
+    agencyPhone: '1-888-466-2219',
+    stateProtections: [
+      'SB 1061 (2024): Medical debt cannot be reported to credit bureaus in California.',
+      'HMO enrollees may request an Independent Medical Review (IMR) through the DMHC within 6 months of a coverage denial — at no cost.',
+      'Hospitals must provide free or discounted care for patients with incomes under 400% of the federal poverty level.',
+    ],
+  },
+  {
+    stateCode: 'CO', name: 'Colorado', slug: 'colorado',
+    agencyName: 'Colorado Division of Insurance',
+    agencyUrl: 'https://doi.colorado.gov',
+    agencyPhone: '(303) 894-7490',
+    stateProtections: [
+      'FAIR Act (HB 21-1198, 2021): Caps interest on medical debt at 8% per year.',
+      'Hospitals must offer income-based payment plans before referring accounts to collections.',
+      'Medical debt collection lawsuits are subject to a 6-year statute of limitations.',
+    ],
+  },
+  {
+    stateCode: 'CT', name: 'Connecticut', slug: 'connecticut',
+    agencyName: 'Connecticut Insurance Department',
+    agencyUrl: 'https://portal.ct.gov/CID',
+    agencyPhone: '(860) 297-3900',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'DE', name: 'Delaware', slug: 'delaware',
+    agencyName: 'Delaware Department of Insurance',
+    agencyUrl: 'https://www.delawareinsurance.gov',
+    agencyPhone: '(302) 674-7300',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'FL', name: 'Florida', slug: 'florida',
+    agencyName: 'Florida Office of Insurance Regulation',
+    agencyUrl: 'https://www.floir.com',
+    agencyPhone: '(850) 413-3140',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'GA', name: 'Georgia', slug: 'georgia',
+    agencyName: 'Georgia Office of Commissioner of Insurance',
+    agencyUrl: 'https://oci.georgia.gov',
+    agencyPhone: '(404) 656-2056',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'HI', name: 'Hawaii', slug: 'hawaii',
+    agencyName: 'Hawaii Insurance Division',
+    agencyUrl: 'https://cca.hawaii.gov/ins',
+    agencyPhone: '(808) 586-2790',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'ID', name: 'Idaho', slug: 'idaho',
+    agencyName: 'Idaho Department of Insurance',
+    agencyUrl: 'https://doi.idaho.gov',
+    agencyPhone: '(208) 334-4250',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'IL', name: 'Illinois', slug: 'illinois',
+    agencyName: 'Illinois Department of Insurance',
+    agencyUrl: 'https://insurance.illinois.gov',
+    agencyPhone: '(312) 814-2427',
+    stateProtections: [
+      'Fair Patient Billing Act: Hospitals must provide charity care for patients with incomes under 200% of the federal poverty level.',
+      'Patients have the right to an itemized bill within 30 days of request; collection action must be paused during a billing dispute.',
+    ],
+  },
+  {
+    stateCode: 'IN', name: 'Indiana', slug: 'indiana',
+    agencyName: 'Indiana Department of Insurance',
+    agencyUrl: 'https://www.in.gov/idoi',
+    agencyPhone: '(317) 232-2385',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'IA', name: 'Iowa', slug: 'iowa',
+    agencyName: 'Iowa Insurance Division',
+    agencyUrl: 'https://iid.iowa.gov',
+    agencyPhone: '(515) 654-6600',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'KS', name: 'Kansas', slug: 'kansas',
+    agencyName: 'Kansas Insurance Department',
+    agencyUrl: 'https://insurance.ks.gov',
+    agencyPhone: '(800) 432-2484',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'KY', name: 'Kentucky', slug: 'kentucky',
+    agencyName: 'Kentucky Department of Insurance',
+    agencyUrl: 'https://doi.ky.gov',
+    agencyPhone: '(800) 595-6053',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'LA', name: 'Louisiana', slug: 'louisiana',
+    agencyName: 'Louisiana Department of Insurance',
+    agencyUrl: 'https://www.ldi.la.gov',
+    agencyPhone: '(800) 259-5300',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'ME', name: 'Maine', slug: 'maine',
+    agencyName: 'Maine Bureau of Insurance',
+    agencyUrl: 'https://www.maine.gov/pfr/insurance',
+    agencyPhone: '(800) 300-5000',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'MD', name: 'Maryland', slug: 'maryland',
+    agencyName: 'Maryland Insurance Administration',
+    agencyUrl: 'https://insurance.maryland.gov',
+    agencyPhone: '(800) 492-6116',
+    stateProtections: [
+      'Hospital rates are regulated by the Health Services Cost Review Commission (HSCRC) — an all-payer system unique in the US that limits the price variation hospitals can charge across different payers.',
+    ],
+  },
+  {
+    stateCode: 'MA', name: 'Massachusetts', slug: 'massachusetts',
+    agencyName: 'Massachusetts Division of Insurance',
+    agencyUrl: 'https://www.mass.gov/orgs/division-of-insurance',
+    agencyPhone: '(617) 521-7794',
+    stateProtections: [
+      'Massachusetts enacted surprise billing protections in 2018 (prior to the federal No Surprises Act), holding patients harmless for out-of-network bills when the OON provider was used without the patient\'s knowledge or consent.',
+    ],
+  },
+  {
+    stateCode: 'MI', name: 'Michigan', slug: 'michigan',
+    agencyName: 'Michigan Department of Insurance and Financial Services',
+    agencyUrl: 'https://www.michigan.gov/difs',
+    agencyPhone: '(877) 999-6442',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'MN', name: 'Minnesota', slug: 'minnesota',
+    agencyName: 'Minnesota Department of Commerce',
+    agencyUrl: 'https://mn.gov/commerce',
+    agencyPhone: '(651) 539-1500',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'MS', name: 'Mississippi', slug: 'mississippi',
+    agencyName: 'Mississippi Insurance Department',
+    agencyUrl: 'https://www.mid.ms.gov',
+    agencyPhone: '(800) 562-2957',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'MO', name: 'Missouri', slug: 'missouri',
+    agencyName: 'Missouri Department of Insurance',
+    agencyUrl: 'https://insurance.mo.gov',
+    agencyPhone: '(800) 726-7390',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'MT', name: 'Montana', slug: 'montana',
+    agencyName: 'Montana Commissioner of Securities and Insurance',
+    agencyUrl: 'https://csimt.gov',
+    agencyPhone: '(800) 332-6148',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'NE', name: 'Nebraska', slug: 'nebraska',
+    agencyName: 'Nebraska Department of Insurance',
+    agencyUrl: 'https://doi.nebraska.gov',
+    agencyPhone: '(402) 471-2201',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'NV', name: 'Nevada', slug: 'nevada',
+    agencyName: 'Nevada Division of Insurance',
+    agencyUrl: 'https://doi.nv.gov',
+    agencyPhone: '(775) 687-0700',
+    stateProtections: [
+      'SB 248 (2021): Medical debt is automatically removed from consumer credit reports after 6 years in Nevada.',
+    ],
+  },
+  {
+    stateCode: 'NH', name: 'New Hampshire', slug: 'new-hampshire',
+    agencyName: 'New Hampshire Insurance Department',
+    agencyUrl: 'https://www.nh.gov/insurance',
+    agencyPhone: '(603) 271-2261',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'NJ', name: 'New Jersey', slug: 'new-jersey',
+    agencyName: 'New Jersey Department of Banking and Insurance',
+    agencyUrl: 'https://www.state.nj.us/dobi',
+    agencyPhone: '(609) 292-7272',
+    stateProtections: [
+      'Out-of-Network Consumer Protection Act (2018): Predates the federal No Surprises Act; established an arbitration process for disputed OON bills and required upfront OON cost-sharing disclosures from providers.',
+    ],
+  },
+  {
+    stateCode: 'NM', name: 'New Mexico', slug: 'new-mexico',
+    agencyName: 'New Mexico Office of Superintendent of Insurance',
+    agencyUrl: 'https://www.osi.state.nm.us',
+    agencyPhone: '(855) 427-5674',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'NY', name: 'New York', slug: 'new-york',
+    agencyName: 'New York Department of Financial Services',
+    agencyUrl: 'https://www.dfs.ny.gov',
+    agencyPhone: '(800) 342-3736',
+    stateProtections: [
+      'New York enacted surprise billing protections in 2015 — over six years before the federal No Surprises Act — limiting patient cost-sharing to in-network amounts for OON care at in-network facilities.',
+      'External appeal rights: insured New Yorkers may appeal final adverse coverage decisions to an independent external review organization certified by DFS.',
+      'Patients have the right to an itemized bill within 30 days of written request.',
+    ],
+  },
+  {
+    stateCode: 'NC', name: 'North Carolina', slug: 'north-carolina',
+    agencyName: 'North Carolina Department of Insurance',
+    agencyUrl: 'https://www.ncdoi.gov',
+    agencyPhone: '(855) 408-1212',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'ND', name: 'North Dakota', slug: 'north-dakota',
+    agencyName: 'North Dakota Insurance Department',
+    agencyUrl: 'https://www.nd.gov/ndins',
+    agencyPhone: '(701) 328-2440',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'OH', name: 'Ohio', slug: 'ohio',
+    agencyName: 'Ohio Department of Insurance',
+    agencyUrl: 'https://www.insurance.ohio.gov',
+    agencyPhone: '(800) 686-1526',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'OK', name: 'Oklahoma', slug: 'oklahoma',
+    agencyName: 'Oklahoma Insurance Department',
+    agencyUrl: 'https://www.oid.ok.gov',
+    agencyPhone: '(800) 522-0071',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'OR', name: 'Oregon', slug: 'oregon',
+    agencyName: 'Oregon Division of Financial Regulation',
+    agencyUrl: 'https://dfr.oregon.gov',
+    agencyPhone: '(888) 877-4894',
+    stateProtections: [
+      'ORS 441.065: Hospitals must send 60 days\' written notice before referring an account to a collection agency, and must screen for financial assistance eligibility first.',
+    ],
+  },
+  {
+    stateCode: 'PA', name: 'Pennsylvania', slug: 'pennsylvania',
+    agencyName: 'Pennsylvania Insurance Department',
+    agencyUrl: 'https://www.insurance.pa.gov',
+    agencyPhone: '(877) 881-6388',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'RI', name: 'Rhode Island', slug: 'rhode-island',
+    agencyName: 'Rhode Island Department of Business Regulation',
+    agencyUrl: 'https://dbr.ri.gov',
+    agencyPhone: '(401) 462-9520',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'SC', name: 'South Carolina', slug: 'south-carolina',
+    agencyName: 'South Carolina Department of Insurance',
+    agencyUrl: 'https://www.doi.sc.gov',
+    agencyPhone: '(803) 737-6160',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'SD', name: 'South Dakota', slug: 'south-dakota',
+    agencyName: 'South Dakota Division of Insurance',
+    agencyUrl: 'https://dlr.sd.gov/insurance',
+    agencyPhone: '(605) 773-3563',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'TN', name: 'Tennessee', slug: 'tennessee',
+    agencyName: 'Tennessee Department of Commerce and Insurance',
+    agencyUrl: 'https://www.tn.gov/commerce',
+    agencyPhone: '(615) 741-2218',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'TX', name: 'Texas', slug: 'texas',
+    agencyName: 'Texas Department of Insurance',
+    agencyUrl: 'https://www.tdi.texas.gov',
+    agencyPhone: '(512) 676-6000',
+    stateProtections: [
+      'SB 1264 (2019): Balance billing protections requiring out-of-network providers at in-network facilities to accept in-network rates in most circumstances.',
+      'Texas was among the first states to enact surprise billing protections for emergency care, predating the federal No Surprises Act.',
+    ],
+  },
+  {
+    stateCode: 'UT', name: 'Utah', slug: 'utah',
+    agencyName: 'Utah Insurance Department',
+    agencyUrl: 'https://www.insurance.utah.gov',
+    agencyPhone: '(801) 538-3800',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'VT', name: 'Vermont', slug: 'vermont',
+    agencyName: 'Vermont Department of Financial Regulation',
+    agencyUrl: 'https://dfr.vermont.gov',
+    agencyPhone: '(802) 828-3307',
+    stateProtections: [
+      'Vermont hospitals are required to screen all patients for financial assistance eligibility before billing, and must offer income-based payment plans.',
+    ],
+  },
+  {
+    stateCode: 'VA', name: 'Virginia', slug: 'virginia',
+    agencyName: 'Virginia Bureau of Insurance',
+    agencyUrl: 'https://www.scc.virginia.gov/pages/Bureau-of-Insurance',
+    agencyPhone: '(804) 371-9741',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'WA', name: 'Washington', slug: 'washington',
+    agencyName: 'Washington State Office of the Insurance Commissioner',
+    agencyUrl: 'https://www.insurance.wa.gov',
+    agencyPhone: '(800) 562-6900',
+    stateProtections: [
+      'SB 5526 (2020): Balance billing protections limiting out-of-network cost-sharing at in-network facilities to in-network amounts.',
+      'RCW 70.170: Hospitals must provide charity care for patients with incomes under 100% of the federal poverty level, and discounted care on a sliding scale above that threshold.',
+    ],
+  },
+  {
+    stateCode: 'WV', name: 'West Virginia', slug: 'west-virginia',
+    agencyName: 'West Virginia Offices of the Insurance Commissioner',
+    agencyUrl: 'https://www.wvinsurance.gov',
+    agencyPhone: '(888) 879-9842',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'WI', name: 'Wisconsin', slug: 'wisconsin',
+    agencyName: 'Wisconsin Office of the Commissioner of Insurance',
+    agencyUrl: 'https://oci.wi.gov',
+    agencyPhone: '(800) 236-8517',
+    stateProtections: [],
+  },
+  {
+    stateCode: 'WY', name: 'Wyoming', slug: 'wyoming',
+    agencyName: 'Wyoming Department of Insurance',
+    agencyUrl: 'https://doi.wyo.gov',
+    agencyPhone: '(307) 777-7401',
+    stateProtections: [],
+  },
+];
+
+export function getStateBySlug(slug: string): StateData | undefined {
+  return STATE_DATA.find((d) => d.slug === slug);
+}

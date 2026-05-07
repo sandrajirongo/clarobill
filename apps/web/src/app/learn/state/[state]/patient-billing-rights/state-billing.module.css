@@ -1,0 +1,95 @@
+.protectionsList {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.protectionsList li {
+  padding-left: 1.6rem;
+  position: relative;
+  font-size: .94rem;
+  color: var(--txt2);
+  line-height: 1.65;
+}
+
+.protectionsList li::before {
+  content: '\2713';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.agencyNote {
+  font-size: .8rem;
+  color: var(--txt3);
+  margin-top: .25rem;
+}
+
+.agencyCard {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 1.25rem 1.5rem;
+  margin: 1rem 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+
+.agencyCardName {
+  font-weight: 700;
+  color: var(--txt);
+  font-size: .95rem;
+  margin: 0;
+}
+
+.agencyCard a {
+  color: var(--sage);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: .88rem;
+  transition: color .15s;
+}
+
+.agencyCard a:hover { color: var(--sage-l); }
+
+.agencyCard p {
+  font-size: .88rem;
+  color: var(--txt2);
+  margin: 0;
+}
+
+.faqList {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.faqItem {
+  padding: 1.2rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.faqItem:last-child { border-bottom: none; }
+
+.faqQ {
+  font-family: var(--fd);
+  font-size: .97rem;
+  font-weight: 700;
+  color: var(--txt);
+  margin: 0 0 .45rem;
+  line-height: 1.4;
+}
+
+.faqA {
+  font-size: .88rem;
+  color: var(--txt2);
+  line-height: 1.72;
+  margin: 0;
+}

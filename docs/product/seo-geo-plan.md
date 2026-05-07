@@ -418,8 +418,8 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 | T-023 | Upgrade `/upload` page for SEO | **DONE** — `/upload` conversion page with HowTo+BreadcrumbList schema | T-007, T-010 |
 | T-024 | Write remaining 22 `/learn/*` pillar articles (1/week) | todo | T-015, T-016, T-017 |
 | T-025 | Build 5 comparison pages | **DONE** | T-007, T-010 |
-| T-026 | Build `/tools/cpt-code-lookup` tool page | todo | T-007, T-009 |
-| T-027 | Build 50 `/learn/state/[state]/patient-billing-rights` pages | todo | T-012, T-007 |
+| T-026 | Build `/tools/cpt-code-lookup` tool page | **SKIP (TBD)** — CPT descriptions are AMA-copyrighted IP; commercial use requires AMA license ($5k+/yr). Legal to show CMS rate data only. Revisit if AMA license acquired or scope narrowed to rates-only. | T-007, T-009 |
+| T-027 | Build 50 `/learn/state/[state]/patient-billing-rights` pages | **DONE** | T-012, T-007 |
 | T-028 | Write 12 initial blog posts (1/week for 12 weeks) | todo | T-019, T-020 |
 | T-029 | Set up HARO/Qwoted outreach workflow | todo | T-002, T-013 |
 | T-030 | Launch on Product Hunt, IndieHackers, HN | todo | T-005 |

@@ -110,5 +110,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
-  return [...staticRoutes, ...learnRoutes, ...compareRoutes];
+  const stateRoutes: MetadataRoute.Sitemap = [
+    'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+    'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+    'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+    'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
+    'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
+    'new-hampshire', 'new-jersey', 'new-mexico', 'new-york',
+    'north-carolina', 'north-dakota', 'ohio', 'oklahoma', 'oregon',
+    'pennsylvania', 'rhode-island', 'south-carolina', 'south-dakota',
+    'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
+    'west-virginia', 'wisconsin', 'wyoming',
+  ].map((slug) => ({
+    url: `${BASE}/learn/state/${slug}/patient-billing-rights`,
+    lastModified: NOW,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }));
+
+  return [...staticRoutes, ...learnRoutes, ...compareRoutes, ...stateRoutes];
 }
