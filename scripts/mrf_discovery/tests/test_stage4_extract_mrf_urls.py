@@ -509,6 +509,179 @@ class TestWidenedKeywordRegex:
         assert bool(s4._KEYWORD_RE.search(text)) is expected
 
 
+class TestPass3AnchorDataExtension:
+    """Pass 3: any <a href> whose URL ends with a data file extension is
+    captured, regardless of anchor text. Catches hospital-name anchor links."""
+
+    def test_hospital_name_anchor_with_csv_href(self) -> None:
+        html = '<a href="/files/kaiser-oakland-2024-charges.csv">Kaiser Oakland Medical Center</a>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert "https://hospital.example.com/files/kaiser-oakland-2024-charges.csv" in links
+
+    def test_hospital_name_anchor_with_json_href(self) -> None:
+        html = '<a href="/downloads/hospital-2025-prices.json">St. Mary\'s Hospital</a>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert "https://hospital.example.com/downloads/hospital-2025-prices.json" in links
+
+    def test_strips_query_string_before_extension_check(self) -> None:
+        html = '<a href="/files/charges.csv?year=2025">Pricing</a>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert "https://hospital.example.com/files/charges.csv?year=2025" in links
+
+    def test_ignores_anchor_pointing_to_html_page(self) -> None:
+        html = '<a href="/billing/cost-transparency.html">No anchor text keyword</a>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert not links
+
+    def test_all_data_extensions_captured(self) -> None:
+        for ext in (".csv", ".json", ".xlsx", ".xml", ".zip", ".csv.gz", ".json.gz"):
+            html = f'<a href="/files/data{ext}">Hospital Name</a>'
+            links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+            assert any(f"data{ext}" in u for u in links), f"Extension {ext} not captured"
+
+
+class TestPass4HtmlBodyScan:
+    """Pass 4: URL-shaped strings ending in data file extensions anywhere in
+    raw HTML, including inside script blocks and data-attributes."""
+
+    def test_url_in_script_variable(self) -> None:
+        html = '<script>var downloadUrl = "/files/pricing_data.csv";</script>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert "https://hospital.example.com/files/pricing_data.csv" in links
+
+    def test_url_in_data_attribute(self) -> None:
+        html = '<button data-download="/files/2024_charges.xlsx">Download</button>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert "https://hospital.example.com/files/2024_charges.xlsx" in links
+
+    def test_url_in_onclick_handler(self) -> None:
+        html = '<button onclick="window.open(\'/files/standardcharges.json\')">View</button>'
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert "https://hospital.example.com/files/standardcharges.json" in links
+
+    def test_deduplication_across_passes(self) -> None:
+        # The same URL appears in an <a href> (Pass 3) AND in a script (Pass 4);
+        # result set must contain it only once.
+        html = (
+            '<a href="/charges.csv">Download</a>'
+            '<script>var url = "/charges.csv";</script>'
+        )
+        links = s4._extract_links_from_html(html, "https://hospital.example.com/")
+        assert links.count("https://hospital.example.com/charges.csv") == 1 if isinstance(links, list) else True
+        matches = [u for u in links if u == "https://hospital.example.com/charges.csv"]
+        assert len(matches) == 1
+
+
+class TestPathHeuristicFollowSignal:
+    """_PATH_HEURISTIC_RE drives a third follow condition in _follow_keyword_anchors:
+    an anchor whose href matches a known price-transparency path is followed
+    even if neither anchor text nor href hits _KEYWORD_RE."""
+
+    def test_module_exposes_path_heuristic_re(self) -> None:
+        assert hasattr(s4, "_PATH_HEURISTIC_RE"), (
+            "_PATH_HEURISTIC_RE must be a module-level compiled regex"
+        )
+        import re
+        assert isinstance(s4._PATH_HEURISTIC_RE, re.Pattern)
+
+    def test_path_heuristic_re_matches_known_paths(self) -> None:
+        for path in (
+            "/price-transparency",
+            "/standard-charges",
+            "/billing/standard-charges",
+            "/patients/billing/standard-charges",
+            "/for-patients/price-transparency",
+            "/financial-assistance/price-transparency",
+        ):
+            assert s4._PATH_HEURISTIC_RE.search(path), f"{path} not matched by _PATH_HEURISTIC_RE"
+
+    def test_follow_keyword_anchors_follows_path_heuristic_href(self) -> None:
+        # Anchor text is generic ("Learn More") and href has no keyword,
+        # but href matches a PATH_HEURISTICS entry — must be followed.
+        html = '<a href="/patients/billing/standard-charges">Learn More</a>'
+        out = s4._follow_keyword_anchors(None, html, "https://example.com/")  # type: ignore[arg-type]
+        assert any("/patients/billing/standard-charges" in u for u, _ in out)
+
+    def test_follow_keyword_anchors_still_follows_keyword_text(self) -> None:
+        # Existing behaviour must not regress: keyword in anchor text still works.
+        html = '<a href="/some/random/path">Standard Charges</a>'
+        out = s4._follow_keyword_anchors(None, html, "https://example.com/")  # type: ignore[arg-type]
+        assert any("/some/random/path" in u for u, _ in out)
+
+
+class TestDepthAndFollowupLimits:
+    """Pin MAX_FOLLOW_DEPTH=3 and MAX_FOLLOWUPS_PER_PAGE=15."""
+
+    def test_max_follow_depth_is_three(self) -> None:
+        assert s4.MAX_FOLLOW_DEPTH == 3
+
+    def test_max_followups_per_page_is_fifteen(self) -> None:
+        assert s4.MAX_FOLLOWUPS_PER_PAGE == 15
+
+    def test_followups_cap_at_fifteen(self) -> None:
+        anchors = "".join(
+            f'<a href="/page{i}">Standard Charges {i}</a>' for i in range(30)
+        )
+        out = s4._follow_keyword_anchors(
+            None, anchors, "https://example.com/",  # type: ignore[arg-type]
+            max_followups=s4.MAX_FOLLOWUPS_PER_PAGE,
+        )
+        assert len(out) == 15
+
+
+class TestNewKeywordVariants:
+    """Plan A Step 2c additions: verify the 15 new keyword patterns match."""
+
+    @pytest.mark.parametrize("text", [
+        "Negotiated Rates",
+        "negotiated charges",
+        "Contract Rates",
+        "For Patients",
+        "Patient Financial Assistance",
+        "Financial Assistance",
+        "Insurance and Billing",
+        "Insurance Billing",
+        "Healthcare Costs",
+        "Cost of Care",
+        "CDM",
+        "Medical Costs",
+        "Out of Pocket",
+        "Payer Specific",
+        "Health Care Pricing",
+        "Understanding Your Bill",
+        "Rates and Charges",
+    ])
+    def test_new_keyword_matches(self, text: str) -> None:
+        assert bool(s4._KEYWORD_RE.search(text)), f"'{text}' should match _KEYWORD_RE"
+
+
+class TestListingPageLogging:
+    """A page yielding 5+ file links triggers a [listing_page] log entry."""
+
+    def test_listing_page_log_threshold_constant(self) -> None:
+        # The threshold is 5. Confirm _scan_page_for_urls logs at >= 5,
+        # not > 5, by checking the source text.
+        import inspect
+        source = inspect.getsource(s4._scan_page_for_urls)
+        assert "newly_added >= 5" in source
+
+    def test_listing_page_log_key_string(self) -> None:
+        import inspect
+        source = inspect.getsource(s4._scan_page_for_urls)
+        assert "[listing_page]" in source
+
+
+class TestDataFileExtsConstant:
+    """_DATA_FILE_EXTS is module-level and reused across Pass 2/3/4."""
+
+    def test_constant_exists(self) -> None:
+        assert hasattr(s4, "_DATA_FILE_EXTS")
+
+    def test_contains_expected_extensions(self) -> None:
+        for ext in (".csv", ".json", ".xlsx", ".xml", ".zip", ".csv.gz", ".json.gz"):
+            assert ext in s4._DATA_FILE_EXTS, f"{ext} missing from _DATA_FILE_EXTS"
+
+
 def test_toc_walker_extracts_url_keys() -> None:
     """_expand_toc walks any JSON shape and pulls out url-like keys."""
     # Inline-test the inner walker by simulating a successful response.

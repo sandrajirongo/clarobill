@@ -22,7 +22,7 @@ Pipeline per hospital:
        b. checkpoint.mrf_discovery_method = "homepage" | "path_heuristic"
           | "depth_follow" | "toc_expansion"
        c. checkpoint.mrf_validated_at + crawl_complete_at = NOW()
-       d. MERGE into hospital_directory so the scraper picks them up
+       d. MERGE into hospital_price_transparency so the scraper picks them up
 
 2026-05-04 rewrite removed the previous `_SYSTEM_LISTING_PAGES` hardcoded
 dictionary (Sutter, Providence, Banner, MGB, Northwell). The depth-2
@@ -160,8 +160,8 @@ MAX_BODY_BYTES = 5 * 1024 * 1024
 
 # Depth-2 generic follow: from any fetched HTML page we follow up to N
 # anchor links whose text/href matches `_KEYWORD_RE`. Bounds:
-MAX_FOLLOW_DEPTH = 2
-MAX_FOLLOWUPS_PER_PAGE = 5
+MAX_FOLLOW_DEPTH = 3
+MAX_FOLLOWUPS_PER_PAGE = 15
 
 # Per-host concurrency cap. Two reasons:
 #   1. Hospital systems (Sutter ~30 facilities, HCA ~180, etc.) all live on
@@ -226,6 +226,13 @@ PATH_HEURISTICS: tuple[str, ...] = (
     "/for-patients/billing/hospital-price-estimates",
     "/patient-resources/price-transparency",
     "/billing-support/pricing-transparency",
+    # 2026-05-08: Step 2i additions
+    "/price-transparency/hospital-charges",
+    "/patients/billing/price-transparency",
+    "/billing/standard-charges/hospital-specific",
+    "/for-patients/price-transparency",
+    "/for-patients/financial-assistance",
+    "/financial-assistance/price-transparency",
 )
 
 # CMS rule 45 CFR 180.50 mandates a filename pattern of the form
@@ -269,7 +276,31 @@ _KEYWORD_RE = re.compile(
     r"|billing"
     r"|pay[\s\-]?(?:my[\s\-]?)?bill"
     r"|patient[\s\-]?(?:billing|services|resources|financial)"
+    # 2026-05-08: additional coverage patterns from Plan A Step 2c
+    r"|negotiated[\s\-]?(?:rates?|charges?)"
+    r"|contract[\s\-]?rates?"
+    r"|for[\s\-]?patients"
+    r"|patient[\s\-]?financial[\s\-]?(?:assistance|services?)?"
+    r"|financial[\s\-]?assistance"
+    r"|insurance[\s\-]?(?:and[\s\-]?)?billing"
+    r"|healthcare[\s\-]?costs?"
+    r"|cost[\s\-]?of[\s\-]?care"
+    r"|cdm"
+    r"|medical[\s\-]?costs?"
+    r"|out[\s\-]?of[\s\-]?pocket"
+    r"|payer[\s\-]?specific"
+    r"|health[\s\-]?care[\s\-]?pricing"
+    r"|understanding[\s\-]?(?:your[\s\-]?)?bill"
+    r"|rates?[\s\-]?(?:and[\s\-]?)?charges?"
     r")",
+    re.IGNORECASE,
+)
+
+# Compiled from PATH_HEURISTICS for use as a third follow signal in
+# _follow_keyword_anchors: follow an anchor whose href matches a known
+# price-transparency path even if neither anchor text nor href hits _KEYWORD_RE.
+_PATH_HEURISTIC_RE = re.compile(
+    "|".join(re.escape(p) for p in PATH_HEURISTICS),
     re.IGNORECASE,
 )
 
@@ -296,6 +327,13 @@ _TOC_FILENAME_RE = re.compile(
 #     the actual MRF files are extracted from those landing pages by
 #     `_extract_links_from_html` and HEAD-validated separately.
 
+
+# Data file extensions that indicate an MRF or price transparency file.
+# Used by _extract_links_from_html (Pass 2, 3, 4) and _scan_page_for_urls.
+_DATA_FILE_EXTS = (
+    ".csv", ".json", ".xml", ".xlsx",
+    ".csv.gz", ".json.gz", ".zip", ".xml.gz", ".gzip",
+)
 
 # Acceptable Content-Type prefixes for HEAD validation — covers all the
 # common MRF formats (CSV, JSON, gzipped, XLSX, generic octet-stream that
@@ -500,15 +538,21 @@ def _resolve_url(base: str, link: str) -> str | None:
 
 
 def _extract_links_from_html(html: str, base_url: str) -> set[str]:
-    """Find every CMS-shaped MRF link in raw HTML.
+    """Find every MRF/price-transparency file link in raw HTML.
 
-    Two-pass extraction:
-      1. Filename regex against full document — finds direct links even when
-         not in <a> tags.
-      2. Anchor-keyword scan — finds <a href=X>...</a> where the link text
-         matches `_KEYWORD_RE` ("standard charges" etc.).
+    Four-pass extraction:
+      1. CMS filename regex against full document — finds direct links even
+         when not in <a> tags (e.g. inside <script> or inline JS).
+      2. Anchor-keyword scan — <a href=X> where anchor text or href matches
+         _KEYWORD_RE and the URL ends with a data file extension.
+      3. All <a href> pointing to a data file extension, regardless of anchor
+         text — catches hospital-name links like
+         <a href="/kaiser-oakland-2024.csv">Kaiser Oakland Medical Center</a>.
+      4. Any URL-shaped string ending in a data file extension anywhere in
+         the raw HTML — catches JS variables, data-attributes, and non-anchor
+         download links.
 
-    Returns absolute URLs.
+    Returns absolute URLs. `found` is a set so all passes deduplicate freely.
     """
     found: set[str] = set()
 
@@ -559,10 +603,33 @@ def _extract_links_from_html(html: str, base_url: str) -> set[str]:
         # looks like an MRF file. URLs like `/billing/cost-transparency`
         # don't qualify even if the anchor text says "Cost Transparency".
         if (_CMS_FILENAME_RE.search(absolute)
-                or absolute.lower().split("?", 1)[0].endswith((
-                    ".csv", ".json", ".xml", ".xlsx",
-                    ".csv.gz", ".json.gz", ".zip", ".xml.gz", ".gzip",
-                ))):
+                or absolute.lower().split("?", 1)[0].endswith(_DATA_FILE_EXTS)):
+            found.add(absolute)
+
+    # Pass 3: any <a href> whose URL ends with a data file extension,
+    # regardless of anchor text. Catches hospital-name anchors that link
+    # directly to a data file but have no price-transparency keywords.
+    for anchor_match in re.finditer(
+        r'<a\s+[^>]*?href=["\']([^"\'>]+)["\']',
+        html, re.IGNORECASE,
+    ):
+        href = anchor_match.group(1)
+        if href.lower().split("?", 1)[0].endswith(_DATA_FILE_EXTS):
+            absolute = _resolve_url(base_url, href)
+            if absolute:
+                found.add(absolute)
+
+    # Pass 4: any URL-shaped string ending in a data file extension anywhere
+    # in the raw HTML. Catches JS variables, data-attributes, and non-anchor
+    # download links that Pass 1-3 cannot see.
+    # Sort longest first so .csv.gz matches before .csv in the alternation.
+    _ext_pattern = "|".join(re.escape(e) for e in sorted(_DATA_FILE_EXTS, key=len, reverse=True))
+    for url_match in re.finditer(
+        r'["\'\s(=]([/][^"\'><\s)]+(?:' + _ext_pattern + r'))',
+        html, re.IGNORECASE,
+    ):
+        absolute = _resolve_url(base_url, url_match.group(1))
+        if absolute:
             found.add(absolute)
 
     return found
@@ -728,8 +795,12 @@ def _scan_page_for_urls(
         found_urls.setdefault(base_url, discovery_method)
 
     # HTML link extraction (CMS filename regex + keyword anchor).
+    before = len(found_urls)
     for link in _extract_links_from_html(html, base_url):
         found_urls.setdefault(link, discovery_method)
+    newly_added = len(found_urls) - before
+    if newly_added >= 5:
+        logger.info("[listing_page] %s yielded %d file links", base_url, newly_added)
 
     # Hospital-system Table-of-Contents JSON expansion.
     toc = _find_toc_url(html, base_url)
@@ -759,7 +830,9 @@ def _follow_keyword_anchors(
     ):
         href, anchor_text = match.group(1), match.group(2)
         clean_text = re.sub(r"<[^>]+>", "", anchor_text).strip()
-        if not _KEYWORD_RE.search(clean_text) and not _KEYWORD_RE.search(href):
+        if (not _KEYWORD_RE.search(clean_text)
+                and not _KEYWORD_RE.search(href)
+                and not _PATH_HEURISTIC_RE.search(href)):
             continue
         absolute = _resolve_url(base_url, href)
         if not absolute or absolute in seen:
@@ -905,12 +978,12 @@ def _persist_results(  # noqa: C901
       checkpoint.error_stage = 'stage4_no_mrf_found'
       checkpoint.crawl_complete_at = NOW() (so we don't retry every run)
 
-    Discovered URLs are then MERGEd into hospital_directory so the scraper
-    picks them up on its next run. One row per (hospital, mrf_url) pair —
+    Discovered URLs are then MERGEd into hospital_price_transparency so the
+    scraper picks them up on its next run. One row per (ccn, mrf_url) pair —
     a hospital with N URLs (e.g. system TOC fan-out) gets N rows.
     """
     checkpoint_table = f"{project}.{dataset}.mrf_discovery_checkpoint"
-    directory_table = f"{project}.{dataset}.hospital_directory"
+    pt_table = f"{project}.{dataset}.hospital_price_transparency"
 
     # ---- 1. Per-hospital checkpoint update ----
     by_ccn: dict[str, list[DiscoveredMrf]] = {}
@@ -1014,68 +1087,73 @@ def _persist_results(  # noqa: C901
             len(rows_to_update), len(by_ccn), len(failed_ccns),
         )
 
-    # ---- 2. MERGE discovered URLs into hospital_directory ----
+    # ---- 2. MERGE discovered URLs into hospital_price_transparency ----
     if not discovered:
-        logger.info("_persist_results: no discovered URLs — skipping hospital_directory merge")
+        logger.info("_persist_results: no discovered URLs — skipping hospital_price_transparency merge")
         return
-    logger.info("_persist_results: starting hospital_directory MERGE (%d URLs)", len(discovered))
+    logger.info("_persist_results: starting hospital_price_transparency MERGE (%d URLs)", len(discovered))
 
-    directory_rows = [
+    pt_rows = [
         {
-            "hospital_npi": d.hospital_npi,
             "ccn": d.ccn,
-            "hospital_name": d.hospital_name,
-            "state": d.state,
+            "hospital_npi": d.hospital_npi,
             "mrf_url": d.mrf_url,
-            "last_modified": None,  # first scrape will populate this
+            "price_transparency_page_url": None,
+            "mrf_discovery_method": d.discovery_method,
+            "first_discovered_at": now_iso,
+            "is_active": True,
         }
         for d in discovered
     ]
-    staging_dir_table = f"{project}.{dataset}._stage4_dir_staging_{run_id.replace('-', '_')}"
-    dir_load_config = bigquery.LoadJobConfig(
+    staging_pt_table = f"{project}.{dataset}.stage4_pt_staging_{run_id.replace('-', '_')}"
+    pt_load_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         schema=[
-            bigquery.SchemaField("hospital_npi", "STRING"),
             bigquery.SchemaField("ccn", "STRING"),
-            bigquery.SchemaField("hospital_name", "STRING"),
-            bigquery.SchemaField("state", "STRING"),
+            bigquery.SchemaField("hospital_npi", "STRING"),
             bigquery.SchemaField("mrf_url", "STRING"),
-            bigquery.SchemaField("last_modified", "STRING"),
+            bigquery.SchemaField("price_transparency_page_url", "STRING"),
+            bigquery.SchemaField("mrf_discovery_method", "STRING"),
+            bigquery.SchemaField("first_discovered_at", "TIMESTAMP"),
+            bigquery.SchemaField("is_active", "BOOL"),
         ],
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
         create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
     )
     import io
-    dir_ndjson = "\n".join(json.dumps(r) for r in directory_rows)
+    pt_ndjson = "\n".join(json.dumps(r) for r in pt_rows)
     bq.load_table_from_file(
-        io.StringIO(dir_ndjson), staging_dir_table, job_config=dir_load_config,
+        io.StringIO(pt_ndjson), staging_pt_table, job_config=pt_load_config,
     ).result()
 
-    # MERGE: insert if (ccn, mrf_url) is new; update mrf_url stays as-is.
-    # We key on (ccn, mrf_url) instead of just ccn because hospital systems
-    # may have N URLs per CCN (TOC fan-out). Existing rows with the same
-    # (ccn, mrf_url) are no-ops; new combinations get inserted.
-    dir_merge_sql = f"""
-        MERGE `{directory_table}` T
-        USING `{staging_dir_table}` S
+    # MERGE on (ccn, mrf_url):
+    #   - New discovery: INSERT with first_discovered_at + is_active=TRUE
+    #   - Re-discovery: UPDATE last_validated_at; backfill hospital_npi if
+    #     previously NULL; set is_active=TRUE (URL is reachable again)
+    pt_merge_sql = f"""
+        MERGE `{pt_table}` T
+        USING `{staging_pt_table}` S
         ON COALESCE(T.ccn, '') = COALESCE(S.ccn, '')
            AND T.mrf_url = S.mrf_url
         WHEN NOT MATCHED THEN
-          INSERT (hospital_npi, ccn, hospital_name, state, mrf_url, last_modified)
-          VALUES (S.hospital_npi, S.ccn, S.hospital_name, S.state, S.mrf_url, S.last_modified)
-        WHEN MATCHED AND T.hospital_npi IS NULL AND S.hospital_npi IS NOT NULL THEN
-          UPDATE SET hospital_npi = S.hospital_npi
+          INSERT (ccn, hospital_npi, mrf_url, price_transparency_page_url,
+                  mrf_discovery_method, first_discovered_at, is_active)
+          VALUES (S.ccn, S.hospital_npi, S.mrf_url, S.price_transparency_page_url,
+                  S.mrf_discovery_method, S.first_discovered_at, TRUE)
+        WHEN MATCHED THEN UPDATE SET
+          last_validated_at = CURRENT_TIMESTAMP(),
+          is_active = TRUE,
+          hospital_npi = COALESCE(T.hospital_npi, S.hospital_npi)
     """
-    # M13: assert + log affected row count.
     bq_checkpoint.run_dml_with_count(
-        bq, dir_merge_sql,
-        label="Stage 4 hospital_directory MERGE",
+        bq, pt_merge_sql,
+        label="Stage 4 hospital_price_transparency MERGE",
         logger=logger,
     )
-    bq.delete_table(staging_dir_table, not_found_ok=True)
+    bq.delete_table(staging_pt_table, not_found_ok=True)
     logger.info(
-        "MERGEd %d (hospital, mrf_url) pairs into hospital_directory",
-        len(directory_rows),
+        "MERGEd %d (ccn, mrf_url) pairs into hospital_price_transparency",
+        len(pt_rows),
     )
 
 

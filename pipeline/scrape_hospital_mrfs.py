@@ -73,7 +73,7 @@ GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 # lands in BOTH mrf-staging (legacy parser path, ephemeral) AND mrf-archive
 # (year-partitioned, immutable). Parser reads from staging today; future
 # parser revision reads from archive. Set as env var so tests can override.
-GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "clarobill-mrf-archive-uscentral")
+GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive")
 
 # Concurrent download workers. Two prior calibrations:
 #   2026-04-30 first run: 60 workers OOM'd at 4 GiB.
@@ -123,23 +123,30 @@ def build_clients() -> tuple[bigquery.Client, storage.Client]:
 
 
 def load_hospitals(bq: bigquery.Client) -> list[dict[str, Any]]:
-    """Load all hospitals that have an MRF URL from BigQuery.
+    """Load all active MRF URLs from hospital_price_transparency, joined to
+    hospital_directory for name/state context.
 
     Returns list of dicts with keys: hospital_npi, ccn, hospital_name, state,
-    mrf_url, last_modified.
-
-    Phase 4: also pulls `ccn` so we can use it as the archive key when NPI is
-    missing (mixed-key strategy from Phase 4 Q1). The parser will backfill NPI
-    from MRF JSON metadata after the first successful parse.
+    mrf_url, last_modified (mapped from last_modified_header).
     """
     query = f"""
-        SELECT hospital_npi, ccn, hospital_name, state, mrf_url, last_modified
-        FROM `{GCP_PROJECT}.{BQ_DATASET}.hospital_directory`
-        WHERE mrf_url IS NOT NULL AND TRIM(mrf_url) != ''
-        ORDER BY hospital_name
+        SELECT
+            pt.ccn,
+            pt.hospital_npi,
+            hd.hospital_name,
+            hd.state,
+            pt.mrf_url,
+            pt.last_modified_header AS last_modified
+        FROM `{GCP_PROJECT}.{BQ_DATASET}.hospital_price_transparency` pt
+        JOIN `{GCP_PROJECT}.{BQ_DATASET}.hospital_directory` hd
+          ON pt.ccn = hd.ccn
+        WHERE pt.is_active = TRUE
+          AND pt.mrf_url IS NOT NULL
+          AND TRIM(pt.mrf_url) != ''
+        ORDER BY hd.hospital_name
     """
     rows = list(bq.query(query).result())
-    logger.info("Loaded %d hospitals with MRF URLs", len(rows))
+    logger.info("Loaded %d active MRF URLs from hospital_price_transparency", len(rows))
     return [dict(row) for row in rows]
 
 
@@ -391,7 +398,7 @@ def scrape_hospital(
     leave stale buffers when connections are reused across threads.
 
     Phase 4: dual-writes to BOTH the legacy mrf-staging bucket (for the
-    existing parser) AND the immutable clarobill-mrf-archive-uscentral bucket
+    existing parser) AND the immutable mrf-archive bucket
     (year-partitioned, content-hashed). Returns archive metadata so the
     caller can also insert a row into mrf_archive_index.
 
@@ -474,8 +481,14 @@ def _archive_from_legacy_blob(
     )
 
     # Infer extension from the legacy blob name (already correct from the
-    # original download path).
+    # original download path). Map to canonical file_format for archive_index.
     ext = _legacy_blob_to_extension(legacy_blob_name)
+    _EXT_TO_FORMAT = {
+        "json": "json", "json.gz": "json",
+        "csv": "csv", "csv.gz": "csv",
+        "xlsx": "xlsx", "xml": "xml", "zip": "zip",
+    }
+    file_format = _EXT_TO_FORMAT.get(ext, "unknown")
 
     # Stream the legacy bytes through the archive writer rather than loading
     # the whole blob into memory. 2026-04-30 OOM postmortem: a 111MB Sutter
@@ -503,6 +516,7 @@ def _archive_from_legacy_blob(
         "ccn": hospital.get("ccn"),
         "pricing_effective_year": year,
         "source_mrf_url": metadata.get("mrf_url") or hospital.get("mrf_url", ""),
+        "file_format": file_format,
         "gcs_uri": result.gcs_uri,
         "sha256": result.sha256,
         "file_size_bytes": result.file_size_bytes,
@@ -535,16 +549,10 @@ def update_last_modified(
     updates: list[dict[str, Any]],
     task_index: int = 0,
 ) -> None:
-    """Batch-update hospital_directory.last_modified for all scraped hospitals.
+    """Batch-update hospital_price_transparency.last_modified_header for scraped URLs.
 
-    Uses a staging table + MERGE to avoid individual row-level DML queries.
-    Joins on mrf_url (always populated) rather than hospital_npi (often NULL
-    until the MRF is parsed and the NPI is extracted from the file content).
-    Updates only the last_modified column — last_scraped is set by the parser
-    after it successfully loads the charges.
-
-    task_index is appended to the staging table name so parallel task instances
-    don't clobber each other's staging data during concurrent MERGE operations.
+    Uses a staging table + MERGE. Joins on mrf_url.
+    Updates last_modified_header and last_validated_at only.
 
     Args:
         bq: Authenticated BigQuery client.
@@ -584,18 +592,73 @@ def update_last_modified(
     bq.load_table_from_file(io.StringIO(ndjson), staging_id, job_config=load_config).result()
 
     merge_sql = f"""
-        MERGE `{GCP_PROJECT}.{BQ_DATASET}.hospital_directory` T
+        MERGE `{GCP_PROJECT}.{BQ_DATASET}.hospital_price_transparency` T
         USING `{staging_id}` S
         ON T.mrf_url = S.mrf_url
         WHEN MATCHED THEN
-            UPDATE SET last_modified = S.last_modified
+            UPDATE SET
+              last_modified_header = S.last_modified,
+              last_validated_at = CURRENT_TIMESTAMP()
     """
-    # SF5 (Phase 8.4): verify the MERGE actually wrote rows.
-    affected = run_dml_with_count(bq, merge_sql, label="hospital_directory.last_modified MERGE")
+    affected = run_dml_with_count(bq, merge_sql, label="hospital_price_transparency.last_modified_header MERGE")
     bq.delete_table(staging_id, not_found_ok=True)
     logger.info(
         "Updated last_modified for %d unique mrf_urls (MERGE affected %d rows)",
         len(deduped), affected,
+    )
+
+
+def backfill_price_transparency(
+    bq: bigquery.Client,
+    backfills: list[dict[str, Any]],
+    task_index: int = 0,
+) -> None:
+    """After a successful scrape, write file_format, last_scraped_at, and
+    resolved hospital_npi back to hospital_price_transparency.
+
+    Args:
+        bq: Authenticated BigQuery client.
+        backfills: List of {ccn, mrf_url, file_format, hospital_npi} dicts.
+        task_index: Cloud Run task index (0 for single-task runs).
+    """
+    if not backfills:
+        return
+
+    deduped = {(r["ccn"], r["mrf_url"]): r for r in backfills}
+    rows = list(deduped.values())
+
+    staging_id = f"{GCP_PROJECT}.{BQ_DATASET}.scraper_pt_backfill_{task_index}"
+    ndjson = "\n".join(json.dumps(r) for r in rows)
+    load_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        schema=[
+            bigquery.SchemaField("ccn", "STRING"),
+            bigquery.SchemaField("mrf_url", "STRING"),
+            bigquery.SchemaField("file_format", "STRING"),
+            bigquery.SchemaField("hospital_npi", "STRING"),
+        ],
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
+    )
+    bq.load_table_from_file(io.StringIO(ndjson), staging_id, job_config=load_config).result()
+
+    merge_sql = f"""
+        MERGE `{GCP_PROJECT}.{BQ_DATASET}.hospital_price_transparency` T
+        USING `{staging_id}` S
+        ON COALESCE(T.ccn, '') = COALESCE(S.ccn, '')
+           AND T.mrf_url = S.mrf_url
+        WHEN MATCHED THEN UPDATE SET
+          file_format = COALESCE(T.file_format, S.file_format),
+          last_scraped_at = CURRENT_TIMESTAMP(),
+          hospital_npi = COALESCE(T.hospital_npi, S.hospital_npi)
+    """
+    affected = run_dml_with_count(
+        bq, merge_sql, label="hospital_price_transparency backfill MERGE",
+    )
+    bq.delete_table(staging_id, not_found_ok=True)
+    logger.info(
+        "Backfilled hospital_price_transparency: %d rows (MERGE affected %d)",
+        len(rows), affected,
     )
 
 
@@ -687,14 +750,16 @@ def main() -> None:
     FLUSH_EVERY = 500
     updates_buffer: list[dict[str, Any]] = []
     archive_metas_buffer: list[dict[str, Any]] = []
+    pt_backfill_buffer: list[dict[str, Any]] = []
     total_downloaded = 0
     total_archived = 0
     total_lm_flushed = 0
     total_archive_flushed = 0
+    total_pt_flushed = 0
 
     def _flush_batch(reason: str) -> None:
         """Persist whatever is in the flush buffers, then clear them."""
-        nonlocal total_lm_flushed, total_archive_flushed
+        nonlocal total_lm_flushed, total_archive_flushed, total_pt_flushed
         try:
             if updates_buffer:
                 update_last_modified(bq, updates_buffer, task_index=task_index)
@@ -702,22 +767,26 @@ def main() -> None:
             if archive_metas_buffer:
                 insert_archive_index_rows(bq, archive_metas_buffer)
                 total_archive_flushed += len(archive_metas_buffer)
+            if pt_backfill_buffer:
+                backfill_price_transparency(bq, pt_backfill_buffer, task_index=task_index)
+                total_pt_flushed += len(pt_backfill_buffer)
             logger.info(
-                "Flushed batch (%s): +%d last_modified rows, +%d archive_index rows. "
-                "Cumulative persisted so far: lm=%d, archive=%d",
-                reason, len(updates_buffer), len(archive_metas_buffer),
-                total_lm_flushed, total_archive_flushed,
+                "Flushed batch (%s): +%d last_modified rows, +%d archive_index rows, "
+                "+%d pt_backfill rows. Cumulative: lm=%d, archive=%d, pt=%d",
+                reason, len(updates_buffer), len(archive_metas_buffer), len(pt_backfill_buffer),
+                total_lm_flushed, total_archive_flushed, total_pt_flushed,
             )
             updates_buffer.clear()
             archive_metas_buffer.clear()
+            pt_backfill_buffer.clear()
         except Exception:
             # Never let a transient BQ error abort the scrape. Log full
             # traceback to stdout (Cloud Run captures reliably) and keep
             # the buffer for retry on the next flush.
             logger.exception(
                 "Persist flush FAILED (%s) — keeping buffers for retry. "
-                "buffer sizes: updates=%d archive_metas=%d",
-                reason, len(updates_buffer), len(archive_metas_buffer),
+                "buffer sizes: updates=%d archive_metas=%d pt_backfill=%d",
+                reason, len(updates_buffer), len(archive_metas_buffer), len(pt_backfill_buffer),
             )
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -735,9 +804,16 @@ def main() -> None:
                 if result:
                     updates_buffer.append({k: v for k, v in result.items() if k != "archive_meta"})
                     total_downloaded += 1
-                    if result.get("archive_meta"):
-                        archive_metas_buffer.append(result["archive_meta"])
+                    meta = result.get("archive_meta")
+                    if meta:
+                        archive_metas_buffer.append(meta)
                         total_archived += 1
+                        pt_backfill_buffer.append({
+                            "ccn": meta.get("ccn") or "",
+                            "mrf_url": meta.get("source_mrf_url") or result.get("mrf_url", ""),
+                            "file_format": meta.get("file_format") or "unknown",
+                            "hospital_npi": meta.get("hospital_npi"),
+                        })
             except Exception as exc:
                 logger.error("[%s] Unexpected error: %s", label, exc)
             completed += 1

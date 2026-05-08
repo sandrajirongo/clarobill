@@ -34,8 +34,8 @@ Keeps `hospital_charges` fresh by re-downloading any MRF whose `Last-Modified` h
 | **Parser schedules** | Feb 15 06:00 UTC (`clarobill-mrf-parser-annual`), Aug 15 06:00 UTC (`clarobill-mrf-parser-midyear`) |
 | **Image** | `us-central1-docker.pkg.dev/clarobill-prd/clarobill-pipeline/mrf-pipeline:latest` |
 | **Service account** | `clarobill-pipeline-sa@clarobill-prd.iam.gserviceaccount.com` |
-| **Reads from** | `hospital_directory` (mrf_url + last_modified) |
-| **Writes to** | `gs://mrf-staging/raw/` (scraper), `gs://mrf-archive-clarobill-prd/` (immutable archive, Phase 4+), `mrf_archive_index` (Phase 4+), `hospital_charges` (parser) |
+| **Reads from** | `hospital_price_transparency` (mrf_url, last_modified_header) joined to `hospital_directory` (hospital_name, state) |
+| **Writes to** | `gs://mrf-staging/raw/` (scraper), `gs://mrf-archive/` (immutable archive), `mrf_archive_index`, `hospital_price_transparency` (backfill: file_format, last_scraped_at, hospital_npi), `hospital_charges` (parser) |
 | **Why Feb 15** | 6 weeks past the Jan 1 CMS republish deadline — gives hospitals time to fix first-pass errors. Same date as annual discovery so newly-discovered URLs feed straight into the scrape. |
 | **Why Aug 15** | Catches the ~10% of hospitals that republish in summer. |
 
@@ -85,7 +85,7 @@ gcloud run jobs execute clarobill-mrf-parser  --region us-central1 --tasks 6
 
 ### 2. Annual + quarterly MRF discovery
 
-Refreshes `hospital_directory` with newly-certified hospitals, retired hospitals, and changed MRF URLs. Runs Feb 15 (full) + the 15th of May/Aug/Nov (gap-fill only).
+Refreshes `hospital_directory` (identity) and `hospital_price_transparency` (MRF URLs) with newly-certified hospitals and changed MRF file locations. Runs Feb 15 (full) + the 15th of May/Aug/Nov (gap-fill only).
 
 | Property | Value |
 |---|---|
@@ -96,10 +96,14 @@ Refreshes `hospital_directory` with newly-certified hospitals, retired hospitals
 | **Why Feb 15** | 6 weeks past Jan 1 CMS republish deadline — hospitals get time to fix first-pass errors before we crawl. |
 | **Why the 15th of May/Aug/Nov** | 45 days into each remaining quarter — picks up newly-certified hospitals + retries the ~20% Stage 4 didn't resolve on the previous pass. |
 | **Reads from** | CMS PI API, CMS POS API, NPPES Registry API, Wikidata SPARQL, hospital websites |
-| **Writes to** | `mrf_discovery_checkpoint` (working state, all stages), `hospital_directory` (final, MERGEd by Stage 4) |
+| **Writes to** | `mrf_discovery_checkpoint` (working state, all stages), `hospital_price_transparency` (MERGEd by Stage 4 on ccn + mrf_url) |
 | **Stages** | 1 (CMS list) → 2A/B/B'/C (NPI + website) → 3.1/3.2/3.3 (website discovery) → 4 (MRF URL extraction) |
 
-**Stage 4 (MRF URL extraction):** for each hospital with `hospital_website` set, probes ~17 common CMS-mandated paths (`/price-transparency`, `/standard-charges`, etc.), extracts MRF download links via HTML regex (CMS filename pattern `\d{6,12}_..._standardcharges.{csv,json,xml}` and keyword anchor scan), expands hospital-system Table-of-Contents JSONs (`*-toc.json`), HEAD-validates every candidate, persists to `validated_mrf_urls` AND MERGEs into `hospital_directory` so the scraper picks them up. Free, ~15-25 min wall-clock at 60 concurrent workers for ~12,000 hospitals.
+**Stage 4 (MRF URL extraction):** for each hospital with `hospital_website` set, probes PATH_HEURISTICS paths (~50+) plus the homepage, follows keyword-matching anchors up to `MAX_FOLLOW_DEPTH=3` levels deep (up to `MAX_FOLLOWUPS_PER_PAGE=15` anchors per page), extracts MRF download links via four-pass HTML scan (CMS filename regex, keyword-anchor, any `<a href>` to a data extension, and full-body URL scan for JS/data-attribute links), expands hospital-system TOC JSONs (`*-toc.json`), HEAD-validates every candidate, MERGEs into `hospital_price_transparency` on `(ccn, mrf_url)`. Free, ~20-35 min wall-clock at 60 concurrent workers for ~12,000 hospitals.
+
+**Stage 4 follow signals:** three conditions cause an anchor link to be fetched: (1) keyword in anchor text, (2) keyword in href, (3) href matches a PATH_HEURISTICS path. Condition 3 (`_PATH_HEURISTIC_RE`) catches generic "Learn More" links that route to a price-transparency page.
+
+**Listing-page detection:** Stage 4 logs `[listing_page] <url> yielded N file links` when a single page yields 5 or more file links. These entries in Cloud Run logs are the signal for Kaiser, HCA, CommonSpirit, and other multi-facility systems. Check for them after each run.
 
 **Manual triggers:**
 
@@ -265,9 +269,10 @@ The current state is "Sandra runs manual `python3 scripts/...` commands." Produc
                                     │
                                     ▼
               ┌────────────────────────────────────────────┐
-              │ WEEKLY MRF SCRAPE + PARSE (every Tuesday)   │
-              │ Reads hospital_directory.mrf_url            │
-              │ Writes mrf_archive_index, hospital_charges  │
+              │ SCRAPE + PARSE (Feb 15, Aug 15)             │
+              │ Reads hospital_price_transparency.mrf_url   │
+              │ Writes mrf_archive_index, hospital_charges, │
+              │ hospital_price_transparency (backfill)       │
               └─────────────────────┬──────────────────────┘
                                     │
                                     ▼
@@ -305,7 +310,7 @@ The current state is "Sandra runs manual `python3 scripts/...` commands." Produc
 1. Look at the most recent run logs: `gcloud run jobs executions list --job clarobill-mrf-scraper --region us-central1`
 2. Common causes (in order of likelihood):
    a. CMS or Cloud Build outage during the run window — wait, retry on the next scheduled date
-   b. Massive outage in `hospital_directory.mrf_url` (e.g. a major vendor went down) — confirm by sampling 10 URLs manually with `curl -I`
+   b. Massive outage in `hospital_price_transparency.mrf_url` (e.g. a major vendor went down) — confirm by sampling 10 URLs manually with `curl -I`
    c. Service account lost permissions — check `clarobill-pipeline-sa` IAM bindings on the dataset and bucket
    d. **Scrape-time format guard rejecting everything** — this can happen if `sniff_mrf_format()` is over-strict; check logs for `Rejecting non-MRF response` warnings. Compare reject volume against historic %.
 3. Manual retrigger: `gcloud run jobs execute clarobill-mrf-scraper --region us-central1`
@@ -338,6 +343,37 @@ By design, no service account can delete from `gs://mrf-archive-clarobill-prd`. 
 
 ---
 
+## BigQuery tables (hospital_prices dataset)
+
+| Table | Partition | Written by | Purpose |
+|---|---|---|---|
+| `hospital_directory` | `DATE(last_website_validated_at)` | Stages 1-3 | Hospital identity: one row per hospital. Contains name, state, CCN, NPI, website URL. Join key for all pipeline tables. |
+| `hospital_price_transparency` | `DATE(last_scraped_at)` | Stage 4 (MRF URLs), scraper (backfill) | One row per discovered MRF file URL per hospital. Stage 4 MERGEs on `(ccn, mrf_url)`. Scraper backfills `file_format`, `last_scraped_at`, `hospital_npi`. `is_active=FALSE` when HEAD returns 404. |
+| `mrf_archive_index` | `DATE(scraped_at)` | Scraper | Scrape ops log. One row per downloaded file. Tracks `parse_status` (pending/parsed/failed) so the parser can pick up work. |
+| `hospital_charges` | `pricing_effective_year` | Parser | Price data at scale. One row per CPT/line-item/payer combination per hospital. The only table with `pricing_effective_year`. |
+| `mrf_discovery_checkpoint` | None | All discovery stages | Working state for the annual discovery run. Keyed on `(run_id, ccn)`. Stages write their outputs here; Stage 4 promotes to `hospital_price_transparency`. |
+
+**Join pattern (rules engine):**
+```sql
+SELECT hc.*
+FROM hospital_charges hc
+WHERE hc.hospital_npi = @npi
+  AND hc.pricing_effective_year = EXTRACT(YEAR FROM @service_date)
+```
+CCN is stored for traceability but the rules engine joins on NPI only.
+
+**Coverage check after Stage 4 run:**
+```sql
+SELECT mrf_discovery_method, COUNT(*) AS n
+FROM `clarobill-prd.hospital_prices.hospital_price_transparency`
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+**Listing-page check after Stage 4 run:**
+Grep Cloud Run logs for `[listing_page]` — confirms Kaiser, Sutter, HCA, CommonSpirit system pages were found.
+
+---
+
 ## References
 
 - `docs/decisions/2026-04-28-cms-direct-mrf-discovery.md` — final architecture decision for the discovery pipeline
@@ -354,4 +390,4 @@ By design, no service account can delete from `gs://mrf-archive-clarobill-prd`. 
 
 ---
 
-_Last reviewed: 2026-05-05_
+_Last reviewed: 2026-05-08_

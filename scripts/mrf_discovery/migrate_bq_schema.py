@@ -151,61 +151,82 @@ def create_new_hospital_charges(
     client.query(sql).result()
 
 
-def alter_hospital_directory(
+def recreate_hospital_directory_with_partition(
     client: bigquery.Client,
     project: str,
     dataset: str,
     dry_run: bool,
 ) -> None:
-    """Add CMS-direct-sourced columns to hospital_directory.
+    """Recreate hospital_directory partitioned by DATE(last_website_validated_at).
 
-    All NULLABLE. Existing rows are unaffected; the discovery pipeline will
-    populate these columns as it discovers each hospital. The mrf_url and
-    hospital_npi columns already exist from the legacy bootstrap script.
+    BQ cannot add a partition to an existing table via ALTER TABLE, so we use
+    CTAS: create a new partitioned table from the existing data, add new
+    identity columns (ein, website_discovery_method, last_website_validated_at),
+    drop the old table, and rename. All existing rows are preserved.
+
+    Idempotent: skips if last_website_validated_at already exists on the table.
     """
     table_id = _table_id(project, dataset, "hospital_directory")
+    new_table_id = _table_id(project, dataset, "hospital_directory_new")
 
     if not _table_exists(client, table_id):
-        logger.warning("hospital_directory does not exist yet; creating empty table")
-        sql_create = f"""
-        CREATE TABLE IF NOT EXISTS `{table_id}` (
-          hospital_npi    STRING,
-          hospital_name   STRING NOT NULL,
-          system_name     STRING,
-          state           STRING,
-          city            STRING,
-          mrf_url         STRING,
-          last_scraped    TIMESTAMP,
-          last_modified   STRING,
-          schema_version  STRING
-        )
-        """
-        if dry_run:
-            logger.info("[dry-run] CREATE TABLE %s (bootstrap shape)", table_id)
-        else:
-            client.query(sql_create).result()
-
-    # Columns added by Plan A. Note: pra_facility_uuid and last_pra_check are
-    # NOT in this list — they were created during the abandoned PRA-sourced
-    # design and are removed by --cleanup-pra-legacy.
-    sql_alter = f"""
-    ALTER TABLE `{table_id}`
-      ADD COLUMN IF NOT EXISTS ccn                          STRING,
-      ADD COLUMN IF NOT EXISTS address                      STRING,
-      ADD COLUMN IF NOT EXISTS zip_code                     STRING,
-      ADD COLUMN IF NOT EXISTS phone                        STRING,
-      ADD COLUMN IF NOT EXISTS hospital_website             STRING,
-      ADD COLUMN IF NOT EXISTS price_transparency_page_url  STRING,
-      ADD COLUMN IF NOT EXISTS mrf_pricing_effective_year   INT64,
-      ADD COLUMN IF NOT EXISTS mrf_discovery_method         STRING,
-      ADD COLUMN IF NOT EXISTS mrf_file_format              STRING,
-      ADD COLUMN IF NOT EXISTS mrf_file_size_bytes          INT64
-    """
-    if dry_run:
-        logger.info("[dry-run] ALTER TABLE %s ADD COLUMN ... (10 columns)", table_id)
+        logger.warning("hospital_directory does not exist; skipping recreate")
         return
-    logger.info("Altering %s with CMS-direct-sourced columns", table_id)
-    client.query(sql_alter).result()
+
+    # Already done if the new column is present
+    tbl = client.get_table(table_id)
+    if any(f.name == "last_website_validated_at" for f in tbl.schema):
+        logger.info("hospital_directory already partitioned; skipping")
+        return
+
+    # Clean up a previous interrupted run
+    if _table_exists(client, new_table_id):
+        logger.warning("hospital_directory_new exists from interrupted run; dropping")
+        if not dry_run:
+            client.query(f"DROP TABLE `{new_table_id}`").result()
+
+    sql_ctas = f"""
+    CREATE TABLE `{new_table_id}`
+    PARTITION BY DATE(last_website_validated_at)
+    CLUSTER BY ccn, hospital_npi
+    OPTIONS(description="Hospital identity table. One row per US hospital. "
+                        "Written by discovery Stages 1-3 only. Stage 4 does not write here. "
+                        "Join to hospital_price_transparency on ccn for MRF file URLs.")
+    AS
+    SELECT
+      *,
+      CAST(NULL AS STRING)    AS ein,
+      CAST(NULL AS STRING)    AS website_discovery_method,
+      CAST(NULL AS TIMESTAMP) AS last_website_validated_at
+    FROM `{table_id}`
+    """
+
+    if dry_run:
+        logger.info("[dry-run] CTAS hospital_directory_new (partition + 3 new columns, %d rows)", client.get_table(table_id).num_rows)
+        logger.info("[dry-run] DROP TABLE hospital_directory")
+        logger.info("[dry-run] RENAME hospital_directory_new -> hospital_directory")
+        logger.info("[dry-run] ALTER COLUMN descriptions (ein, website_discovery_method, last_website_validated_at)")
+        return
+
+    logger.info("CTAS: creating partitioned hospital_directory_new")
+    client.query(sql_ctas).result()
+
+    logger.info("Dropping old hospital_directory")
+    client.query(f"DROP TABLE `{table_id}`").result()
+
+    logger.info("Renaming hospital_directory_new -> hospital_directory")
+    client.query(f"ALTER TABLE `{new_table_id}` RENAME TO hospital_directory").result()
+
+    logger.info("Setting column descriptions on new columns")
+    client.query(f"""
+    ALTER TABLE `{table_id}`
+      ALTER COLUMN ein
+        SET OPTIONS(description="IRS Employer Identification Number. Nullable until IRS Form 990 loader is built."),
+      ALTER COLUMN website_discovery_method
+        SET OPTIONS(description="How the hospital website URL was found: tier1_direct, tier2_pattern, or tier3_google_places."),
+      ALTER COLUMN last_website_validated_at
+        SET OPTIONS(description="Timestamp of the most recent successful HTTP check of the hospital website URL. Drives the DATE partition.")
+    """).result()
 
 
 def create_mrf_archive_index(
@@ -242,6 +263,58 @@ def create_mrf_archive_index(
     )
     PARTITION BY RANGE_BUCKET(pricing_effective_year, GENERATE_ARRAY(2024, 2034, 1))
     CLUSTER BY hospital_npi, parse_status
+    """
+    if dry_run:
+        logger.info("[dry-run] CREATE TABLE %s", table_id)
+        return
+    logger.info("Creating %s", table_id)
+    client.query(sql).result()
+
+
+def create_hospital_price_transparency(
+    client: bigquery.Client,
+    project: str,
+    dataset: str,
+    dry_run: bool,
+) -> None:
+    """Create the hospital_price_transparency table.
+
+    Stage 4 MRF URL discovery output. One row per discovered price
+    transparency file URL per hospital. Scraper reads from here.
+    Stage 4 writes via MERGE on (ccn, mrf_url) -- never INSERT directly.
+    """
+    table_id = _table_id(project, dataset, "hospital_price_transparency")
+
+    sql = f"""
+    CREATE TABLE IF NOT EXISTS `{table_id}` (
+      ccn                         STRING NOT NULL
+        OPTIONS(description="CMS Certification Number. Primary join key to hospital_directory. 95.6% coverage across 56,116 US hospitals."),
+      hospital_npi                STRING
+        OPTIONS(description="National Provider Identifier. NULL at Stage 4 insert; backfilled by scraper from file content."),
+      mrf_url                     STRING NOT NULL
+        OPTIONS(description="Publicly accessible URL of the hospital price transparency file, as discovered by the Stage 4 crawler."),
+      file_format                 STRING
+        OPTIONS(description="True inner content format after gzip decompression: json, csv, xlsx, tsv, or zip. NULL at Stage 4 insert; set by scraper via sniff_mrf_format()."),
+      price_transparency_page_url STRING
+        OPTIONS(description="URL of the intermediate webpage where the MRF URL was found, if different from the hospital root site."),
+      mrf_discovery_method        STRING
+        OPTIONS(description="How the URL was found: pass1_cms_filename, pass2_keyword_anchor, pass3_data_ext, pass4_html_scan, or path_heuristic."),
+      first_discovered_at         TIMESTAMP NOT NULL
+        OPTIONS(description="Timestamp when Stage 4 first found this MRF URL."),
+      last_validated_at           TIMESTAMP
+        OPTIONS(description="Timestamp of the most recent HEAD request confirming this URL is still reachable."),
+      last_scraped_at             TIMESTAMP
+        OPTIONS(description="Timestamp of the most recent successful scraper download. Drives the DATE partition."),
+      last_modified_header        STRING
+        OPTIONS(description="HTTP Last-Modified header value from the most recent HEAD or GET request."),
+      is_active                   BOOL DEFAULT TRUE
+        OPTIONS(description="False if the most recent HEAD request returned 404 or the URL is otherwise unreachable.")
+    )
+    PARTITION BY DATE(last_scraped_at)
+    CLUSTER BY ccn, hospital_npi
+    OPTIONS(description="Stage 4 MRF URL discovery output. One row per discovered price transparency file URL per hospital. "
+                        "Scraper reads from here. Stage 4 writes via MERGE on (ccn, mrf_url) -- never INSERT directly. "
+                        "Join to hospital_directory on ccn for hospital identity.")
     """
     if dry_run:
         logger.info("[dry-run] CREATE TABLE %s", table_id)
@@ -399,7 +472,8 @@ def main(argv: list[str] | None = None) -> int:
 
     rename_hospital_charges_to_legacy(client, args.project, args.dataset, args.dry_run)
     create_new_hospital_charges(client, args.project, args.dataset, args.dry_run)
-    alter_hospital_directory(client, args.project, args.dataset, args.dry_run)
+    recreate_hospital_directory_with_partition(client, args.project, args.dataset, args.dry_run)
+    create_hospital_price_transparency(client, args.project, args.dataset, args.dry_run)
     create_mrf_archive_index(client, args.project, args.dataset, args.dry_run)
     create_mrf_discovery_runs(client, args.project, args.dataset, args.dry_run)
 
