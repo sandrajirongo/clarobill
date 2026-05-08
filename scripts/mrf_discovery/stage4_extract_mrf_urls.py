@@ -1093,6 +1093,17 @@ def _persist_results(  # noqa: C901
         return
     logger.info("_persist_results: starting hospital_price_transparency MERGE (%d URLs)", len(discovered))
 
+    # Skip rows with no CCN — we can't reliably join them back to
+    # hospital_directory and the MERGE key would be ('', mrf_url) which
+    # risks matching the wrong row if another empty-CCN hospital shares
+    # the same system-level MRF URL.
+    rows_without_ccn = [d for d in discovered if not d.ccn]
+    if rows_without_ccn:
+        logger.warning(
+            "_persist_results: skipping %d discovered URLs with no CCN: %s",
+            len(rows_without_ccn),
+            [d.mrf_url for d in rows_without_ccn[:5]],
+        )
     pt_rows = [
         {
             "ccn": d.ccn,
@@ -1104,6 +1115,7 @@ def _persist_results(  # noqa: C901
             "is_active": True,
         }
         for d in discovered
+        if d.ccn  # only rows with a real CCN
     ]
     staging_pt_table = f"{project}.{dataset}.stage4_pt_staging_{run_id.replace('-', '_')}"
     pt_load_config = bigquery.LoadJobConfig(
@@ -1133,7 +1145,7 @@ def _persist_results(  # noqa: C901
     pt_merge_sql = f"""
         MERGE `{pt_table}` T
         USING `{staging_pt_table}` S
-        ON COALESCE(T.ccn, '') = COALESCE(S.ccn, '')
+        ON T.ccn = S.ccn
            AND T.mrf_url = S.mrf_url
         WHEN NOT MATCHED THEN
           INSERT (ccn, hospital_npi, mrf_url, price_transparency_page_url,
@@ -1145,12 +1157,14 @@ def _persist_results(  # noqa: C901
           is_active = TRUE,
           hospital_npi = COALESCE(T.hospital_npi, S.hospital_npi)
     """
-    bq_checkpoint.run_dml_with_count(
-        bq, pt_merge_sql,
-        label="Stage 4 hospital_price_transparency MERGE",
-        logger=logger,
-    )
-    bq.delete_table(staging_pt_table, not_found_ok=True)
+    try:
+        bq_checkpoint.run_dml_with_count(
+            bq, pt_merge_sql,
+            label="Stage 4 hospital_price_transparency MERGE",
+            logger=logger,
+        )
+    finally:
+        bq.delete_table(staging_pt_table, not_found_ok=True)
     logger.info(
         "MERGEd %d (ccn, mrf_url) pairs into hospital_price_transparency",
         len(pt_rows),

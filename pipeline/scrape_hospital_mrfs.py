@@ -624,8 +624,13 @@ def backfill_price_transparency(
     if not backfills:
         return
 
-    deduped = {(r["ccn"], r["mrf_url"]): r for r in backfills}
+    # Filter out rows with no CCN — they can't join back to hospital_directory
+    # and the MERGE key ('', mrf_url) could match wrong rows.
+    deduped = {(r["ccn"], r["mrf_url"]): r for r in backfills if r.get("ccn")}
     rows = list(deduped.values())
+    if not rows:
+        logger.debug("backfill_price_transparency: all rows filtered (no CCN); skipping")
+        return
 
     staging_id = f"{GCP_PROJECT}.{BQ_DATASET}.scraper_pt_backfill_{task_index}"
     ndjson = "\n".join(json.dumps(r) for r in rows)
@@ -645,10 +650,11 @@ def backfill_price_transparency(
     merge_sql = f"""
         MERGE `{GCP_PROJECT}.{BQ_DATASET}.hospital_price_transparency` T
         USING `{staging_id}` S
-        ON COALESCE(T.ccn, '') = COALESCE(S.ccn, '')
+        ON T.ccn = S.ccn
            AND T.mrf_url = S.mrf_url
         WHEN MATCHED THEN UPDATE SET
-          file_format = COALESCE(T.file_format, S.file_format),
+          -- Prefer scraper's format unless it's 'unknown'; keep existing if scraper couldn't determine it.
+          file_format = COALESCE(NULLIF(S.file_format, 'unknown'), T.file_format),
           last_scraped_at = CURRENT_TIMESTAMP(),
           hospital_npi = COALESCE(T.hospital_npi, S.hospital_npi)
     """

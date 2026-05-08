@@ -215,7 +215,15 @@ def recreate_hospital_directory_with_partition(
     client.query(f"DROP TABLE `{table_id}`").result()
 
     logger.info("Renaming hospital_directory_new -> hospital_directory")
-    client.query(f"ALTER TABLE `{new_table_id}` RENAME TO hospital_directory").result()
+    try:
+        client.query(f"ALTER TABLE `{new_table_id}` RENAME TO hospital_directory").result()
+    except Exception:
+        logger.critical(
+            "RENAME failed after DROP. hospital_directory is gone. "
+            "Run: bq query 'ALTER TABLE `%s` RENAME TO hospital_directory'",
+            new_table_id,
+        )
+        raise
 
     logger.info("Setting column descriptions on new columns")
     client.query(f"""
@@ -259,7 +267,8 @@ def create_mrf_archive_index(
       scraped_at                TIMESTAMP NOT NULL,
       parse_status              STRING NOT NULL,  -- pending | parsed | failed | skipped
       parse_error               STRING,
-      parsed_at                 TIMESTAMP
+      parsed_at                 TIMESTAMP,
+      file_format               STRING  -- csv | json | xlsx | xml | zip | unknown; backfilled by scraper
     )
     PARTITION BY RANGE_BUCKET(pricing_effective_year, GENERATE_ARRAY(2024, 2034, 1))
     CLUSTER BY hospital_npi, parse_status
