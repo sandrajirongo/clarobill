@@ -64,7 +64,15 @@ export const SOCIAL_LINKS = {
     handle: 'ClaroBill',
     url: 'https://www.linkedin.com/company/clarobill/',
   },
-  youtube: {\n    handle: '@clarobillai',\n    url: 'https://www.youtube.com/@clarobillai',\n  },\n  email: {
+  youtube: {
+    handle: '@clarobillai',
+    url: 'https://www.youtube.com/@clarobillai',
+  },
+  tiktok: {
+    handle: '@clarobill',
+    url: 'https://www.tiktok.com/@clarobill',
+  },
+  email: {
     handle: 'support@clarobill.com',
     url: 'mailto:support@clarobill.com',
   },
