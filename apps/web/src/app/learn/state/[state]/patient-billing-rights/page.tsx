@@ -43,7 +43,7 @@ export default function StateBillingRightsPage({ params }: Props): JSX.Element {
     dateModified: '2026-05-07',
     author: {
       '@type': 'Person' as const,
-      name: 'Sandra Jirongo',
+      name: 'ClaroBill Team',
       url: `${BASE}/authors/sandra-jirongo`,
     },
     publisher: { '@type': 'Organization' as const, name: 'ClaroBill', url: BASE },

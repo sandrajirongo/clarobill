@@ -10,7 +10,7 @@ const ARTICLE_SCHEMA = {
   url: 'https://www.clarobill.com/learn/medical-billing-advocates',
   datePublished: '2026-04-17',
   dateModified: '2026-05-07',
-  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/authors/sandra-jirongo' },
+  author: { '@type': 'Person' as const, name: 'ClaroBill Team', url: 'https://www.clarobill.com/about' },
   publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
 };
 
@@ -73,7 +73,7 @@ export default function Article(): JSX.Element {
         <span>·</span>
         <span>7 min read</span>
         <span>·</span>
-        <span>Sandra Jirongo</span>
+        <span>ClaroBill Team</span>
       </div>
 
       <h1 className={s.articleH1}>

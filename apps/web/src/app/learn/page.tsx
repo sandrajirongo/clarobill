@@ -33,7 +33,7 @@ const HUB_ARTICLE = {
   url: 'https://www.clarobill.com/learn',
   datePublished: '2026-05-07',
   dateModified: '2026-05-07',
-  author: { '@type': 'Person' as const, name: 'Sandra Jirongo', url: 'https://www.clarobill.com/about' },
+  author: { '@type': 'Person' as const, name: 'ClaroBill Team', url: 'https://www.clarobill.com/about' },
   publisher: { '@type': 'Organization' as const, name: 'ClaroBill' },
 };
 
@@ -46,6 +46,27 @@ interface Article {
 }
 
 const PUBLISHED_ARTICLES: Article[] = [
+  {
+    slug: 'why-bill-exceeds-insurer-negotiated-rate',
+    title: 'Why Your Bill Is Higher Than What Your Insurer Pays',
+    description: 'Chargemaster rates, negotiated rates, and Medicare rates. Understanding the gap between what hospitals charge and what they accept is the first step to disputing it.',
+    date: 'May 7, 2026',
+    readMins: 9,
+  },
+  {
+    slug: 'hospital-machine-readable-files-explained',
+    title: 'Hospital Machine-Readable Files: What They Are and How to Use Them',
+    description: 'Every US hospital is required by federal law to publish its negotiated rates. Here is how to find that file, read it, and use the numbers to dispute an overcharge.',
+    date: 'May 7, 2026',
+    readMins: 8,
+  },
+  {
+    slug: 'ncci-edits-explained-for-patients',
+    title: 'NCCI Edits: The Federal Rules That Prevent Billing Abuse',
+    description: 'The National Correct Coding Initiative defines which CPT codes can and cannot be billed together. Here is what that means for your bill and how to use it in a dispute.',
+    date: 'May 7, 2026',
+    readMins: 7,
+  },
   {
     slug: 'how-to-dispute-a-hospital-bill',
     title: 'How to Dispute a Hospital Bill: A Step-by-Step Guide',
@@ -80,27 +101,6 @@ const PUBLISHED_ARTICLES: Article[] = [
     description: 'The five-digit numbers on your bill determine what you pay. Here is how they work, why they get abused, and how to check whether yours are right.',
     date: 'April 7, 2026',
     readMins: 6,
-  },
-  {
-    slug: 'why-bill-exceeds-insurer-negotiated-rate',
-    title: 'Why Your Bill Is Higher Than What Your Insurer Pays',
-    description: 'Chargemaster rates, negotiated rates, and Medicare rates. Understanding the gap between what hospitals charge and what they accept is the first step to disputing it.',
-    date: 'May 7, 2026',
-    readMins: 9,
-  },
-  {
-    slug: 'hospital-machine-readable-files-explained',
-    title: 'Hospital Machine-Readable Files: What They Are and How to Use Them',
-    description: 'Every US hospital is required by federal law to publish its negotiated rates. Here is how to find that file, read it, and use the numbers to dispute an overcharge.',
-    date: 'May 7, 2026',
-    readMins: 8,
-  },
-  {
-    slug: 'ncci-edits-explained-for-patients',
-    title: 'NCCI Edits: The Federal Rules That Prevent Billing Abuse',
-    description: 'The National Correct Coding Initiative defines which CPT codes can and cannot be billed together. Here is what that means for your bill and how to use it in a dispute.',
-    date: 'May 7, 2026',
-    readMins: 7,
   },
 ];
 
@@ -191,7 +191,7 @@ export default function LearnPage(): JSX.Element {
       <div className={s.articleByline}>
         <span>Last reviewed: May 2026</span>
         <span>·</span>
-        <span>Sandra Jirongo</span>
+        <span>ClaroBill Team</span>
       </div>
 
       <h1 className={s.articleH1}>Understand your bill. Know your rights. Fight errors.</h1>
@@ -201,22 +201,6 @@ export default function LearnPage(): JSX.Element {
         of the billing dispute process, from reading your itemized statement to sending a dispute letter
         backed by a verifiable citation.
       </p>
-
-      <div className={s.articleGrid}>
-        {PUBLISHED_ARTICLES.map((article) => (
-          <div key={article.slug} className={s.articleCard}>
-            <Link href={`/learn/${article.slug}`} className={s.articleCardTitle}>
-              {article.title}
-            </Link>
-            <p className={s.articleCardDesc}>{article.description}</p>
-            <div className={s.byline}>
-              <span>{article.date}</span>
-              <span>·</span>
-              <span>{article.readMins} min read</span>
-            </div>
-          </div>
-        ))}
-      </div>
 
       <div className={s.articleBody}>
         <h2>What these guides cover</h2>
@@ -236,6 +220,22 @@ export default function LearnPage(): JSX.Element {
               ))}
             </ul>
           </section>
+        ))}
+      </div>
+
+      <div className={s.articleGrid}>
+        {PUBLISHED_ARTICLES.map((article) => (
+          <div key={article.slug} className={s.articleCard}>
+            <Link href={`/learn/${article.slug}`} className={s.articleCardTitle}>
+              {article.title}
+            </Link>
+            <p className={s.articleCardDesc}>{article.description}</p>
+            <div className={s.byline}>
+              <span>{article.date}</span>
+              <span>·</span>
+              <span>{article.readMins} min read</span>
+            </div>
+          </div>
         ))}
       </div>
 
