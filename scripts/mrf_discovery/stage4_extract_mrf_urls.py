@@ -245,11 +245,23 @@ _CMS_FILENAME_RE = re.compile(
 )
 
 # Well-known non-MRF filenames that end in a data-file extension but are
-# never price transparency files. Checked in _validate_mrf_url Gate 1 so
+# never price transparency files. Checked in _validate_mrf_url Gate 1b so
 # they never generate a HEAD request.
 _NON_MRF_FILENAMES_RE = re.compile(
     r"/(?:manifest|browserconfig|package|package-lock|yarn\.lock|sw|service-worker"
     r"|robots|sitemap|feed|rss|atom|humans|security|ads|app)\.(?:json|xml)$",
+    re.IGNORECASE,
+)
+
+# For URLs that don't match the CMS filename pattern, the filename portion
+# must contain at least one of these price-transparency keywords. This is
+# Gate 1c and rejects files like quality reports, annual financials, and
+# QTD files that end in .xlsx/.csv/.json but are not MRFs.
+_MRF_FILENAME_KEYWORDS_RE = re.compile(
+    r"(?:standard[_\-]?charges?|price[_\-]?transparency|mrf|machine[_\-]?readable"
+    r"|negotiated[_\-]?(?:rates?|charges?)|hospital[_\-]?charges?|chargemaster|cdm"
+    r"|shoppable|payer[_\-]?specific|cost[_\-]?transparency|billing[_\-]?charges?"
+    r"|in[_\-]network|innetwork)",
     re.IGNORECASE,
 )
 
@@ -761,6 +773,17 @@ def _validate_mrf_url(
     # transparency files. Saves a HEAD request and prevents false positives.
     if _NON_MRF_FILENAMES_RE.search(url_path_lower):
         return False, None, None
+
+    # Gate 1c: for non-CMS-pattern URLs, the filename must contain a
+    # price-transparency keyword. Rejects quality reports, annual financials,
+    # QTD files, and other XLSX/CSV/JSON that end in a data extension but
+    # have no price-transparency signal in their filename.
+    # CMS-pattern URLs (\d{6,12}_..._standardcharges) are exempt — they
+    # already encode the required context in the filename.
+    if not _CMS_FILENAME_RE.search(url_path_lower):
+        filename = url_path_lower.rsplit("/", 1)[-1].rsplit("?", 1)[0]
+        if not _MRF_FILENAME_KEYWORDS_RE.search(filename):
+            return False, None, None
 
     # Gate 2: HEAD probe — 200 + non-HTML Content-Type.
     status, ct, size = _head_with_ua_fallback(session, url)

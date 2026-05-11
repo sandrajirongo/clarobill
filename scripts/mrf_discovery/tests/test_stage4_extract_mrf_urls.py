@@ -709,11 +709,47 @@ class TestNonMrfFilenameBlocklist:
         assert ok is True
 
     def test_generic_data_json_not_blocked(self, monkeypatch) -> None:
-        """A hospital-named JSON file that isn't on the blocklist passes through."""
-        url = "https://hospital.org/files/2024-charges.json"
+        """A hospital-named JSON with price keyword passes Gate 1c."""
+        url = "https://hospital.org/files/2024-standardcharges.json"
         monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 5000))
         ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
         assert ok is True
+
+
+class TestGate1cFilenameKeyword:
+    """Gate 1c: non-CMS-pattern URLs must contain a price-transparency keyword
+    in the filename. Rejects quality reports, annual financials, QTD files."""
+
+    @pytest.mark.parametrize("url", [
+        # QTD / quality transparency data
+        "https://hospital.org/files/copy-of-6.19.19-copy-of-qtd-050189-george-l.-mee-memorial-hospital-1.xlsx",
+        # generic annual report
+        "https://hospital.org/docs/annual-report-2024.xlsx",
+        # employee data export
+        "https://hospital.org/hr/staff-roster-2024.csv",
+        # financial statements
+        "https://hospital.org/finance/audited-financials-2023.xlsx",
+        # no keyword in filename
+        "https://hospital.org/files/data.csv",
+        "https://hospital.org/files/2024-export.json",
+    ])
+    def test_non_mrf_xlsx_csv_rejected(self, url: str) -> None:
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is False, f"{url} should be rejected by Gate 1c (no price-transparency keyword in filename)"
+
+    @pytest.mark.parametrize("url,keyword", [
+        ("https://hospital.org/files/hospital-standard-charges-2024.csv", "standard-charges"),
+        ("https://hospital.org/docs/price-transparency-2025.xlsx", "price-transparency"),
+        ("https://hospital.org/mrf-2024.json", "mrf"),
+        ("https://hospital.org/files/chargemaster-export.csv", "chargemaster"),
+        ("https://hospital.org/files/negotiated-rates-payer.xlsx", "negotiated-rates"),
+        ("https://hospital.org/billing-charges-2024.xlsx", "charges"),
+        ("https://hospital.org/in-network-rates.json", "in-network"),
+    ])
+    def test_price_transparency_files_pass(self, url: str, keyword: str, monkeypatch) -> None:
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 10000))
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is True, f"{url} (keyword: {keyword}) should pass Gate 1c"
 
 
 def test_toc_walker_extracts_url_keys() -> None:
