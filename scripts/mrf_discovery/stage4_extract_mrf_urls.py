@@ -854,7 +854,6 @@ def _validate_mrf_url(
     # sitemap.xml) that pass the extension check but are never price
     # transparency files. Saves a HEAD request and prevents false positives.
     if _NON_MRF_FILENAMES_RE.search(url_path_lower):
-        logger.info("[gate1b] blocked non-MRF filename: %s", url)
         return False, None, None
 
     # Gate 1c: for non-CMS-pattern URLs, the filename must contain a
@@ -866,20 +865,17 @@ def _validate_mrf_url(
     if not _CMS_FILENAME_RE.search(url_path_lower):
         filename = url_path_lower.rsplit("/", 1)[-1].rsplit("?", 1)[0]
         if not _MRF_FILENAME_KEYWORDS_RE.search(filename):
-            logger.info("[gate1c] no PT keyword in filename: %s", url)
             return False, None, None
 
     # Gate 2: HEAD probe — 200 + non-HTML Content-Type.
     status, ct, size = _head_with_ua_fallback(session, url)
     if status is None or status >= 400:
-        logger.info("[gate2] HEAD failed (status=%s): %s", status, url)
         return False, ct, size
 
     # Reject HTML responses outright. If a server insists on serving an MRF
     # file as text/html (we've seen it on a few CDNs that auto-detect by
     # extension only) we'd rather miss it than admit landing pages.
     if ct and ct.lower().startswith(("text/html", "application/xhtml")):
-        logger.info("[gate2] rejected HTML content-type (%s): %s", ct, url)
         return False, ct, size
 
     if ct is None:
@@ -1067,7 +1063,6 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
             _scan(probe, "path_heuristic", depth=0)
 
         # ---- (3) HEAD-validate every candidate ----
-        logger.info("[%s] %d candidate URLs before validation: %s", label, len(found_urls), list(found_urls)[:20])
         # Pass found_urls as toc_urls_out so that JSON files failing Gate 3
         # can auto-expand as system index files and inject new candidates.
         # We iterate over a snapshot (list) because toc expansion may grow
