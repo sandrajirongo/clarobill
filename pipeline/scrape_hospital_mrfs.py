@@ -31,6 +31,7 @@ parsed.  The parser job (parse_hospital_mrfs.py) reads from this prefix.
 import gzip
 import io
 import json
+import tempfile
 import logging
 import os
 import re
@@ -342,8 +343,6 @@ def _download_to_gcs(
             label, fmt, url, content_type,
         )
         return None
-    upload_stream = _PrependedStream(prefix, resp.raw)
-
     # 2026-05-01 fix: include the hospital's archive key (NPI or CCN) in
     # the staging path so multi-facility hospital systems whose names
     # truncate to identical 60-char slugs don't collide. Saw this on the
@@ -368,13 +367,26 @@ def _download_to_gcs(
             "hospital_npi": hospital.get("hospital_npi") or "",
             "last_modified": last_modified or "",
         }
-        # decode_content=False: store the raw compressed bytes as received.
-        # The Content-Length header reflects the compressed size — if we let
-        # urllib3 decompress on the fly (decode_content=True), the GCS
-        # resumable upload gets more bytes than the Content-Range header
-        # declares, causing a 400 "Invalid request" from the GCS API.
+        # decode_content=False: store raw compressed bytes as received.
+        # If urllib3 decompresses on the fly, the byte count exceeds what
+        # the Content-Range header declares, causing a GCS 400.
         resp.raw.decode_content = False
-        blob.upload_from_file(upload_stream)
+        # Download to a disk-backed temp file first, then upload seekably.
+        # BlobWriter (blob.open("wb")) was tried but fails under GCS 429s:
+        # when GCS confirms 0 bytes after we've written 16MB, BlobWriter
+        # tries to seek the source back to 0 — but iter_content chunks are
+        # already consumed and gone. tempfile.TemporaryFile() is seekable,
+        # so GCS's built-in retry can re-read from any confirmed offset.
+        with tempfile.TemporaryFile() as tmpf:
+            tmpf.write(prefix)
+            for chunk in resp.iter_content(chunk_size=GCS_UPLOAD_CHUNK_SIZE):
+                if chunk:
+                    tmpf.write(chunk)
+            tmpf.seek(0)
+            blob.upload_from_file(
+                tmpf,
+                content_type=content_type or "application/octet-stream",
+            )
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name
     except Exception as exc:

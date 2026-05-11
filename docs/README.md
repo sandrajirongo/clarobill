@@ -20,6 +20,8 @@ Start here. Every doc lives under one of the categories below.
 | What's the price model? | `product/` | [pricing.md](product/pricing.md) |
 | What's the SEO/GEO plan and task list? | `product/` | [seo-geo-plan.md](product/seo-geo-plan.md) |
 | Why was X built that way? | `decisions/` | ADRs by date |
+| MRF discovery pipeline redesign (Plan A) | `decisions/` | [2026-05-08-mrf-discovery-pipeline-redesign.md](decisions/2026-05-08-mrf-discovery-pipeline-redesign.md) |
+| Format-specific parser jobs + schema (Plan B) | `decisions/` | [2026-05-08-format-specific-parser-jobs.md](decisions/2026-05-08-format-specific-parser-jobs.md) |
 | What broke and why? | `postmortems/` | postmortems by date |
 | What's next on the backlog? | `future-improvements/` | one file per backlog item |
 | How do I run a full-codebase audit? | `playbooks/` | [agent-review.md](playbooks/agent-review.md) |

@@ -7,9 +7,11 @@ landing pages, and one Facebook redirect, all written to GCS as
 
 Tests focus on two pieces:
   - `_PrependedStream`: yields the sniff buffer before draining the
-    underlying body, so the GCS upload sees the bytes in original order.
+    underlying body (kept for backward-compat; _download_to_gcs no longer
+    uses it directly but the class is public API).
   - `_download_to_gcs`: rejects HTML/PDF/unknown responses without
-    writing anything to GCS, and accepts JSON/CSV/ZIP.
+    writing anything to GCS, and uploads accepted files via seekable
+    tempfile + blob.upload_from_file().
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import gzip
 import io
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -90,21 +92,31 @@ def _mock_response(body: bytes, content_type: str = "application/json") -> Magic
     resp.raw = _FakeRawSocket(body)
     resp.raise_for_status = MagicMock()
     resp.close = MagicMock()
+    # After the 4096-byte sniff read from resp.raw, iter_content yields the rest.
+    remaining = body[4096:]
+    resp.iter_content = MagicMock(return_value=iter([remaining] if remaining else []))
     return resp
 
 
-def _mock_bucket() -> MagicMock:
+def _mock_bucket() -> tuple[MagicMock, list[bytes]]:
+    """Returns (bucket_mock, captured_chunks) where captured_chunks collects upload_from_file calls."""
     bucket = MagicMock()
     bucket.name = "mrf-staging"
     blob = MagicMock()
     bucket.blob.return_value = blob
-    return bucket
+    captured: list[bytes] = []
+
+    def _capture_upload(f, **kwargs: object) -> None:  # type: ignore[no-untyped-def]
+        captured.append(f.read())
+
+    blob.upload_from_file.side_effect = _capture_upload
+    return bucket, captured
 
 
 class TestDownloadToGcsValidation:
     def test_rejects_html_response(self) -> None:
         # Real example: dignityhealth.org/.../insurance-information page.
-        bucket = _mock_bucket()
+        bucket, _ = _mock_bucket()
         session = MagicMock()
         session.get.return_value = _mock_response(
             b"<!DOCTYPE html><html><head><title>404</title></head><body></body></html>",
@@ -119,7 +131,7 @@ class TestDownloadToGcsValidation:
         bucket.blob.return_value.upload_from_file.assert_not_called()
 
     def test_rejects_pdf_response(self) -> None:
-        bucket = _mock_bucket()
+        bucket, _ = _mock_bucket()
         session = MagicMock()
         session.get.return_value = _mock_response(
             b"%PDF-1.7\n%...content...",
@@ -134,7 +146,7 @@ class TestDownloadToGcsValidation:
         bucket.blob.return_value.upload_from_file.assert_not_called()
 
     def test_accepts_json_and_uploads(self) -> None:
-        bucket = _mock_bucket()
+        bucket, _ = _mock_bucket()
         session = MagicMock()
         session.get.return_value = _mock_response(
             b'{"hospital_name":"X","hospital_npi":"1234567890","standard_charge_information":[]}',
@@ -150,7 +162,7 @@ class TestDownloadToGcsValidation:
         bucket.blob.return_value.upload_from_file.assert_called_once()
 
     def test_accepts_gzipped_json(self) -> None:
-        bucket = _mock_bucket()
+        bucket, _ = _mock_bucket()
         session = MagicMock()
         session.get.return_value = _mock_response(
             gzip.compress(b'{"hospital_npi":"1234567890"}'),
@@ -165,7 +177,7 @@ class TestDownloadToGcsValidation:
         assert result is not None
 
     def test_accepts_csv_via_url(self) -> None:
-        bucket = _mock_bucket()
+        bucket, _ = _mock_bucket()
         session = MagicMock()
         session.get.return_value = _mock_response(
             b"code,description,charge\n99214,Office,350.00\n",
@@ -180,20 +192,18 @@ class TestDownloadToGcsValidation:
         assert result is not None
 
     def test_uploaded_bytes_match_full_body(self) -> None:
-        # The sniffer reads 4 KB; we must verify those bytes are not lost
-        # — the upload must see the original body unchanged.
-        bucket = _mock_bucket()
+        # The sniffer reads 4 KB; verify those bytes are not lost —
+        # upload_from_file must receive the original body unchanged.
+        bucket, captured = _mock_bucket()
         session = MagicMock()
         body = b'{"hospital_npi":"1234567890",' + b'"x":"y",' * 1000 + b'"end":"yes"}'
         session.get.return_value = _mock_response(body, content_type="application/json")
-        _download_to_gcs(
+        result = _download_to_gcs(
             session, bucket,
             hospital={"hospital_name": "Test", "mrf_url": "https://x.org/charges.json",
                       "hospital_npi": "1234567890"},
             scraped_at="2026-05-04T00:00:00Z",
         )
-        upload_call = bucket.blob.return_value.upload_from_file.call_args
-        assert upload_call is not None
-        uploaded_stream = upload_call.args[0]
-        # Drain the stream to confirm full body length is preserved.
-        assert uploaded_stream.read() == body
+        assert result is not None
+        assert len(captured) == 1
+        assert captured[0] == body

@@ -17,7 +17,7 @@ inconsistently:
      same key, same sha256), we skip the upload. Saves bandwidth on weekly
      re-scrapes of unchanged hospital MRFs.
 
-The archive bucket is `clarobill-mrf-archive-uscentral` (Standard storage class
+The archive bucket is `mrf-archive` (Standard storage class
 as of 2026-05-03 — was Coldline, but the parser actively re-reads the
 bucket so retrieval fees + Class B op rates were burning ~$100/day; see
 docs/postmortem/2026-05-03-mrf-pipeline-postmortem.md). Versioning is
@@ -38,6 +38,7 @@ import io
 import json
 import logging
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,7 +74,7 @@ from mrf_discovery import archive_layout  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ARCHIVE_BUCKET = "clarobill-mrf-archive-uscentral"
+DEFAULT_ARCHIVE_BUCKET = "mrf-archive"
 UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16 MiB; matches existing scraper
 
 
@@ -142,76 +143,57 @@ def write_archive(
     Returns:
         ArchiveResult with sha256, sizes, and the gs:// URIs.
     """
-    import uuid
-
     bucket = storage_client.bucket(bucket_name)
+    content_type_or_default = content_type or "application/octet-stream"
 
-    # Step 1: stream `byte_stream` to a temp blob, hashing in flight.
-    # The temp prefix `_tmp/` is outside the pricing-year=YYYY/ namespace
-    # so the structured-search queries downstream never see it.
-    tmp_object_name = f"_tmp/{uuid.uuid4()}.{extension}"
-    tmp_blob = bucket.blob(tmp_object_name, chunk_size=UPLOAD_CHUNK_SIZE)
-
+    # Step 1: buffer byte_stream to a local seekable tempfile, hashing in
+    # flight. Buffering locally lets GCS's built-in retry seek to any
+    # confirmed offset on 429s or dropped connections — blob.open("wb")
+    # (BlobWriter) can't do this because iter_content chunks are consumed
+    # and gone before GCS confirms receipt. We also learn SHA256 before the
+    # GCS upload, which lets us upload directly to the final content-addressed
+    # path and skip the tmp-blob → server-side-copy dance entirely.
     hasher = hashlib.sha256()
     total_bytes = 0
-
-    # blob.open("wb") returns a writer that streams chunks to GCS via a
-    # single resumable upload session. Each write is buffered up to
-    # chunk_size, then sent and the buffer reset. Per-worker peak memory:
-    # ~chunk_size (the writer's internal buffer) + chunk_size (our read
-    # buffer) = ~32 MiB, bounded.
-    content_type_or_default = content_type or "application/octet-stream"
-    with tmp_blob.open("wb", content_type=content_type_or_default) as gcs_writer:
+    with tempfile.TemporaryFile() as tmpf:
         while True:
             chunk = byte_stream.read(UPLOAD_CHUNK_SIZE)
             if not chunk:
                 break
             hasher.update(chunk)
-            gcs_writer.write(chunk)
+            tmpf.write(chunk)
             total_bytes += len(chunk)
-    sha256 = hasher.hexdigest()
+        sha256 = hasher.hexdigest()
 
-    # Step 2: now that we know the sha, build the final object name.
-    object_name = archive_layout.build_object_name(
-        pricing_effective_year, key, sha256, extension,
-    )
-    meta_object_name = archive_layout.build_meta_object_name(
-        pricing_effective_year, key, sha256,
-    )
-    gcs_uri = f"gs://{bucket_name}/{object_name}"
-    meta_uri = f"gs://{bucket_name}/{meta_object_name}"
-
-    data_blob = bucket.blob(object_name)
-    meta_blob = bucket.blob(meta_object_name)
-
-    # Step 3: idempotency check. If the final blob exists already, this
-    # exact content was archived previously — skip the rename, delete the
-    # tmp upload, and return. Saves the server-side copy cost and keeps
-    # the bucket free of redundant tmp objects.
-    if data_blob.exists():
-        logger.info(
-            "Archive object exists, skipping rename: %s (%d bytes)",
-            gcs_uri, total_bytes,
+        # Step 2: build the final content-addressed object name.
+        object_name = archive_layout.build_object_name(
+            pricing_effective_year, key, sha256, extension,
         )
-        try:
-            tmp_blob.delete()
-        except Exception as exc:
-            logger.warning("Failed to delete tmp blob %s: %s", tmp_object_name, exc)
-        return ArchiveResult(
-            gcs_uri=gcs_uri, meta_uri=meta_uri, sha256=sha256,
-            file_size_bytes=total_bytes, skipped_existing=True,
+        meta_object_name = archive_layout.build_meta_object_name(
+            pricing_effective_year, key, sha256,
         )
+        gcs_uri = f"gs://{bucket_name}/{object_name}"
+        meta_uri = f"gs://{bucket_name}/{meta_object_name}"
 
-    # Step 4: server-side copy tmp → final (metadata-only operation, no
-    # data transfer), then delete the tmp blob.
-    bucket.copy_blob(tmp_blob, bucket, new_name=object_name)
-    try:
-        tmp_blob.delete()
-    except Exception as exc:
-        # Failure to delete the tmp doesn't break the archive — the data
-        # is correctly at the final path. A bucket lifecycle rule on
-        # _tmp/* (age >= 1 day) catches stragglers.
-        logger.warning("Failed to delete tmp blob %s after copy: %s", tmp_object_name, exc)
+        data_blob = bucket.blob(object_name, chunk_size=UPLOAD_CHUNK_SIZE)
+        meta_blob = bucket.blob(meta_object_name)
+
+        # Step 3: idempotency — if the exact content is already archived, skip.
+        if data_blob.exists():
+            logger.info(
+                "Archive object exists, skipping upload: %s (%d bytes)",
+                gcs_uri, total_bytes,
+            )
+            return ArchiveResult(
+                gcs_uri=gcs_uri, meta_uri=meta_uri, sha256=sha256,
+                file_size_bytes=total_bytes, skipped_existing=True,
+            )
+
+        # Step 4: upload directly to the final path. tmpf is seekable so
+        # GCS's built-in retry (DEFAULT_RETRY) can re-read from any confirmed
+        # offset without any extra work from us.
+        tmpf.seek(0)
+        data_blob.upload_from_file(tmpf, content_type=content_type_or_default)
 
     # Build + upload sibling meta.json (small, single put)
     meta = archive_layout.ArchiveMeta(
