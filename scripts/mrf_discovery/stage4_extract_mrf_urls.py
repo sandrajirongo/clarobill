@@ -562,6 +562,11 @@ def _sniff_mrf_content(session: requests.Session, url: str, fmt: str) -> bool:
     """
     if fmt not in ("json", "csv"):
         return True
+    # Gzip/zip-compressed files can't be plaintext-sniffed — the first 8 KB
+    # is binary. Fail open so .csv.gz and .json.gz are never blocked here.
+    url_path = url.lower().split("?", 1)[0]
+    if url_path.endswith((".gz", ".gzip", ".zip")):
+        return True
     sem = _per_host_semaphore(_host_of(url))
     with sem:
         try:

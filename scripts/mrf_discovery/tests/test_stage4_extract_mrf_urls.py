@@ -902,6 +902,18 @@ class TestSniffMrfContent:
         session = self._make_session(b"PK\x03\x04garbage")
         assert s4._sniff_mrf_content(session, "https://h.org/charges.xlsx", "xlsx") is True  # type: ignore[arg-type]
 
+    def test_gzipped_csv_fails_open(self) -> None:
+        """A .csv.gz file has binary first bytes — Gate 3 must skip it, not reject it."""
+        gzip_magic = b"\x1f\x8b\x08\x00garbage binary content"
+        session = self._make_session(gzip_magic)
+        assert s4._sniff_mrf_content(session, "https://h.org/123456789_mercy_standardcharges.csv.gz", "csv") is True  # type: ignore[arg-type]
+
+    def test_gzipped_json_fails_open(self) -> None:
+        """A .json.gz file has binary first bytes — Gate 3 must skip it, not reject it."""
+        gzip_magic = b"\x1f\x8b\x08\x00garbage binary content"
+        session = self._make_session(gzip_magic)
+        assert s4._sniff_mrf_content(session, "https://h.org/123456789_mercy_standardcharges.json.gz", "json") is True  # type: ignore[arg-type]
+
     def test_network_error_fails_open(self) -> None:
         """Any exception during sniff returns True (fail open)."""
         import requests as _r
