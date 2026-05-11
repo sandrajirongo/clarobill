@@ -541,6 +541,61 @@ def _head_with_ua_fallback(
 
 
 # ---------------------------------------------------------------------------
+# Content sniff (Gate 3)
+# ---------------------------------------------------------------------------
+
+
+def _sniff_mrf_content(session: requests.Session, url: str, fmt: str) -> bool:
+    """Range-GET the first 8 KB to confirm the file contains HPT-specific fields.
+
+    CMS V3.0.0 (45 CFR § 180.50) mandates that valid HPT files contain:
+      JSON: "hospital_name" as a top-level key
+      CSV:  "hospital_name" and "last_updated_on" in row 1 (header row)
+
+    These fields are legally required in every compliant file, so their
+    presence in the opening bytes is a reliable HPT signal and their
+    absence is a reliable rejection signal.
+
+    Returns True if the file looks like an HPT MRF (or if we can't confirm
+    either way — fails open so misconfigured CDNs don't cause missed MRFs).
+    Formats other than json/csv always return True.
+    """
+    if fmt not in ("json", "csv"):
+        return True
+    sem = _per_host_semaphore(_host_of(url))
+    with sem:
+        try:
+            resp = session.get(
+                url, timeout=GET_TIMEOUT, stream=True,
+                headers={"Range": "bytes=0-8191", "Accept": "*/*"},
+            )
+            if resp.status_code not in (200, 206):
+                resp.close()
+                return True  # can't confirm; fail open
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in resp.iter_content(chunk_size=1024):
+                if not chunk:
+                    continue
+                chunks.append(chunk)
+                total += len(chunk)
+                if total >= 8192:
+                    break
+            resp.close()
+        except Exception:
+            return True  # fail open on any network error
+
+    content = b"".join(chunks).lower()
+    if fmt == "json":
+        # HPT JSON always has "hospital_name" as a top-level key.
+        # Check just the first 4 KB — it always appears near the opening brace.
+        return b'"hospital_name"' in content[:4096]
+    # CSV: row 1 (header row) must contain hospital_name and last_updated_on.
+    row1 = content[:2048]
+    return b"hospital_name" in row1 and b"last_updated_on" in row1
+
+
+# ---------------------------------------------------------------------------
 # URL extraction strategies
 # ---------------------------------------------------------------------------
 
@@ -679,9 +734,13 @@ def _expand_toc(session: requests.Session, toc_url: str) -> list[str]:
       { "files": [{"url": "...", "filename": "..."}, ...] }
       { "reporting_entity_name": "...", "in_network_files": [{"location": "..."}] }
       [ {"url": "..."}, {"url": "..."} ]
+      # system listing page JSON (no standard schema):
+      { "mrfFiles": [{"downloadUrl": "..."}, ...] }
+      { "results": [{"filePath": "/charges/facility1.csv"}, ...] }
 
     We accept any of these by walking the JSON tree and collecting any
-    string value under a key named url/location/href/file_url.
+    string value under a key named url/location/href/file_url/download_url
+    /file_path/path/mrf_location. Values must look like a URL or path.
     """
     resp, body = _get_with_ua_fallback(session, toc_url, GET_TIMEOUT)
     if resp is None or resp.status_code != 200 or body is None:
@@ -692,12 +751,19 @@ def _expand_toc(session: requests.Session, toc_url: str) -> list[str]:
         return []
 
     urls: list[str] = []
-    _URL_KEYS = ("url", "location", "href", "file_url", "mrf_url")
+    _URL_KEYS = (
+        "url", "location", "href", "file_url", "mrf_url",
+        "download_url", "downloadurl",  # camelCase variants seen in the wild
+        "file_path", "filepath",
+        "path",
+        "mrf_location", "mrflocation",
+        "source", "src",
+    )
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):
             for k, v in node.items():
-                if k.lower() in _URL_KEYS and isinstance(v, str):
+                if k.lower() in _URL_KEYS and isinstance(v, str) and v.strip():
                     absolute = _resolve_url(toc_url, v)
                     if absolute:
                         urls.append(absolute)
@@ -706,6 +772,12 @@ def _expand_toc(session: requests.Session, toc_url: str) -> list[str]:
         elif isinstance(node, list):
             for item in node:
                 walk(item)
+            # Bare string arrays: ["https://cdn.example.com/charges1.csv", ...]
+            for item in node:
+                if isinstance(item, str) and item.strip().startswith(("http", "/")):
+                    absolute = _resolve_url(toc_url, item)
+                    if absolute:
+                        urls.append(absolute)
 
     walk(data)
     # Dedup while preserving order.
@@ -739,20 +811,25 @@ def _file_format_from_url(url: str) -> str:
 
 
 def _validate_mrf_url(
-    session: requests.Session, url: str
+    session: requests.Session,
+    url: str,
+    toc_urls_out: dict[str, str] | None = None,
 ) -> tuple[bool, str | None, int | None]:
-    """HEAD-check a candidate MRF URL.
+    """Gate-check a candidate MRF URL.
 
-    A URL is a valid MRF candidate ONLY if BOTH:
-      1. URL shape says it's an MRF file (CMS filename pattern OR a real
-         MRF extension on the path component).
-      2. Server returns 200 + a non-HTML Content-Type (or no Content-Type
-         at all — some CDNs omit it; we trust the URL shape in that case).
+    Three gates must all pass:
+      Gate 1: URL shape — extension or CMS filename pattern.
+      Gate 1b: Non-MRF filename blocklist (manifest.json, sitemap.xml, …).
+      Gate 1c: Price-transparency keyword in filename (for non-CMS URLs).
+      Gate 2: HEAD probe — 200 + non-HTML Content-Type.
+      Gate 3: Partial content sniff — JSON must contain "hospital_name";
+              CSV row 1 must contain "hospital_name" and "last_updated_on".
+              (Required by 45 CFR § 180.50 in every valid HPT file.)
 
-    The HTML rejection is the 2026-05-04 incident fix: previously HTML
-    responses were accepted "and let the parser decide", which let 5
-    Sutter landing pages get classified as MRF URLs and MERGEd into
-    hospital_directory.
+    When a JSON file fails Gate 3, it may be a system-level index/TOC file
+    rather than an MRF itself.  If `toc_urls_out` is provided, the caller's
+    URL dict is populated with any MRF URLs extracted from it, so the crawl
+    loop can pick them up for their own validation pass.
 
     Returns (ok, content_type, size_bytes).
     """
@@ -803,9 +880,33 @@ def _validate_mrf_url(
     ct_lower = ct.lower()
     for ok_ct in _OK_CONTENT_TYPES:
         if ct_lower.startswith(ok_ct):
-            return True, ct, size
-    # Unknown CT — accept only because Gate 1 already verified the URL
-    # extension. The scraper's content-sniff guard provides a final check.
+            break
+    else:
+        # Unknown CT — accept only because Gate 1 already verified the URL
+        # extension. Gate 3 below provides an additional content-level check.
+        pass
+
+    # Gate 3: partial content sniff — confirm HPT-required fields are present.
+    # Only for JSON and CSV (XLSX/ZIP/XML fail open automatically in _sniff).
+    # Uses Range GET (first 8 KB); if server rejects Range it falls back to
+    # a full-body GET capped at MAX_BODY_BYTES and then returns True (fail open)
+    # so CDNs that don't support Range never cause a missed MRF.
+    fmt = _file_format_from_url(url)
+    if not _sniff_mrf_content(session, url, fmt):
+        logger.debug("[gate3] no HPT required fields in first 8 KB: %s", url)
+        # For JSON files: might be a system index/TOC — try expansion so the
+        # crawl loop picks up any embedded MRF URLs on the next validation pass.
+        if fmt == "json" and toc_urls_out is not None:
+            expanded = _expand_toc(session, url)
+            if expanded:
+                logger.info(
+                    "[gate3_toc] %s failed Gate 3 but yielded %d URLs via TOC expansion",
+                    url, len(expanded),
+                )
+                for toc_url in expanded:
+                    toc_urls_out.setdefault(toc_url, "toc_expansion")
+        return False, ct, size
+
     return True, ct, size
 
 
@@ -957,22 +1058,36 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
             _scan(probe, "path_heuristic", depth=0)
 
         # ---- (3) HEAD-validate every candidate ----
+        # Pass found_urls as toc_urls_out so that JSON files failing Gate 3
+        # can auto-expand as system index files and inject new candidates.
+        # We iterate over a snapshot (list) because toc expansion may grow
+        # found_urls mid-loop; newly injected URLs will be validated on the
+        # next iteration since the loop re-reads found_urls after expansion.
         validated: list[DiscoveredMrf] = []
-        for url, method in found_urls.items():
-            ok, ct, size = _validate_mrf_url(session, url)
-            if not ok:
-                continue
-            validated.append(DiscoveredMrf(
-                ccn=hospital.get("ccn") or "",
-                hospital_npi=hospital.get("hospital_npi"),
-                hospital_name=hospital.get("hospital_name") or "",
-                state=hospital.get("state"),
-                mrf_url=url,
-                discovery_method=method,
-                file_format=_file_format_from_url(url),
-                content_type=ct,
-                file_size_bytes=size,
-            ))
+        seen_in_validation: set[str] = set()
+        while True:
+            pending_validation = [
+                (url, method) for url, method in found_urls.items()
+                if url not in seen_in_validation
+            ]
+            if not pending_validation:
+                break
+            for url, method in pending_validation:
+                seen_in_validation.add(url)
+                ok, ct, size = _validate_mrf_url(session, url, toc_urls_out=found_urls)
+                if not ok:
+                    continue
+                validated.append(DiscoveredMrf(
+                    ccn=hospital.get("ccn") or "",
+                    hospital_npi=hospital.get("hospital_npi"),
+                    hospital_name=hospital.get("hospital_name") or "",
+                    state=hospital.get("state"),
+                    mrf_url=url,
+                    discovery_method=method,
+                    file_format=_file_format_from_url(url),
+                    content_type=ct,
+                    file_size_bytes=size,
+                ))
 
     if validated:
         logger.info(

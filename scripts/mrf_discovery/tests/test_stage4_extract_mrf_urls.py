@@ -790,3 +790,182 @@ def test_toc_walker_extracts_url_keys() -> None:
     # Non-URL fields are not picked up
     assert not any("Not a URL" in u for u in urls)
     assert not any("12345" in u for u in urls)
+
+
+class TestExpandTocWiderKeys:
+    """_expand_toc handles camelCase and non-standard URL key names."""
+
+    def _run_expand(self, payload: dict, monkeypatch) -> list[str]:
+        """Helper: mock session.get to return `payload` as JSON, call _expand_toc."""
+        import types
+
+        body = json.dumps(payload)
+
+        class _FakeResp:
+            status_code = 200
+            headers = {"Content-Length": str(len(body))}
+            encoding = "utf-8"
+            apparent_encoding = "utf-8"
+            _body = body.encode()
+
+            def iter_content(self, chunk_size=65536):
+                yield self._body
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(
+            s4, "_get_with_ua_fallback",
+            lambda session, url, timeout: (_FakeResp(), body),
+        )
+        return s4._expand_toc(None, "https://hospital.org/mrf-index.json")  # type: ignore[arg-type]
+
+    def test_download_url_key(self, monkeypatch) -> None:
+        urls = self._run_expand(
+            {"mrfFiles": [{"downloadUrl": "https://cdn.hospital.org/charges.csv"}]},
+            monkeypatch,
+        )
+        assert "https://cdn.hospital.org/charges.csv" in urls
+
+    def test_file_path_key(self, monkeypatch) -> None:
+        urls = self._run_expand(
+            {"results": [{"file_path": "/charges/facility1.csv"}]},
+            monkeypatch,
+        )
+        assert "https://hospital.org/charges/facility1.csv" in urls
+
+    def test_bare_string_array(self, monkeypatch) -> None:
+        """A plain list of URL strings (no wrapping dict) should be expanded."""
+        urls = self._run_expand(
+            ["https://cdn.hospital.org/a.csv", "https://cdn.hospital.org/b.json"],
+            monkeypatch,
+        )
+        assert "https://cdn.hospital.org/a.csv" in urls
+        assert "https://cdn.hospital.org/b.json" in urls
+
+    def test_src_key(self, monkeypatch) -> None:
+        urls = self._run_expand(
+            {"files": [{"src": "https://cdn.hospital.org/charges.xlsx"}]},
+            monkeypatch,
+        )
+        assert "https://cdn.hospital.org/charges.xlsx" in urls
+
+
+class TestSniffMrfContent:
+    """_sniff_mrf_content detects HPT-required fields in the first 8 KB."""
+
+    def _make_session(self, body: bytes, status: int = 200) -> object:
+        """Return a minimal mock session whose .get() returns `body`."""
+        import types
+
+        class _Resp:
+            status_code = status
+            headers = {}
+
+            def __init__(self, b: bytes) -> None:
+                self._b = b
+
+            def iter_content(self, chunk_size=1024):
+                yield self._b
+
+            def close(self):
+                pass
+
+        class _Session:
+            def get(self, url, **kwargs):
+                return _Resp(body)
+
+        return _Session()
+
+    def test_valid_json_hpt_passes(self) -> None:
+        body = b'{"hospital_name": "Mercy General", "last_updated_on": "2025-01-01", "version": "3.0.0", "standard_charge_information": []}'
+        session = self._make_session(body)
+        assert s4._sniff_mrf_content(session, "https://h.org/charges.json", "json") is True  # type: ignore[arg-type]
+
+    def test_json_without_hospital_name_rejected(self) -> None:
+        body = b'{"data": [{"id": 1, "value": "test"}], "status": 200}'
+        session = self._make_session(body)
+        assert s4._sniff_mrf_content(session, "https://h.org/prices.json", "json") is False  # type: ignore[arg-type]
+
+    def test_valid_csv_hpt_passes(self) -> None:
+        row1 = b"hospital_name,last_updated_on,version,hospital_address\nMercy General,2025-01-01,3.0.0,123 Main St\n"
+        session = self._make_session(row1)
+        assert s4._sniff_mrf_content(session, "https://h.org/charges.csv", "csv") is True  # type: ignore[arg-type]
+
+    def test_csv_missing_last_updated_on_rejected(self) -> None:
+        row1 = b"description,setting,standard_charge|gross\nService A,inpatient,500\n"
+        session = self._make_session(row1)
+        assert s4._sniff_mrf_content(session, "https://h.org/charges.csv", "csv") is False  # type: ignore[arg-type]
+
+    def test_xlsx_always_passes(self) -> None:
+        """XLSX and other non-json/csv formats fail open (Gate 3 skips them)."""
+        session = self._make_session(b"PK\x03\x04garbage")
+        assert s4._sniff_mrf_content(session, "https://h.org/charges.xlsx", "xlsx") is True  # type: ignore[arg-type]
+
+    def test_network_error_fails_open(self) -> None:
+        """Any exception during sniff returns True (fail open)."""
+        import requests as _r
+
+        class _ErrorSession:
+            def get(self, url, **kwargs):
+                raise _r.ConnectionError("host unreachable")
+
+        assert s4._sniff_mrf_content(_ErrorSession(), "https://h.org/charges.json", "json") is True  # type: ignore[arg-type]
+
+    def test_non_200_response_fails_open(self) -> None:
+        session = self._make_session(b"", status=503)
+        assert s4._sniff_mrf_content(session, "https://h.org/charges.json", "json") is True  # type: ignore[arg-type]
+
+    def test_partial_response_still_detected(self) -> None:
+        """hospital_name in first 4 KB is enough even if rest of file is cut off."""
+        opening = b'{"hospital_name": "Mercy General", "last_updated_on": "2025-01-01"'
+        session = self._make_session(opening)
+        assert s4._sniff_mrf_content(session, "https://h.org/charges.json", "json") is True  # type: ignore[arg-type]
+
+
+class TestGate3Integration:
+    """Gate 3 wired into _validate_mrf_url: sniff rejects non-HPT files."""
+
+    def test_json_without_hospital_name_rejected_by_gate3(self, monkeypatch) -> None:
+        """A JSON file that passes Gates 1-2 but lacks hospital_name is rejected."""
+        url = "https://hospital.org/files/price-transparency-index.json"
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 5000))
+        monkeypatch.setattr(s4, "_sniff_mrf_content", lambda *a, **kw: False)
+        monkeypatch.setattr(s4, "_expand_toc", lambda *a, **kw: [])
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is False
+
+    def test_json_without_hospital_name_tries_toc_expansion(self, monkeypatch) -> None:
+        """A JSON failing Gate 3 triggers TOC expansion and injects URLs."""
+        url = "https://hospital.org/files/mrf-index.json"
+        toc_out: dict[str, str] = {}
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 500))
+        monkeypatch.setattr(s4, "_sniff_mrf_content", lambda *a, **kw: False)
+        monkeypatch.setattr(
+            s4, "_expand_toc",
+            lambda *a, **kw: [
+                "https://cdn.hospital.org/facility1_standardcharges.csv",
+                "https://cdn.hospital.org/facility2_standardcharges.csv",
+            ],
+        )
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url, toc_urls_out=toc_out)  # type: ignore[arg-type]
+        assert ok is False
+        assert "https://cdn.hospital.org/facility1_standardcharges.csv" in toc_out
+        assert "https://cdn.hospital.org/facility2_standardcharges.csv" in toc_out
+        assert toc_out["https://cdn.hospital.org/facility1_standardcharges.csv"] == "toc_expansion"
+
+    def test_valid_hpt_json_passes_gate3(self, monkeypatch) -> None:
+        """A JSON with hospital_name in first bytes passes Gate 3 and validates."""
+        url = "https://hospital.org/files/123456789_mercy_standardcharges.json"
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 100000))
+        monkeypatch.setattr(s4, "_sniff_mrf_content", lambda *a, **kw: True)
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is True
+
+    def test_csv_missing_hpt_headers_rejected(self, monkeypatch) -> None:
+        """A CSV lacking hospital_name/last_updated_on in row 1 is rejected."""
+        url = "https://hospital.org/files/standard-charges-2025.csv"
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "text/csv", 2000))
+        monkeypatch.setattr(s4, "_sniff_mrf_content", lambda *a, **kw: False)
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is False
