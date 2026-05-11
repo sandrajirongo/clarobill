@@ -682,6 +682,40 @@ class TestDataFileExtsConstant:
             assert ext in s4._DATA_FILE_EXTS, f"{ext} missing from _DATA_FILE_EXTS"
 
 
+class TestNonMrfFilenameBlocklist:
+    """Gate 1b: well-known non-MRF filenames are rejected before any HEAD probe."""
+
+    @pytest.mark.parametrize("url", [
+        "https://www.hospital.org/manifest.json",
+        "https://hospital.org/browserconfig.xml",
+        "https://example.com/package.json",
+        "https://example.com/sitemap.xml",
+        "https://example.com/robots.xml",
+        "https://example.com/sw.json",
+        "https://example.com/service-worker.json",
+        "https://example.com/feed.xml",
+    ])
+    def test_blocklisted_filenames_rejected(self, url: str) -> None:
+        ok, ct, size = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is False, f"{url} should be rejected by Gate 1b blocklist"
+        assert ct is None
+        assert size is None
+
+    def test_real_mrf_json_not_blocked(self, monkeypatch) -> None:
+        """A CMS-filename JSON is not affected by the blocklist."""
+        url = "https://hospital.org/123456789_test-hospital_standardcharges.json"
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 1000))
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is True
+
+    def test_generic_data_json_not_blocked(self, monkeypatch) -> None:
+        """A hospital-named JSON file that isn't on the blocklist passes through."""
+        url = "https://hospital.org/files/2024-charges.json"
+        monkeypatch.setattr(s4, "_head_with_ua_fallback", lambda *a, **kw: (200, "application/json", 5000))
+        ok, _, _ = s4._validate_mrf_url(session=None, url=url)  # type: ignore[arg-type]
+        assert ok is True
+
+
 def test_toc_walker_extracts_url_keys() -> None:
     """_expand_toc walks any JSON shape and pulls out url-like keys."""
     # Inline-test the inner walker by simulating a successful response.

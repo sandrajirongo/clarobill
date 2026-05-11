@@ -244,6 +244,15 @@ _CMS_FILENAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Well-known non-MRF filenames that end in a data-file extension but are
+# never price transparency files. Checked in _validate_mrf_url Gate 1 so
+# they never generate a HEAD request.
+_NON_MRF_FILENAMES_RE = re.compile(
+    r"/(?:manifest|browserconfig|package|package-lock|yarn\.lock|sw|service-worker"
+    r"|robots|sitemap|feed|rss|atom|humans|security|ads|app)\.(?:json|xml)$",
+    re.IGNORECASE,
+)
+
 # Generic anchor-text patterns that indicate a price-transparency MRF link.
 # Widened 2026-04-30 with real-world variants observed across systems
 # (Sutter calls their tool "Cost Estimator" and the page "Cost Transparency";
@@ -746,6 +755,11 @@ def _validate_mrf_url(
         ))
     )
     if not looks_like_file:
+        return False, None, None
+    # Gate 1b: reject well-known non-MRF filenames (e.g. manifest.json,
+    # sitemap.xml) that pass the extension check but are never price
+    # transparency files. Saves a HEAD request and prevents false positives.
+    if _NON_MRF_FILENAMES_RE.search(url_path_lower):
         return False, None, None
 
     # Gate 2: HEAD probe — 200 + non-HTML Content-Type.
