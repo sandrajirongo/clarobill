@@ -115,7 +115,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
       stripe_session_id: session.id,
     }),
     userEmail
-      ? sendLoopsEvent(userEmail, 'payment_completed', { bill_id: billId })
+      ? sendLoopsEvent(userEmail, 'payment_completed', {
+          bill_id: billId,
+          amount_dollars: ((session.amount_total ?? 0) / 100).toFixed(2),
+          currency: (session.currency ?? 'usd').toUpperCase(),
+          stripe_session_id: session.id,
+        })
       : Promise.resolve(),
   ]);
 
