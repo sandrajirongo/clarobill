@@ -7,18 +7,18 @@ export function PrintButton(): JSX.Element {
     <button
       onClick={() => window.print()}
       className={s.printBtn}
-      aria-label="Print or save as PDF"
+      aria-label="Download as PDF"
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path
-          d="M4 6V1h8v5M4 12H2a1 1 0 01-1-1V7a1 1 0 011-1h12a1 1 0 011 1v4a1 1 0 01-1 1h-2M4 9h8v6H4V9z"
+          d="M8 1v9M5 7l3 3 3-3M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2"
           stroke="currentColor"
           strokeWidth="1.4"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       </svg>
-      Save as PDF
+      Download PDF
     </button>
   );
 }

@@ -232,7 +232,13 @@
   border-bottom: 1.5px solid var(--border, #DDDAD0);
 }
 
-/* ── Print styles ────────────────────────────────────────────────────────── */
+/* ── Print / Save as PDF ─────────────────────────────────────────────────── */
+/* @page with zero margin removes the browser's date/URL header and footer   */
+@page {
+  size: A4;
+  margin: 0;
+}
+
 @media print {
   /* Hide everything on the page except the document card */
   .page > *:not(.document) { display: none !important; }
@@ -241,7 +247,8 @@
 
   .document {
     box-shadow: none;
-    padding: 1.5cm 2cm;
+    /* Compensate for the @page zero-margin: provide our own inset */
+    padding: 1.8cm 2.2cm;
     max-width: 100%;
     min-height: unset;
   }
