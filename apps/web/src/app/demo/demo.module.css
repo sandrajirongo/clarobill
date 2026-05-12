@@ -21,23 +21,6 @@
   gap: .25rem;
 }
 
-.wordmark {
-  font-family: var(--ff, 'Fraunces'), Georgia, serif;
-  font-weight: 700;
-  font-size: clamp(2rem, 5vw, 3rem);
-  color: var(--sage, #2D4A2A);
-  letter-spacing: -0.02em;
-  line-height: 1;
-}
-
-.wordmark em {
-  font-style: italic;
-}
-
-.dot {
-  color: var(--lime, #C8F060);
-}
-
 .tagline {
   font-family: var(--fb, 'Syne'), system-ui, sans-serif;
   font-size: .85rem;

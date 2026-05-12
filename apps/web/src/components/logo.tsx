@@ -17,11 +17,16 @@ const markFontSizes = { sm: '1rem', md: '1.1rem', lg: '1.25rem' };
 const wordmarkFontSizes = { sm: '1.1rem', md: '1.25rem', lg: '1.5rem' };
 const fontSizes = { sm: '1.2rem', md: '1.35rem', lg: '1.65rem' };
 
-// ─── LogoMark — the sage square chip with italic "C" ─────────────────────────
-export function LogoMark({ size = 'md' }: Pick<LogoProps, 'size'>): JSX.Element {
+// ─── LogoMark — the square chip with italic "C" ──────────────────────────────
+// light (default): sage background, lime "C"  — for cream/light backgrounds
+// dark:            lime background, sage "C"  — for sage/dark backgrounds
+export function LogoMark({ size = 'md', variant = 'light' }: LogoProps): JSX.Element {
   const px = markSizes[size ?? 'md'];
   const r = markRadius[size ?? 'md'];
   const fs = markFontSizes[size ?? 'md'];
+
+  const bg    = variant === 'dark' ? 'var(--accent, #C8F060)' : 'var(--sage, #2D4A2A)';
+  const color = variant === 'dark' ? 'var(--sage, #2D4A2A)'  : 'var(--accent, #C8F060)';
 
   return (
     <span
@@ -33,12 +38,12 @@ export function LogoMark({ size = 'md' }: Pick<LogoProps, 'size'>): JSX.Element 
         width: px,
         height: px,
         borderRadius: r,
-        background: 'var(--sage, #2D4A2A)',
+        background: bg,
         fontFamily: 'var(--fd, Georgia, serif)',
         fontStyle: 'italic',
         fontSize: fs,
         fontWeight: 700,
-        color: 'var(--accent, #C8F060)',
+        color,
         flexShrink: 0,
         lineHeight: 1,
       }}
@@ -55,7 +60,7 @@ export function LogoWithMark({ size = 'md', variant = 'light' }: LogoProps): JSX
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.5rem' }}>
-      <LogoMark size={size} />
+      <LogoMark size={size} variant={variant} />
       <span
         style={{
           fontFamily: 'var(--fd, Georgia, serif)',

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { LogoWithMark } from '@/components/logo';
 import s from './demo.module.css';
 
 // Unlisted route. Reachable only via direct link (pitch decks, investor
@@ -15,9 +16,7 @@ export default function DemoPage(): JSX.Element {
   return (
     <main className={s.page}>
       <header className={s.header}>
-        <span className={s.wordmark}>
-          Claro<em>Bill</em><span className={s.dot}>.</span>
-        </span>
+        <LogoWithMark size="lg" />
         <span className={s.tagline}>Product walkthrough</span>
       </header>
 
