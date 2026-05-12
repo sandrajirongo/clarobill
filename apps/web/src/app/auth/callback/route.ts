@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
+import { createLoopsContact } from '@/lib/loops';
+import { captureServerEvent } from '@/lib/analytics-server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 
 // Handles two Supabase auth redirect flows:
@@ -40,6 +42,25 @@ export async function GET(request: Request): Promise<NextResponse> {
     await applyReferral(supabase, referralCode);
     // Clear the referral cookie — it's single-use
     cookieStore.delete('referral_code');
+  }
+
+  // Sync new sign-ups to Loops and PostHog.
+  // type==='signup' covers email-confirmation flows (password + OTP sign-up).
+  // For PKCE magic-link flows (code param, no type), we detect new users by
+  // checking whether created_at is within the last 60 seconds.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user?.email) {
+    const createdRecently = user.created_at
+      ? Date.now() - new Date(user.created_at).getTime() < 60_000
+      : false;
+    const isNewUser = type === 'signup' || (!!code && createdRecently);
+
+    if (isNewUser) {
+      await Promise.all([
+        createLoopsContact(user.email, { source: 'signup' }),
+        captureServerEvent(user.id, 'user_signed_up', { email: user.email }),
+      ]);
+    }
   }
 
   const response = NextResponse.redirect(`${origin}${redirectTo}`);

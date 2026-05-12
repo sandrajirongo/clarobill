@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogoWithMark } from '@/components/logo';
+import { Analytics } from '@/lib/analytics';
 import { US_STATES } from '@/lib/utils/county-data';
 import { saveOnboarding } from '@/lib/i18n/actions';
 import { CardScanner } from '@/components/card-scanner';
@@ -326,6 +327,7 @@ export function OnboardingWizard(): JSX.Element {
       return;
     }
 
+    Analytics.onboardingCompleted();
     router.push('/dashboard');
   }
 

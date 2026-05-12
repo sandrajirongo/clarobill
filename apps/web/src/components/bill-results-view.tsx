@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { Bill, LineItem, AnalysisResult, BillingError } from '@clarobill/shared';
 import { getPriceTier } from '@/lib/pricing';
 import { isBetaMode, BETA_COPY } from '@/lib/beta';
+import { Analytics } from '@/lib/analytics';
 import { DownloadButton } from '@/components/download-button';
 import {
   AnalysisUrlsResponseSchema,
@@ -162,6 +163,7 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
   async function handleGetFullReport(): Promise<void> {
     setIsStartingCheckout(true);
     setCheckoutError(null);
+    Analytics.checkoutStarted(bill.id);
     try {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { validateUploadedFile } from '@/lib/utils/file-validation';
+import { Analytics } from '@/lib/analytics';
 import type { ClarobillError } from '@clarobill/shared';
 
 export type UploadState =
@@ -85,6 +86,7 @@ export function useBillUpload() {
 
     // 4. Upload is done — send user to the verification step.
     //    Analysis is triggered only after the user confirms member, insurance, and hospital.
+    Analytics.billUploaded(billId);
     setUploadState({ status: 'ready', billId });
   }
 

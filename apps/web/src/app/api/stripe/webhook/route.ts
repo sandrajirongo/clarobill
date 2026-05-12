@@ -4,6 +4,8 @@ import type Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createSupabaseServiceClient } from '@/lib/supabase/server';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
+import { sendLoopsTransactional } from '@/lib/loops';
+import { captureServerEvent } from '@/lib/analytics-server';
 
 // Stripe requires the raw body for signature verification — don't parse as JSON first
 export const runtime = 'nodejs';
@@ -13,7 +15,7 @@ export const runtime = 'nodejs';
 // Signature verification is mandatory — any unverified payload is rejected.
 export async function POST(request: Request): Promise<NextResponse> {
   const body = await request.text();
-  const headersList = await headers();
+  const headersList = headers();
   const stripeSignature = headersList.get('stripe-signature');
 
   if (!stripeSignature) {
@@ -94,6 +96,32 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   } else {
     console.info('[webhook] Report generated and emailed for bill %s', billId);
   }
+
+  // Fetch user email (needed for Loops transactional email)
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('email')
+    .eq('id', userId)
+    .single();
+
+  const userEmail = profile?.email ?? session.customer_email ?? null;
+
+  // Track payment in PostHog and send Loops payment-confirmed email in parallel.
+  // sendLoopsTransactional is a no-op when LOOPS_PAYMENT_EMAIL_ID is not configured.
+  await Promise.all([
+    captureServerEvent(userId, 'payment_completed', {
+      bill_id: billId,
+      amount_cents: session.amount_total ?? 0,
+      stripe_session_id: session.id,
+    }),
+    userEmail
+      ? sendLoopsTransactional(
+          process.env.LOOPS_PAYMENT_EMAIL_ID ?? '',
+          userEmail,
+          { dashboardUrl: 'https://www.clarobill.com/dashboard' }
+        )
+      : Promise.resolve(),
+  ]);
 
   // Convert referral discount and credit the referrer
   const referralId = session.metadata?.['referral_id'];

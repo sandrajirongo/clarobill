@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Analytics } from '@/lib/analytics';
 import s from '@/app/billing-traps-guide/billing-traps-guide.module.css';
 
 type FormState = 'idle' | 'loading' | 'success' | 'error';
@@ -29,6 +30,7 @@ export function BillingTrapsForm(): JSX.Element {
         return;
       }
 
+      Analytics.guideDownloaded();
       setState('success');
     } catch {
       setErrorMsg('Something went wrong. Please try again.');
