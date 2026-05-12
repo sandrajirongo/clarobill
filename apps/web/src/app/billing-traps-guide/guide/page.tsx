@@ -110,7 +110,7 @@ export default function BillingTrapsGuidePage(): JSX.Element {
 
       <main className={s.document}>
         <div className={s.docBrand}>
-          <LogoWithMark size="md" variant="dark" />
+          <LogoWithMark size="md" variant="light" />
         </div>
 
         <div className={s.coverBlock}>

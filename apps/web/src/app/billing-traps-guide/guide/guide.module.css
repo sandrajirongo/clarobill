@@ -234,10 +234,8 @@
 
 /* ── Print styles ────────────────────────────────────────────────────────── */
 @media print {
-  .header,
-  .printBtn,
-  .cta,
-  .ctaButton { display: none; }
+  /* Hide everything on the page except the document card */
+  .page > *:not(.document) { display: none !important; }
 
   .page { background: #fff; }
 
@@ -245,7 +243,11 @@
     box-shadow: none;
     padding: 1.5cm 2cm;
     max-width: 100%;
+    min-height: unset;
   }
+
+  .cta,
+  .ctaButton { display: none; }
 
   .trap { break-inside: avoid; }
 }
