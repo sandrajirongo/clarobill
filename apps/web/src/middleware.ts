@@ -7,12 +7,14 @@ const PUBLIC_PREFIXES = [
   '/auth/',
   '/legal/',
   '/blog',
-  '/learn',       // hub + all /learn/* pillars
-  '/compare',     // T-025 comparison pages
-  '/cpt/',        // T-035 programmatic CPT pages
-  '/hospital/',   // T-046 programmatic hospital pages
-  '/tools/',      // T-026/T-037/T-045 free tools
+  '/learn',                    // hub + all /learn/* pillars
+  '/compare',                  // T-025 comparison pages
+  '/cpt/',                     // T-035 programmatic CPT pages
+  '/hospital/',                // T-046 programmatic hospital pages
+  '/tools/',                   // T-026/T-037/T-045 free tools
   '/ref/',
+  '/billing-traps-guide',      // lead-magnet landing page + guide
+  '/api/lead-magnet/',         // lead-magnet API routes (Loops subscribe)
 ];
 
 const PUBLIC_EXACT = new Set([
