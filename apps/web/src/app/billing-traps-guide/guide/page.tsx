@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { LogoWithMark } from '@/components/logo';
 import { PrintButton } from '@/components/print-button';
 import s from './guide.module.css';
 
@@ -100,8 +101,8 @@ export default function BillingTrapsGuidePage(): JSX.Element {
     <div className={s.page}>
       <header className={s.header}>
         <div className={s.headerInner}>
-          <Link href="/" className={s.wordmark}>
-            Claro<em>Bill</em><span className={s.dot}>.</span>
+          <Link href="/" className={s.logoLink}>
+            <LogoWithMark size="md" variant="dark" />
           </Link>
           <PrintButton />
         </div>

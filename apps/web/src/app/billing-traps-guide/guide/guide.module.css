@@ -20,18 +20,7 @@
   justify-content: space-between;
 }
 
-.wordmark {
-  font-family: var(--fd, 'Fraunces', Georgia, serif);
-  font-weight: 700;
-  font-size: 1.35rem;
-  color: var(--cream, #F4F2EC);
-  letter-spacing: -0.02em;
-  text-decoration: none;
-  line-height: 1;
-}
-
-.wordmark em { font-style: italic; }
-.dot { color: var(--accent, #C8F060); }
+.logoLink { text-decoration: none; display: inline-flex; }
 
 .printBtn {
   display: flex;

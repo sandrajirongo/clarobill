@@ -19,18 +19,7 @@
   align-items: center;
 }
 
-.wordmark {
-  font-family: var(--fd, 'Fraunces', Georgia, serif);
-  font-weight: 700;
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  color: var(--sage, #2D4A2A);
-  letter-spacing: -0.02em;
-  text-decoration: none;
-  line-height: 1;
-}
-
-.wordmark em { font-style: italic; }
-.dot { color: var(--accent, #C8F060); }
+.logoLink { text-decoration: none; display: inline-flex; }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
 .hero {
@@ -106,17 +95,6 @@
   gap: 1rem;
   width: 100%;
 }
-
-.thumbWordmark {
-  font-family: var(--fd, 'Fraunces', Georgia, serif);
-  font-weight: 700;
-  font-size: 0.9rem;
-  color: var(--cream, #F4F2EC);
-  letter-spacing: -0.02em;
-}
-
-.thumbWordmark em { font-style: italic; }
-.thumbDot { color: var(--accent, #C8F060); }
 
 .thumbTitle {
   font-family: var(--fd, 'Fraunces', Georgia, serif);

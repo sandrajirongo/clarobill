@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { LogoWithMark } from '@/components/logo';
 import { BillingTrapsForm } from '@/components/billing-traps-form';
 import s from './billing-traps-guide.module.css';
 
@@ -28,8 +29,8 @@ export default function BillingTrapsGuidePage(): JSX.Element {
   return (
     <main className={s.page}>
       <header className={s.siteHeader}>
-        <Link href="/" className={s.wordmark}>
-          Claro<em>Bill</em><span className={s.dot}>.</span>
+        <Link href="/" className={s.logoLink}>
+          <LogoWithMark size="md" />
         </Link>
       </header>
 
@@ -47,7 +48,7 @@ export default function BillingTrapsGuidePage(): JSX.Element {
         <div className={s.card}>
           <div className={s.cardPreview}>
             <div className={s.guideThumb}>
-              <span className={s.thumbWordmark}>Claro<em>Bill</em><span className={s.thumbDot}>.</span></span>
+              <LogoWithMark size="sm" variant="dark" />
               <span className={s.thumbTitle}>8 Common<br/>Billing Traps</span>
               <div className={s.thumbLines}>
                 <span /><span /><span /><span /><span />
