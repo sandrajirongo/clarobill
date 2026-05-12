@@ -109,10 +109,8 @@ export default function BillingTrapsGuidePage(): JSX.Element {
       </header>
 
       <main className={s.document}>
-        {/* Visible only when printing — keeps branding on saved PDFs */}
-        <div className={s.printBrand}>
+        <div className={s.docBrand}>
           <LogoWithMark size="md" variant="dark" />
-          <span className={s.printBrandUrl}>clarobill.com</span>
         </div>
 
         <div className={s.coverBlock}>
