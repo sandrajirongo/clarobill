@@ -225,12 +225,31 @@
   color: var(--txt3, #8A8A80);
 }
 
+/* ── Print brand block (logo + URL shown on printed/PDF output) ──────────── */
+.printBrand {
+  display: none;
+}
+
+.printBrandUrl {
+  font-family: var(--fb, 'Syne', system-ui, sans-serif);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--txt3, #8A8A80);
+}
+
 /* ── Print styles ────────────────────────────────────────────────────────── */
 @media print {
   .header,
-  .printBtn,
-  .cta,
-  .ctaButton { display: none; }
+  .printBtn { display: none; }
+
+  .printBrand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1.5px solid var(--border, #DDDAD0);
+  }
 
   .page { background: #fff; }
 
@@ -241,4 +260,24 @@
   }
 
   .trap { break-inside: avoid; }
+
+  .cta {
+    break-inside: avoid;
+    border: 2px solid var(--sage, #2D4A2A);
+    background: #fff;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .ctaHeadline { color: var(--sage, #2D4A2A); }
+  .ctaBody { color: var(--txt2, #585850); }
+
+  .ctaButton {
+    display: inline-block;
+    background: none;
+    color: var(--sage, #2D4A2A);
+    border: 1.5px solid var(--sage, #2D4A2A);
+    font-weight: 700;
+  }
+
+  .docFooter { margin-top: 1.5rem; }
 }

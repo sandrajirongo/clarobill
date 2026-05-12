@@ -109,6 +109,12 @@ export default function BillingTrapsGuidePage(): JSX.Element {
       </header>
 
       <main className={s.document}>
+        {/* Visible only when printing — keeps branding on saved PDFs */}
+        <div className={s.printBrand}>
+          <LogoWithMark size="md" variant="dark" />
+          <span className={s.printBrandUrl}>clarobill.com</span>
+        </div>
+
         <div className={s.coverBlock}>
           <p className={s.coverLabel}>ClaroBill Patient Guide</p>
           <h1 className={s.coverTitle}>8 Common Billing Traps</h1>
@@ -159,15 +165,17 @@ export default function BillingTrapsGuidePage(): JSX.Element {
             Want to know if your specific bill has any of these errors?
           </p>
           <p className={s.ctaBody}>
-            ClaroBill scans your itemized bill against the Medicare fee schedule, NCCI edit pairs, and
-            duplicate detection rules, then writes the dispute letter for you.
+            Upload your itemized bill at ClaroBill and we will check every line for errors, overcharges,
+            and codes that should not have been billed together, then write the dispute letter for you.
           </p>
-          <Link href="/" className={s.ctaButton}>
-            Analyze my bill
+          <Link href="https://www.clarobill.com" className={s.ctaButton}>
+            Analyze my bill at clarobill.com
           </Link>
         </div>
 
         <footer className={s.docFooter}>
+          <span>&copy; 2026 ClaroBill</span>
+          <span aria-hidden="true">·</span>
           <span>clarobill.com</span>
           <span aria-hidden="true">·</span>
           <span>This guide is for informational purposes only and does not constitute legal or financial advice.</span>
