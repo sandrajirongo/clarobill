@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
-import { createLoopsContact } from '@/lib/loops';
+import { sendLoopsEvent } from '@/lib/loops';
 import { captureServerEvent } from '@/lib/analytics-server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 
@@ -56,8 +56,9 @@ export async function GET(request: Request): Promise<NextResponse> {
     const isNewUser = type === 'signup' || (!!code && createdRecently);
 
     if (isNewUser) {
+      // Supabase integration owns contact creation — we only fire the journey trigger.
       await Promise.all([
-        createLoopsContact(user.email, { source: 'signup' }),
+        sendLoopsEvent(user.email, 'user_signed_up'),
         captureServerEvent(user.id, 'user_signed_up', { email: user.email }),
       ]);
     }

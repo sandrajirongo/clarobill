@@ -49,3 +49,23 @@ export async function sendLoopsTransactional(
     console.error('[loops] sendTransactional returned %d for %s', res.status, transactionalId);
   }
 }
+
+// Trigger a Loops workflow event. Use this for journey-based emails (sign-up,
+// bill uploaded, payment completed, etc.) — workflows are configured in the
+// Loops dashboard under Events. The Supabase integration owns contact creation;
+// this call only fires the trigger, not a one-off email.
+export async function sendLoopsEvent(
+  email: string,
+  eventName: string,
+  eventProperties: Record<string, string | number | boolean> = {}
+): Promise<void> {
+  if (!process.env.LOOPS_API_KEY) return;
+  const res = await fetch(`${LOOPS_API}/events/send`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ email, eventName, eventProperties }),
+  }).catch((err) => { console.error('[loops] sendEvent failed:', err); return null; });
+  if (res && !res.ok) {
+    console.error('[loops] sendEvent returned %d for %s', res.status, eventName);
+  }
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
+import { updateLoopsContact } from '@/lib/loops';
 
 const PatchSchema = z.object({
   first_name: z.string().max(100).nullable(),
@@ -56,6 +57,16 @@ export async function PATCH(
       { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
       { status: 500 }
     );
+  }
+
+  // Keep Loops contact properties in sync — Supabase owns identity, Loops owns email workflows.
+  if (user.email) {
+    const loopsProps: Record<string, string> = {};
+    if (parsed.data.first_name) loopsProps['firstName'] = parsed.data.first_name;
+    if (parsed.data.last_name) loopsProps['lastName'] = parsed.data.last_name;
+    if (Object.keys(loopsProps).length > 0) {
+      void updateLoopsContact(user.email, loopsProps);
+    }
   }
 
   return NextResponse.json({ ok: true });

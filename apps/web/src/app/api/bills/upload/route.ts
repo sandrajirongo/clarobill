@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { sendLoopsEvent } from '@/lib/loops';
 import type { BillUploadResponse, ApiErrorResponse } from '@clarobill/shared';
 
 const STORAGE_BUCKET = 'bills';
@@ -111,6 +112,10 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
       } satisfies ApiErrorResponse,
       { status: 500 }
     );
+  }
+
+  if (user.email) {
+    void sendLoopsEvent(user.email, 'bill_uploaded', { bill_id: bill.id });
   }
 
   return NextResponse.json(

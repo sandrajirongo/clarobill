@@ -4,7 +4,7 @@ import type Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createSupabaseServiceClient } from '@/lib/supabase/server';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
-import { sendLoopsTransactional } from '@/lib/loops';
+import { sendLoopsEvent } from '@/lib/loops';
 import { captureServerEvent } from '@/lib/analytics-server';
 
 // Stripe requires the raw body for signature verification — don't parse as JSON first
@@ -115,11 +115,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
       stripe_session_id: session.id,
     }),
     userEmail
-      ? sendLoopsTransactional(
-          process.env.LOOPS_PAYMENT_EMAIL_ID ?? '',
-          userEmail,
-          { dashboardUrl: 'https://www.clarobill.com/dashboard' }
-        )
+      ? sendLoopsEvent(userEmail, 'payment_completed', { bill_id: billId })
       : Promise.resolve(),
   ]);
 
