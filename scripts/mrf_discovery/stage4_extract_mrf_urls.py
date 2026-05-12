@@ -1335,23 +1335,36 @@ def _persist_results(  # noqa: C901
 
 def _query_pending(
     bq: bigquery.Client, project: str, dataset: str, run_id: str,
+    ccns: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Pull every hospital that has a website but no validated_mrf_urls yet.
 
     Idempotent re-runs: this query returns the empty set after a successful
     run because every processed hospital has either validated_mrf_urls
     populated OR error_stage='stage4_no_mrf_found'.
+
+    If ccns is provided, ignore the pending filter and return those specific
+    hospitals regardless of their current status (for local smoke tests).
     """
-    sql = f"""
-        SELECT ccn, hospital_npi, hospital_name, state, hospital_website
-        FROM `{project}.{dataset}.mrf_discovery_checkpoint`
-        WHERE run_id = @run_id
-          AND hospital_website IS NOT NULL
-          AND TRIM(hospital_website) != ''
-          AND validated_mrf_urls IS NULL
-          AND (error_stage IS NULL OR error_stage = 'stage4_no_mrf_found')
-        ORDER BY ccn
-    """
+    if ccns:
+        quoted = ", ".join(f"'{c}'" for c in ccns)
+        sql = f"""
+            SELECT ccn, hospital_npi, hospital_name, state, hospital_website
+            FROM `{project}.{dataset}.mrf_discovery_checkpoint`
+            WHERE run_id = @run_id AND ccn IN ({quoted})
+              AND hospital_website IS NOT NULL
+        """
+    else:
+        sql = f"""
+            SELECT ccn, hospital_npi, hospital_name, state, hospital_website
+            FROM `{project}.{dataset}.mrf_discovery_checkpoint`
+            WHERE run_id = @run_id
+              AND hospital_website IS NOT NULL
+              AND TRIM(hospital_website) != ''
+              AND validated_mrf_urls IS NULL
+              AND (error_stage IS NULL OR error_stage = 'stage4_no_mrf_found')
+            ORDER BY ccn
+        """
     return [
         dict(row)
         for row in bq.query(
@@ -1414,6 +1427,7 @@ def run(
     max_hospitals: int | None = None,
     workers: int = MAX_WORKERS,
     flush_every: int = 1000,
+    ccns: list[str] | None = None,
 ) -> dict[str, int]:
     """Run Stage 4 across all pending hospitals. Returns a stats dict.
 
@@ -1429,7 +1443,10 @@ def run(
     showed only an empty `{}` ERROR entry because the unhandled exception
     went to stderr which Cloud Run didn't ship before container shutdown.
     """
-    pending = _query_pending(bq, project, dataset, run_id)
+    import random as _random
+    pending = _query_pending(bq, project, dataset, run_id, ccns=ccns)
+    if max_hospitals is not None and max_hospitals <= 20 and not ccns:
+        _random.shuffle(pending)
     if max_hospitals is not None:
         pending = pending[:max_hospitals]
     if not pending:
@@ -1575,6 +1592,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="Discovery run ID — must match Stage 1's run_id")
     parser.add_argument("--max-hospitals", type=int, default=None,
                         help="Process only first N hospitals (testing)")
+    parser.add_argument("--ccns", nargs="+", default=None,
+                        help="Target specific CCNs regardless of pending status (local testing)")
+    parser.add_argument("--recrawl-sample", type=int, default=None,
+                        help="Reset N random already-validated hospitals and re-crawl them (regression test)")
     parser.add_argument("--workers", type=int, default=MAX_WORKERS)
     parser.add_argument(
         "--force-recrawl-broken",
@@ -1595,10 +1616,33 @@ def main(argv: list[str] | None = None) -> int:
         n = reset_broken_validated_urls(bq, args.project, args.dataset, args.run_id)
         logger.info("Pre-run reset: %d rows flipped back to pending", n)
 
+    if getattr(args, "recrawl_sample", None):
+        n = args.recrawl_sample
+        logger.info("recrawl_sample: resetting %d random validated hospitals for re-crawl", n)
+        bq.query(f"""
+            UPDATE `{args.project}.{args.dataset}.mrf_discovery_checkpoint`
+            SET validated_mrf_urls = NULL, mrf_discovery_method = NULL,
+                mrf_file_format = NULL, mrf_validated_at = NULL,
+                crawl_complete_at = NULL, error_stage = NULL
+            WHERE run_id = '{args.run_id}'
+              AND validated_mrf_urls IS NOT NULL
+              AND REGEXP_CONTAINS(validated_mrf_urls,
+                    r'\\d{{6,12}}[_\\-].+?[_\\-]?standard[_\\- ]?charges')
+              AND ccn IN (
+                SELECT ccn FROM `{args.project}.{args.dataset}.mrf_discovery_checkpoint`
+                WHERE run_id = '{args.run_id}'
+                  AND validated_mrf_urls IS NOT NULL
+                  AND REGEXP_CONTAINS(validated_mrf_urls,
+                        r'\\d{{6,12}}[_\\-].+?[_\\-]?standard[_\\- ]?charges')
+                ORDER BY RAND() LIMIT {n}
+              )
+        """).result()
+
     stats = run(
         bq, args.project, args.run_id,
         dataset=args.dataset,
         max_hospitals=args.max_hospitals,
+        ccns=args.ccns,
         workers=args.workers,
     )
     logger.info("Stage 4 stats: %s", stats)
