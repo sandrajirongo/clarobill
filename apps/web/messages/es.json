@@ -264,7 +264,15 @@
         "scanFailed": "No se pudo leer la tarjeta. Por favor intenta de nuevo.",
         "imageTooLarge": "La imagen es demasiado grande. Usa una foto de menos de 10 MB."
       }
-    }
+    },
+    "firstName": "Nombre",
+    "lastName": "Apellido",
+    "firstNamePlaceholder": "ej. Jane",
+    "lastNamePlaceholder": "ej. Smith",
+    "saveName": "Guardar nombre",
+    "savingName": "Guardando…",
+    "nameUpdated": "Nombre guardado",
+    "nameError": "No se pudo guardar el nombre. Intenta de nuevo."
   },
   "resources": {
     "title": "Recursos sobre Facturación Médica",

@@ -12,6 +12,11 @@ export default function ProfilePage(): JSX.Element {
   const t = useTranslations('profile');
   const [email, setEmail] = useState('');
   const [memberSince, setMemberSince] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -19,9 +24,10 @@ export default function ProfilePage(): JSX.Element {
   const supabase = createSupabaseBrowserClient();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const user = data.session?.user;
       if (!user) return;
+
       setEmail(user.email ?? '');
       if (user.created_at) {
         setMemberSince(
@@ -30,9 +36,46 @@ export default function ProfilePage(): JSX.Element {
           })
         );
       }
+
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('first_name, last_name')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setFirstName(profile.first_name ?? '');
+        setLastName(profile.last_name ?? '');
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleSaveName(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    setIsSavingName(true);
+    setNameError(null);
+    setNameSaved(false);
+
+    const res = await fetch('/api/user/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        first_name: firstName.trim() || null,
+        last_name: lastName.trim() || null,
+      }),
+    });
+
+    if (!res.ok) {
+      setNameError(t('nameError'));
+      setIsSavingName(false);
+      return;
+    }
+
+    setNameSaved(true);
+    setIsSavingName(false);
+    setTimeout(() => setNameSaved(false), 3000);
+  }
 
   async function handleDeleteAccount(): Promise<void> {
     setIsDeleting(true);
@@ -47,7 +90,7 @@ export default function ProfilePage(): JSX.Element {
     router.push('/');
   }
 
-  const initial = email.charAt(0).toUpperCase();
+  const initial = (firstName.charAt(0) || email.charAt(0)).toUpperCase();
 
   return (
     <main className={s.page}>
@@ -72,12 +115,57 @@ export default function ProfilePage(): JSX.Element {
       {/* Account */}
       <div className={s.card}>
         <div className={s.cardHeader}><p className={s.cardTitle}>{t('account')}</p></div>
-        <div className={s.cardBody} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div className={s.profileAvatar}>{initial || '?'}</div>
-          <div>
-            <p className={s.profileEmail}>{email || '—'}</p>
-            {memberSince && <p className={s.profileSince}>{t('memberSince', { date: memberSince })}</p>}
+        <div className={s.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Avatar + email row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className={s.profileAvatar}>{initial || '?'}</div>
+            <div>
+              <p className={s.profileEmail}>{email || '—'}</p>
+              {memberSince && <p className={s.profileSince}>{t('memberSince', { date: memberSince })}</p>}
+            </div>
           </div>
+
+          {/* Name form */}
+          <form onSubmit={handleSaveName} style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.65rem' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                <span className={s.infoLabel}>{t('firstName')}</span>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder={t('firstNamePlaceholder')}
+                  maxLength={100}
+                  className={s.profileInput}
+                  disabled={isSavingName}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                <span className={s.infoLabel}>{t('lastName')}</span>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder={t('lastNamePlaceholder')}
+                  maxLength={100}
+                  className={s.profileInput}
+                  disabled={isSavingName}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+              <button type="submit" className={s.savePlanBtn} disabled={isSavingName}>
+                {isSavingName ? t('savingName') : t('saveName')}
+              </button>
+              {nameSaved && (
+                <span style={{ fontSize: '.8rem', color: 'var(--sage)' }}>{t('nameUpdated')}</span>
+              )}
+              {nameError && (
+                <span style={{ fontSize: '.8rem', color: '#b91c1c' }}>{nameError}</span>
+              )}
+            </div>
+          </form>
         </div>
       </div>
 

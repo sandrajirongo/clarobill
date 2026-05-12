@@ -264,7 +264,15 @@
         "scanFailed": "Hindi mabasa ang card. Pakisubukan ulit.",
         "imageTooLarge": "Masyadong malaki ang larawan. Gumamit ng larawang mas maliit sa 10 MB."
       }
-    }
+    },
+    "firstName": "Unang pangalan",
+    "lastName": "Apelyido",
+    "firstNamePlaceholder": "hal. Jane",
+    "lastNamePlaceholder": "hal. Smith",
+    "saveName": "I-save ang pangalan",
+    "savingName": "Nag-save…",
+    "nameUpdated": "Na-save ang pangalan",
+    "nameError": "Hindi ma-save ang pangalan. Subukang muli."
   },
   "resources": {
     "title": "Mga Mapagkukunan sa Medical Billing",

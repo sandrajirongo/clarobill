@@ -1304,3 +1304,35 @@
   border-radius: var(--r);
   padding: .5rem .75rem;
 }
+
+.profileInput {
+  font-family: var(--fb);
+  font-size: .875rem;
+  color: var(--txt);
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: .55rem .8rem;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+}
+.profileInput:focus { border-color: var(--sage); }
+.profileInput::placeholder { color: var(--txt3); }
+.profileInput:disabled { opacity: .6; cursor: not-allowed; }
+
+.savePlanBtn {
+  font-family: var(--fb);
+  font-size: .83rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--sage);
+  border: none;
+  border-radius: var(--r-full);
+  padding: .5rem 1.1rem;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.savePlanBtn:hover:not(:disabled) { background: var(--sage-l); }
+.savePlanBtn:disabled { opacity: .55; cursor: not-allowed; }

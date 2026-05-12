@@ -264,7 +264,15 @@
         "scanFailed": "无法读取卡片，请重试。",
         "imageTooLarge": "图片太大，请使用10 MB以下的照片。"
       }
-    }
+    },
+    "firstName": "名",
+    "lastName": "姓",
+    "firstNamePlaceholder": "例：Jane",
+    "lastNamePlaceholder": "例：Smith",
+    "saveName": "保存姓名",
+    "savingName": "正在保存…",
+    "nameUpdated": "姓名已保存",
+    "nameError": "无法保存姓名，请重试。"
   },
   "resources": {
     "title": "医疗账单资源",

@@ -264,7 +264,15 @@
         "scanFailed": "Could not read the card. Please try again.",
         "imageTooLarge": "Image is too large. Please use a photo under 10 MB."
       }
-    }
+    },
+    "firstName": "First name",
+    "lastName": "Last name",
+    "firstNamePlaceholder": "e.g. Jane",
+    "lastNamePlaceholder": "e.g. Smith",
+    "saveName": "Save name",
+    "savingName": "Saving…",
+    "nameUpdated": "Name saved",
+    "nameError": "Could not save name. Please try again."
   },
   "resources": {
     "title": "Medical Billing Resources",

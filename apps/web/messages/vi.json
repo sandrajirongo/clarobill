@@ -264,7 +264,15 @@
         "scanFailed": "Không đọc được thẻ. Vui lòng thử lại.",
         "imageTooLarge": "Ảnh quá lớn. Vui lòng dùng ảnh nhỏ hơn 10 MB."
       }
-    }
+    },
+    "firstName": "Tên",
+    "lastName": "Ho",
+    "firstNamePlaceholder": "vd. Jane",
+    "lastNamePlaceholder": "vd. Smith",
+    "saveName": "Luu ten",
+    "savingName": "Dang luu…",
+    "nameUpdated": "Da luu ten",
+    "nameError": "Khong the luu ten. Vui long thu lai."
   },
   "resources": {
     "title": "Tài nguyên về Hóa đơn Y tế",
