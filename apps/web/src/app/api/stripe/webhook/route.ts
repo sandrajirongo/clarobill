@@ -4,7 +4,7 @@ import type Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createSupabaseServiceClient } from '@/lib/supabase/server';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
-import { sendLoopsEvent } from '@/lib/loops';
+import { sendLoopsEvent, sendLoopsTransactional } from '@/lib/loops';
 import { captureServerEvent } from '@/lib/analytics-server';
 
 // Stripe requires the raw body for signature verification — don't parse as JSON first
@@ -115,12 +115,22 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
       stripe_session_id: session.id,
     }),
     userEmail
-      ? sendLoopsEvent(userEmail, 'payment_completed', {
-          bill_id: billId,
-          amount_dollars: ((session.amount_total ?? 0) / 100).toFixed(2),
-          currency: (session.currency ?? 'usd').toUpperCase(),
-          stripe_session_id: session.id,
-        })
+      ? Promise.all([
+          // Immediate receipt — transactional email with amount/currency data variables
+          sendLoopsTransactional(
+            process.env.LOOPS_PAYMENT_EMAIL_ID ?? '',
+            userEmail,
+            {
+              amount_dollars: ((session.amount_total ?? 0) / 100).toFixed(2),
+              currency: (session.currency ?? 'usd').toUpperCase(),
+            }
+          ),
+          // payment_completed event triggers the 1-day and 30-day follow-up workflows
+          sendLoopsEvent(userEmail, 'payment_completed', {
+            bill_id: billId,
+            stripe_session_id: session.id,
+          }),
+        ])
       : Promise.resolve(),
   ]);
 
