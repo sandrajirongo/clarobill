@@ -287,10 +287,10 @@ def _download_to_gcs(
     hospital: dict[str, Any],
     scraped_at: str,
     last_modified: str | None = None,
-) -> str | None:
+) -> tuple[str, str] | None:
     """Download a hospital's MRF file and upload it to GCS.
 
-    Returns the GCS blob name on success, None on failure.
+    Returns (blob_name, sniffed_fmt) on success, None on failure.
 
     The blob path uses the hospital name slug (NPIs are not reliably available
     at scrape time — the NPI is extracted from inside the MRF during parsing).
@@ -388,7 +388,7 @@ def _download_to_gcs(
                 content_type=content_type or "application/octet-stream",
             )
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
-        return blob_name
+        return blob_name, fmt
     except Exception as exc:
         logger.error("[%s] GCS upload failed: %s", label, exc)
         return None
@@ -430,9 +430,10 @@ def scrape_hospital(
             logger.debug("[%s] Unchanged, skipping", label)
             return None
 
-        blob_name = _download_to_gcs(session, bucket, hospital, scraped_at, new_lm)
-        if blob_name is None:
+        download_result = _download_to_gcs(session, bucket, hospital, scraped_at, new_lm)
+        if download_result is None:
             return None
+        blob_name, sniffed_fmt = download_result
 
         # Phase 4 dual-write: also archive to the immutable bucket.
         # The legacy bucket already has the bytes; we re-download for the
@@ -444,7 +445,7 @@ def scrape_hospital(
         if archive_bucket is not None:
             try:
                 archive_meta = _archive_from_legacy_blob(
-                    bucket, archive_bucket, blob_name, hospital, new_lm,
+                    bucket, archive_bucket, blob_name, hospital, new_lm, sniffed_fmt,
                 )
             except Exception as exc:
                 # Archive failures must NOT kill the legacy path. The legacy
@@ -466,6 +467,7 @@ def _archive_from_legacy_blob(
     legacy_blob_name: str,
     hospital: dict[str, Any],
     last_modified: str | None,
+    sniffed_fmt: str = "unknown",
 ) -> dict[str, Any] | None:
     """Read the just-written legacy blob and re-write to archive bucket.
 
@@ -492,15 +494,8 @@ def _archive_from_legacy_blob(
         http_last_modified=last_modified,
     )
 
-    # Infer extension from the legacy blob name (already correct from the
-    # original download path). Map to canonical file_format for archive_index.
     ext = _legacy_blob_to_extension(legacy_blob_name)
-    _EXT_TO_FORMAT = {
-        "json": "json", "json.gz": "json",
-        "csv": "csv", "csv.gz": "csv",
-        "xlsx": "xlsx", "xml": "xml", "zip": "zip",
-    }
-    file_format = _EXT_TO_FORMAT.get(ext, "unknown")
+    file_format = sniffed_fmt
 
     # Stream the legacy bytes through the archive writer rather than loading
     # the whole blob into memory. 2026-04-30 OOM postmortem: a 111MB Sutter
