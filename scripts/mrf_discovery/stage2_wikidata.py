@@ -122,7 +122,7 @@ def fetch_us_hospital_systems(
                 )
                 time.sleep(sleep_s)
             else:
-                logger.error(
+                logger.exception(
                     "Wikidata SPARQL exhausted 3 retries: %s. Falling back to GCS cache.",
                     exc,
                 )
@@ -163,7 +163,7 @@ def fetch_us_hospital_systems(
         try:
             _save_wikidata_cache(cache_bucket, cache_year, rows)
         except Exception as exc:  # noqa: BLE001 — cache is best-effort
-            logger.warning("Wikidata cache write failed (year=%d): %s", cache_year, exc)
+            logger.exception("Wikidata cache write failed (year=%d): %s", cache_year, exc)
     return rows
 
 
@@ -194,7 +194,7 @@ def _load_wikidata_cache(bucket: str, year: int) -> list[dict] | None:
         data = blob.download_as_text()
         return list(json.loads(data))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Wikidata cache load failed (year=%d): %s", year, exc)
+        logger.exception("Wikidata cache load failed (year=%d): %s", year, exc)
         return None
 
 

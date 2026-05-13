@@ -397,7 +397,7 @@ def run(
                 # pipeline contract is that one bad hospital cannot kill
                 # the run.
                 target = futures[future]
-                logger.warning(
+                logger.exception(
                     "Worker raised for ccn=%s: %s: %s",
                     target.get("ccn"), type(exc).__name__, exc,
                 )

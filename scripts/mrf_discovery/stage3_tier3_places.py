@@ -487,7 +487,7 @@ def run(
                 # Record the error and continue. Cost may have been booked
                 # by CostMeter before the failure (defensive accounting),
                 # which is correct — Google may have charged us regardless.
-                logger.warning(
+                logger.exception(
                     "Tier 3 lookup error for ccn=%s: %s: %s",
                     ccn, type(exc).__name__, exc,
                 )
