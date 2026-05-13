@@ -304,7 +304,7 @@ def update_archive_index_npi(bq: bigquery.Client, mrf_url: str, hospital_npi: st
             bq, sql, job_config=job_config, label=f"archive_index NPI backfill {mrf_url}"
         )
     except Exception as exc:
-        logger.warning("archive_index NPI backfill failed for %s: %s", mrf_url, exc)
+        logger.exception("archive_index NPI backfill failed for %s: %s", mrf_url, exc)
 
 
 def mark_last_scraped(bq: bigquery.Client, mrf_url: str, scraped_at: str) -> None:
@@ -440,11 +440,11 @@ class _SuccessBuffer:
         try:
             _merge_archive_index_parsed(bq, self._archive)
         except Exception as exc:
-            logger.error("archive_index batch flush failed (%d records): %s", n, exc)
+            logger.exception("archive_index batch flush failed (%d records): %s", n, exc)
         try:
             _merge_directory_scraped(bq, self._directory)
         except Exception as exc:
-            logger.error("hospital_directory batch flush failed (%d records): %s", n, exc)
+            logger.exception("hospital_directory batch flush failed (%d records): %s", n, exc)
         self._archive.clear()
         self._directory.clear()
         self._last_flush_at = time.monotonic()

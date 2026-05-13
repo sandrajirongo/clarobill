@@ -334,7 +334,7 @@ def _download_to_gcs(
     try:
         prefix = resp.raw.read(4096)
     except Exception as exc:
-        logger.error("[%s] read prefix failed: %s", label, exc)
+        logger.exception("[%s] read prefix failed: %s", label, exc)
         return None
     fmt = sniff_mrf_format(prefix, content_type=content_type, url=url)
     if fmt not in ACCEPTED_MRF_FORMATS:
@@ -452,7 +452,7 @@ def scrape_hospital(
                 # bucket has the file; the parser can still process it. We
                 # just lose the immutable copy for this run, which is
                 # recovered on next week's scrape.
-                logger.warning("[%s] Archive write failed (legacy still OK): %s", label, exc)
+                logger.exception("[%s] Archive write failed (legacy still OK): %s", label, exc)
 
         return {
             "mrf_url": hospital["mrf_url"],
@@ -828,7 +828,7 @@ def main() -> None:
                             "hospital_npi": meta.get("hospital_npi"),
                         })
             except Exception as exc:
-                logger.error("[%s] Unexpected error: %s", label, exc)
+                logger.exception("[%s] Unexpected error: %s", label, exc)
             completed += 1
             if completed % FLUSH_EVERY == 0:
                 _flush_batch(reason=f"every-{FLUSH_EVERY} at completed={completed}")
