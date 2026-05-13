@@ -90,7 +90,7 @@ Refreshes `hospital_directory` (identity) and `hospital_price_transparency` (MRF
 | Property | Value |
 |---|---|
 | **Cadence** | Annual full run + quarterly gap-fills |
-| **Jobs** | `clarobill-mrf-discovery` (full), `clarobill-mrf-discovery-stage1/2/3/4` (partial re-runs) |
+| **Jobs** | `clarobill-mrf-discovery-annual` (full), `clarobill-mrf-discovery-stage1/2/3/4` (partial re-runs) |
 | **Annual schedule** | Feb 15 02:00 UTC (`clarobill-mrf-discovery-annual`) — runs every stage including Tier 3 paid sweep |
 | **Quarterly schedule** | May 15 / Aug 15 / Nov 15 02:00 UTC (`clarobill-mrf-discovery-quarterly`) — passes `--gap-fill-only`; only crawls hospitals where `validated_mrf_urls IS NULL` plus any new CMS-listed hospitals; **skips Tier 3 paid** unless `--include-tier3` is also passed |
 | **Why Feb 15** | 6 weeks past Jan 1 CMS republish deadline — hospitals get time to fix first-pass errors before we crawl. |
@@ -109,7 +109,7 @@ Refreshes `hospital_directory` (identity) and `hospital_price_transparency` (MRF
 
 | Job | Stages | When to use |
 |---|---|---|
-| `clarobill-mrf-discovery` | All (1 → 4) | Annual Feb 15 full run |
+| `clarobill-mrf-discovery-annual` | All (1 → 4) | Annual Feb 15 full run |
 | `clarobill-mrf-discovery-stage1` | Stage 1 only | Seed a new run_id from the latest CMS PI list |
 | `clarobill-mrf-discovery-stage2` | Stages 2A → 2C | Re-run NPI + website enrichment on an existing run |
 | `clarobill-mrf-discovery-stage3` | Stages 3.1 → 3.3 | Re-run website validation / paid Tier 3 on an existing run |
@@ -130,10 +130,10 @@ done
 
 ```bash
 # Full annual run (Stages 1-4 + Tier 3 paid) — auto-generates a new run_id
-gcloud run jobs execute clarobill-mrf-discovery --region us-central1
+gcloud run jobs execute clarobill-mrf-discovery-annual --region us-central1
 
 # Gap-fill only (free, skips Tier 3)
-gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
+gcloud run jobs execute clarobill-mrf-discovery-annual --region us-central1 \
   --args "--gap-fill-only"
 
 # Re-run individual stages (DISCOVERY_RUN_ID must be set on the job first)

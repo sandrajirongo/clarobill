@@ -134,8 +134,8 @@ _create_or_update_discovery_job() {
 
 # Full pipeline (annual Feb 15 run — all stages including paid Tier 3).
 # Run-id is auto-generated if DISCOVERY_RUN_ID env var is not set on the job.
-echo "==> Creating/updating clarobill-mrf-discovery (full pipeline)..."
-gcloud run jobs create clarobill-mrf-discovery \
+echo "==> Creating/updating clarobill-mrf-discovery-annual (full pipeline)..."
+gcloud run jobs create clarobill-mrf-discovery-annual \
   --image "${DISCOVERY_IMAGE}" \
   --command "python" \
   --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
@@ -148,7 +148,7 @@ gcloud run jobs create clarobill-mrf-discovery \
   --set-env-vars "${DISCOVERY_ENVVARS}" \
   --project "${PROJECT}" \
   2>/dev/null || \
-gcloud run jobs update clarobill-mrf-discovery \
+gcloud run jobs update clarobill-mrf-discovery-annual \
   --image "${DISCOVERY_IMAGE}" \
   --command "python" \
   --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
