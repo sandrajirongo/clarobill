@@ -35,10 +35,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
-      url: `${BASE}/how-it-works`,
+      url: `${BASE}/billing-traps-guide`,
       lastModified: NOW,
-      changeFrequency: 'monthly',
-      priority: 0.8,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
     },
 
 
