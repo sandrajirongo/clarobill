@@ -390,7 +390,7 @@ def _download_to_gcs(
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name, fmt
     except Exception as exc:
-        logger.error("[%s] GCS upload failed: %s", label, exc)
+        logger.exception("[%s] GCS upload failed: %s", label, exc)
         return None
     finally:
         # Always release the socket — prevents kernel recv-buffer accumulation.
