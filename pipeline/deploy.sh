@@ -89,6 +89,88 @@ gcloud run jobs update clarobill-mrf-parser \
   --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive" \
   --project "${PROJECT}"
 
+# ---------------------------------------------------------------------------
+# Discovery pipeline — full + stage-specific jobs (annual, uses mrf-discovery image)
+# ---------------------------------------------------------------------------
+DISCOVERY_IMAGE="us-central1-docker.pkg.dev/${PROJECT}/clarobill-pipeline/mrf-discovery:latest"
+DISCOVERY_SA="${PIPELINE_SA}"
+DISCOVERY_ENVVARS="GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive,DISCOVERY_RUN_ID="
+
+# Helper: create-or-update a discovery stage job.
+# Usage: _create_or_update_discovery_job <job-name> <start-stage> <stop-stage> <memory>
+_create_or_update_discovery_job() {
+  local name="$1"
+  local start="$2"
+  local stop="$3"
+  local mem="$4"
+  echo "==> Creating/updating ${name}..."
+  local args="/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT},--start-stage,${start},--stop-after,${stop}"
+  gcloud run jobs create "${name}" \
+    --image "${DISCOVERY_IMAGE}" \
+    --command "python" \
+    --args "${args}" \
+    --region "${REGION}" \
+    --service-account "${DISCOVERY_SA}" \
+    --task-timeout 28800 \
+    --max-retries 0 \
+    --memory "${mem}" \
+    --cpu 2 \
+    --set-env-vars "${DISCOVERY_ENVVARS}" \
+    --project "${PROJECT}" \
+    2>/dev/null || \
+  gcloud run jobs update "${name}" \
+    --image "${DISCOVERY_IMAGE}" \
+    --command "python" \
+    --args "${args}" \
+    --region "${REGION}" \
+    --service-account "${DISCOVERY_SA}" \
+    --task-timeout 28800 \
+    --max-retries 0 \
+    --memory "${mem}" \
+    --cpu 2 \
+    --set-env-vars "${DISCOVERY_ENVVARS}" \
+    --project "${PROJECT}"
+}
+
+# Full pipeline (annual Feb 15 run — all stages including paid Tier 3).
+# Run-id is auto-generated if DISCOVERY_RUN_ID env var is not set on the job.
+echo "==> Creating/updating clarobill-mrf-discovery (full pipeline)..."
+gcloud run jobs create clarobill-mrf-discovery \
+  --image "${DISCOVERY_IMAGE}" \
+  --command "python" \
+  --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
+  --region "${REGION}" \
+  --service-account "${DISCOVERY_SA}" \
+  --task-timeout 28800 \
+  --max-retries 0 \
+  --memory 4Gi \
+  --cpu 2 \
+  --set-env-vars "${DISCOVERY_ENVVARS}" \
+  --project "${PROJECT}" \
+  2>/dev/null || \
+gcloud run jobs update clarobill-mrf-discovery \
+  --image "${DISCOVERY_IMAGE}" \
+  --command "python" \
+  --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
+  --region "${REGION}" \
+  --service-account "${DISCOVERY_SA}" \
+  --task-timeout 28800 \
+  --max-retries 0 \
+  --memory 4Gi \
+  --cpu 2 \
+  --set-env-vars "${DISCOVERY_ENVVARS}" \
+  --project "${PROJECT}"
+
+# Stage-specific jobs for partial re-runs.
+# All require DISCOVERY_RUN_ID to be set on the job before execution (except Stage 1,
+# which generates a fresh run_id when DISCOVERY_RUN_ID is empty).
+# Update run_id after each annual run:
+#   gcloud run jobs update <job> --update-env-vars DISCOVERY_RUN_ID=<new-id> --region us-central1
+_create_or_update_discovery_job clarobill-mrf-discovery-stage1 stage1_cms      stage1_cms      4Gi
+_create_or_update_discovery_job clarobill-mrf-discovery-stage2 stage2_pos      stage2_wikidata 4Gi
+_create_or_update_discovery_job clarobill-mrf-discovery-stage3 stage3_tier1    stage3_tier3    4Gi
+_create_or_update_discovery_job clarobill-mrf-discovery-stage4 stage4_mrf_urls stage4_mrf_urls 4Gi
+
 # Grant Cloud Scheduler SA permission to invoke both jobs
 SCHEDULER_SA="clarobill-scheduler-sa@${PROJECT}.iam.gserviceaccount.com"
 echo "==> Granting scheduler SA run.jobsExecutor on both jobs..."

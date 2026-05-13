@@ -90,7 +90,7 @@ Refreshes `hospital_directory` (identity) and `hospital_price_transparency` (MRF
 | Property | Value |
 |---|---|
 | **Cadence** | Annual full run + quarterly gap-fills |
-| **Job** | `clarobill-mrf-discovery` (Cloud Run Job) |
+| **Jobs** | `clarobill-mrf-discovery` (full), `clarobill-mrf-discovery-stage1/2/3/4` (partial re-runs) |
 | **Annual schedule** | Feb 15 02:00 UTC (`clarobill-mrf-discovery-annual`) — runs every stage including Tier 3 paid sweep |
 | **Quarterly schedule** | May 15 / Aug 15 / Nov 15 02:00 UTC (`clarobill-mrf-discovery-quarterly`) — passes `--gap-fill-only`; only crawls hospitals where `validated_mrf_urls IS NULL` plus any new CMS-listed hospitals; **skips Tier 3 paid** unless `--include-tier3` is also passed |
 | **Why Feb 15** | 6 weeks past Jan 1 CMS republish deadline — hospitals get time to fix first-pass errors before we crawl. |
@@ -105,23 +105,46 @@ Refreshes `hospital_directory` (identity) and `hospital_price_transparency` (MRF
 
 **Listing-page detection:** Stage 4 logs `[listing_page] <url> yielded N file links` when a single page yields 5 or more file links. These entries in Cloud Run logs are the signal for Kaiser, HCA, CommonSpirit, and other multi-facility systems. Check for them after each run.
 
+**Cloud Run Jobs (discovery):**
+
+| Job | Stages | When to use |
+|---|---|---|
+| `clarobill-mrf-discovery` | All (1 → 4) | Annual Feb 15 full run |
+| `clarobill-mrf-discovery-stage1` | Stage 1 only | Seed a new run_id from the latest CMS PI list |
+| `clarobill-mrf-discovery-stage2` | Stages 2A → 2C | Re-run NPI + website enrichment on an existing run |
+| `clarobill-mrf-discovery-stage3` | Stages 3.1 → 3.3 | Re-run website validation / paid Tier 3 on an existing run |
+| `clarobill-mrf-discovery-stage4` | Stage 4 only | Re-crawl hospital websites to refresh MRF URLs |
+
+**Run_id management:**
+All stage-specific jobs read `DISCOVERY_RUN_ID` from their env var. After each annual run, update all stage jobs with the new run_id:
+```bash
+NEW_RUN_ID="<run_id from Stage 1 logs>"
+for job in clarobill-mrf-discovery-stage2 clarobill-mrf-discovery-stage3 clarobill-mrf-discovery-stage4; do
+  gcloud run jobs update $job \
+    --update-env-vars "DISCOVERY_RUN_ID=${NEW_RUN_ID}" \
+    --region us-central1
+done
+```
+
 **Manual triggers:**
 
 ```bash
-# Full annual run (Stages 1-4 + Tier 3 paid)
+# Full annual run (Stages 1-4 + Tier 3 paid) — auto-generates a new run_id
 gcloud run jobs execute clarobill-mrf-discovery --region us-central1
 
 # Gap-fill only (free, skips Tier 3)
 gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
-  --args=--gap-fill-only
+  --args "--gap-fill-only"
 
-# Re-run only Stage 4 (URL crawler) on an existing run
-gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
-  --args=--start-stage=stage4_mrf_urls,--run-id=<existing-run-id>
+# Re-run individual stages (DISCOVERY_RUN_ID must be set on the job first)
+gcloud run jobs execute clarobill-mrf-discovery-stage1 --region us-central1
+gcloud run jobs execute clarobill-mrf-discovery-stage2 --region us-central1
+gcloud run jobs execute clarobill-mrf-discovery-stage3 --region us-central1
+gcloud run jobs execute clarobill-mrf-discovery-stage4 --region us-central1
 
-# Re-run only Tier 3 with a fresh budget
-gcloud run jobs execute clarobill-mrf-discovery --region us-central1 \
-  --args=--start-stage=stage3_tier3,--run-id=<existing-run-id>
+# Stage 3 with a custom budget ceiling (override args at execution time)
+gcloud run jobs execute clarobill-mrf-discovery-stage3 --region us-central1 \
+  --args "/app/scripts/discover_mrf_pipeline.py,--project,clarobill-prd,--start-stage,stage3_tier1,--stop-after,stage3_tier3,--tier3-max-cost,200"
 ```
 
 **Cost estimate:**
@@ -386,8 +409,4 @@ Grep Cloud Run logs for `[listing_page]` — confirms Kaiser, Sutter, HCA, Commo
 
 ---
 
-*Last updated: 2026-04-28*
-
----
-
-_Last reviewed: 2026-05-08_
+*Last updated: 2026-05-12*

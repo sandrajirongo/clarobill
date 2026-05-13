@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -196,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    run_id = args.run_id or bq_checkpoint.new_run_id()
+    run_id = args.run_id or os.environ.get("DISCOVERY_RUN_ID") or bq_checkpoint.new_run_id()
     started_at = datetime.now(timezone.utc)
     logger.info("=== Pipeline start: project=%s run_id=%s ===", args.project, run_id)
     if args.dry_run:
