@@ -12,7 +12,14 @@ steps:
       - --file=pipeline/Dockerfile
       - --tag=${_IMAGE}
       - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=pipeline/Dockerfile.discovery
+      - --tag=${_DISCOVERY_IMAGE}
+      - .
 images:
   - ${_IMAGE}
+  - ${_DISCOVERY_IMAGE}
 options:
   logging: CLOUD_LOGGING_ONLY

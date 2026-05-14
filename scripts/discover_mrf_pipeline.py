@@ -299,9 +299,13 @@ def main(argv: list[str] | None = None) -> int:
                 if args.dry_run:
                     logger.info("Stage 4 skipped under --dry-run.")
                 else:
+                    task_index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
+                    task_count = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
                     stage4_extract_mrf_urls.run(
                         bq=bq_client, project=args.project, run_id=run_id,
                         dataset=args.dataset,
+                        task_index=task_index,
+                        task_count=task_count,
                     )
         except Exception as exc:
             logger.exception("Stage %s FAILED: %s", key, exc)

@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/dashboard/', '/onboarding/', '/api/', '/auth/'],
+        disallow: ['/dashboard/', '/onboarding/', '/api/', '/auth/', '/_next/'],
       },
       { userAgent: 'GPTBot', allow: '/' },
       { userAgent: 'ChatGPT-User', allow: '/' },
@@ -20,6 +20,6 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: 'CCBot', allow: '/' },
       { userAgent: 'Bytespider', allow: '/' },
     ],
-    sitemap: 'https://clarobill.com/sitemap.xml',
+    sitemap: 'https://www.clarobill.com/sitemap.xml',
   };
 }

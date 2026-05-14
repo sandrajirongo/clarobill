@@ -4,7 +4,7 @@ Accepts a cropped card image (JPEG/PNG/WebP from the frontend), extracts structu
 insurance plan fields, and returns typed data. The image is never stored — this
 endpoint is stateless.
 
-Primary model: Gemini 2.0 Flash via Vertex AI (multimodal).
+Primary model: Gemini 2.5 Flash Lite via Vertex AI (multimodal).
 Fallback model: Claude Sonnet via Anthropic API.
 
 The fallback activates on any Gemini failure. If both providers fail a 502 is returned.
@@ -107,7 +107,7 @@ def _parse_ai_response(raw_text: str) -> dict[str, object]:
 
 def _gemini_extract_sync(image_bytes: bytes, mime_type: str) -> str:
     """Synchronous Gemini vision call — run via asyncio.to_thread."""
-    model = GenerativeModel("gemini-2.0-flash-001")
+    model = GenerativeModel("gemini-2.5-flash-lite")
     image_part = Part.from_data(data=image_bytes, mime_type=mime_type)
     response = model.generate_content([image_part, _EXTRACT_PROMPT])
     return str(response.text)

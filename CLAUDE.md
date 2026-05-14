@@ -322,6 +322,21 @@ cd apps/web && npm run build
 
 ---
 
+## RULE 17: NEVER REVEAL METHODOLOGY IN USER-FACING COPY
+
+**This is non-negotiable IP protection.**
+
+Never mention in any user-facing surface (emails, landing pages, UI, marketing copy, onboarding):
+- "Medicare benchmarks" or "Medicare fee schedule"
+- "NCCI edits" or "NCCI unbundling"
+- Any named government database, pricing reference, or data source
+
+Describe **outcomes only**: "we find errors", "we flag overcharges", "we check every line item". Never explain the mechanism.
+
+Also: always recommend itemized bills for upload. An itemized bill (line-by-line breakdown of every charge) gives the analysis far more to work with than a summary bill. Mention this in any context where a user is uploading or about to upload.
+
+---
+
 ## RULE 14: DOCUMENT THE WHY, NOT THE WHAT
 
 - Code shows WHAT is happening. Comments explain WHY.

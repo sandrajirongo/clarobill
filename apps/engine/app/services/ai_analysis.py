@@ -4,7 +4,7 @@ Produces two outputs:
   1. Bill summary  — plain-English explanation of errors (runs during analysis)
   2. Dispute letter — formal letter the patient can send to the provider (runs after payment)
 
-Primary model: Gemini 2.0 Flash via Vertex AI (Google Cloud).
+Primary model: Gemini 2.5 Flash Lite via Vertex AI (Google Cloud).
 Fallback model: Claude Sonnet via Anthropic API.
 
 The fallback activates on any Gemini failure (API error, rate limit, service unavailable).
@@ -32,7 +32,7 @@ from app.services.parser import ParsedLineItem
 
 logger = logging.getLogger(__name__)
 
-_GEMINI_MODEL = "gemini-2.0-flash-001"
+_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 # M6 fix (2026-05-04): cap on each user-supplied prompt field. OCR'd
 # description strings can exceed 1000 chars on rare bills; bounding them

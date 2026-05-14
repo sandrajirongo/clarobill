@@ -19,6 +19,7 @@ PROJECT="clarobill-prd"
 REGION="us-central1"
 REPO="us-central1-docker.pkg.dev/${PROJECT}/clarobill-pipeline"
 IMAGE="${REPO}/mrf-pipeline:latest"
+DISCOVERY_IMAGE="${REPO}/mrf-discovery:latest"
 PIPELINE_SA="clarobill-pipeline-sa@${PROJECT}.iam.gserviceaccount.com"
 
 echo "==> Building and pushing image..."
@@ -31,11 +32,11 @@ echo "==> Building and pushing image..."
 # Run from repo root: `bash pipeline/deploy.sh`
 gcloud builds submit \
   --config=pipeline/cloudbuild.yaml \
-  --substitutions="_IMAGE=${IMAGE}" \
+  --substitutions="_IMAGE=${IMAGE},_DISCOVERY_IMAGE=${DISCOVERY_IMAGE}" \
   --project "${PROJECT}" \
   .
 
-# Task timeout: 4 hours (14400s) handles ~3,100 hospitals comfortably.
+# Task timeout: 16 hours (57600s) — applied uniformly across all jobs.
 # Scaling path when hospital count grows (target ~18,000 = 6x current):
 #   Use --tasks N + --parallelism N to shard work across N task instances.
 #   Each task reads CLOUD_RUN_TASK_INDEX and processes hospitals[index::N].
@@ -46,7 +47,7 @@ gcloud run jobs create clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 129600 \
+  --task-timeout 57600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -57,7 +58,7 @@ gcloud run jobs update clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 129600 \
+  --task-timeout 57600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -70,7 +71,7 @@ gcloud run jobs create clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 129600 \
+  --task-timeout 57600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -82,7 +83,7 @@ gcloud run jobs update clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --task-timeout 129600 \
+  --task-timeout 57600 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -98,38 +99,65 @@ DISCOVERY_ENVVARS="GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GC
 
 # Helper: create-or-update a discovery stage job.
 # Usage: _create_or_update_discovery_job <job-name> <start-stage> <stop-stage> <memory>
+#
+# Uses gcloud run jobs replace with a YAML manifest instead of --args so that
+# args are passed as a proper list. The gcloud --args flag treats the value as
+# a comma-separated list and rejects duplicate tokens — which breaks stage1 and
+# stage4 where --start-stage and --stop-after are the same value.
 _create_or_update_discovery_job() {
   local name="$1"
   local start="$2"
   local stop="$3"
   local mem="$4"
   echo "==> Creating/updating ${name}..."
-  local args="/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT},--start-stage,${start},--stop-after,${stop}"
-  gcloud run jobs create "${name}" \
-    --image "${DISCOVERY_IMAGE}" \
-    --command "python" \
-    --args "${args}" \
-    --region "${REGION}" \
-    --service-account "${DISCOVERY_SA}" \
-    --task-timeout 28800 \
-    --max-retries 0 \
-    --memory "${mem}" \
-    --cpu 2 \
-    --set-env-vars "${DISCOVERY_ENVVARS}" \
-    --project "${PROJECT}" \
-    2>/dev/null || \
-  gcloud run jobs update "${name}" \
-    --image "${DISCOVERY_IMAGE}" \
-    --command "python" \
-    --args "${args}" \
-    --region "${REGION}" \
-    --service-account "${DISCOVERY_SA}" \
-    --task-timeout 28800 \
-    --max-retries 0 \
-    --memory "${mem}" \
-    --cpu 2 \
-    --set-env-vars "${DISCOVERY_ENVVARS}" \
-    --project "${PROJECT}"
+  local tmpfile
+  tmpfile=$(mktemp /tmp/discovery-job-XXXX.yaml)
+  cat > "${tmpfile}" <<YAML
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: ${name}
+  namespace: ${PROJECT}
+  labels:
+    cloud.googleapis.com/location: ${REGION}
+spec:
+  template:
+    spec:
+      template:
+        spec:
+          serviceAccountName: ${DISCOVERY_SA}
+          timeoutSeconds: "57600"
+          maxRetries: 0
+          containers:
+          - image: ${DISCOVERY_IMAGE}
+            command:
+            - python
+            args:
+            - /app/scripts/discover_mrf_pipeline.py
+            - --project
+            - ${PROJECT}
+            - --start-stage
+            - ${start}
+            - --stop-after
+            - ${stop}
+            env:
+            - name: GCP_PROJECT_ID
+              value: "${PROJECT}"
+            - name: BIGQUERY_DATASET
+              value: hospital_prices
+            - name: GCS_MRF_STAGING_BUCKET
+              value: mrf-staging
+            - name: GCS_MRF_ARCHIVE_BUCKET
+              value: mrf-archive
+            - name: DISCOVERY_RUN_ID
+              value: ""
+            resources:
+              limits:
+                cpu: "2"
+                memory: ${mem}
+YAML
+  gcloud run jobs replace "${tmpfile}" --region "${REGION}" --project "${PROJECT}"
+  rm -f "${tmpfile}"
 }
 
 # Full pipeline (annual Feb 15 run — all stages including paid Tier 3).
@@ -141,7 +169,7 @@ gcloud run jobs create clarobill-mrf-discovery-annual \
   --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
   --region "${REGION}" \
   --service-account "${DISCOVERY_SA}" \
-  --task-timeout 28800 \
+  --task-timeout 57600 \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
@@ -154,7 +182,7 @@ gcloud run jobs update clarobill-mrf-discovery-annual \
   --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
   --region "${REGION}" \
   --service-account "${DISCOVERY_SA}" \
-  --task-timeout 28800 \
+  --task-timeout 57600 \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \

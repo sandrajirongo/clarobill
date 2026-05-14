@@ -1117,6 +1117,7 @@ def _persist_results(  # noqa: C901
     discovered: list[DiscoveredMrf],
     failed_ccns: list[str],
     run_id: str,
+    task_index: int = 0,
 ) -> None:
     """Update mrf_discovery_checkpoint and MERGE into hospital_directory.
 
@@ -1195,7 +1196,7 @@ def _persist_results(  # noqa: C901
         # while still being scoped per-run via the run_id suffix.
         # BQ table renames are a free metadata operation
         # (https://cloud.google.com/bigquery/docs/managing-tables#renametable).
-        staging_table = f"{project}.{dataset}.stage4_staging_{run_id.replace('-', '_')}"
+        staging_table = f"{project}.{dataset}.stage4_staging_{run_id.replace('-', '_')}_{task_index}"
         load_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             schema=[
@@ -1230,15 +1231,17 @@ def _persist_results(  # noqa: C901
               last_updated_at = CURRENT_TIMESTAMP()
         """
         # M13: assert + log affected row count via bq_checkpoint helper.
-        bq_checkpoint.run_dml_with_count(
-            bq, merge_sql,
-            job_config=bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
-            ]),
-            label="Stage 4 checkpoint MERGE",
-            logger=logger,
-        )
-        bq.delete_table(staging_table, not_found_ok=True)
+        try:
+            bq_checkpoint.run_dml_with_count(
+                bq, merge_sql,
+                job_config=bigquery.QueryJobConfig(query_parameters=[
+                    bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
+                ]),
+                label="Stage 4 checkpoint MERGE",
+                logger=logger,
+            )
+        finally:
+            bq.delete_table(staging_table, not_found_ok=True)
         logger.info(
             "_persist_results: checkpoint MERGE done (rows=%d success=%d failed=%d)",
             len(rows_to_update), len(by_ccn), len(failed_ccns),
@@ -1274,7 +1277,7 @@ def _persist_results(  # noqa: C901
         for d in discovered
         if d.ccn  # only rows with a real CCN
     ]
-    staging_pt_table = f"{project}.{dataset}.stage4_pt_staging_{run_id.replace('-', '_')}"
+    staging_pt_table = f"{project}.{dataset}.stage4_pt_staging_{run_id.replace('-', '_')}_{task_index}"
     pt_load_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         schema=[
@@ -1428,6 +1431,8 @@ def run(
     workers: int = MAX_WORKERS,
     flush_every: int = 1000,
     ccns: list[str] | None = None,
+    task_index: int = 0,
+    task_count: int = 1,
 ) -> dict[str, int]:
     """Run Stage 4 across all pending hospitals. Returns a stats dict.
 
@@ -1445,6 +1450,9 @@ def run(
     """
     import random as _random
     pending = _query_pending(bq, project, dataset, run_id, ccns=ccns)
+    if task_count > 1:
+        pending = pending[task_index::task_count]
+        logger.info("Task sharding: task %d/%d — %d hospitals assigned", task_index, task_count, len(pending))
     if max_hospitals is not None and max_hospitals <= 20 and not ccns:
         _random.shuffle(pending)
     if max_hospitals is not None:
@@ -1481,6 +1489,7 @@ def run(
             _persist_results(
                 bq, project, dataset,
                 flush_buffer_discovered, flush_buffer_failed, run_id,
+                task_index=task_index,
             )
             total_flushed += len(flush_buffer_discovered) + len(flush_buffer_failed)
             logger.info(
