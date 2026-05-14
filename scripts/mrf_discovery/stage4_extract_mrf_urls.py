@@ -55,6 +55,7 @@ import logging
 import re
 import socket
 import sys
+import threading as _threading
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -233,6 +234,16 @@ PATH_HEURISTICS: tuple[str, ...] = (
     "/for-patients/price-transparency",
     "/for-patients/financial-assistance",
     "/financial-assistance/price-transparency",
+    # 2026-05-14: facility-subpath variants observed from domain analysis.
+    # Encompass Health uses /financial-information/price-transparency relative
+    # to each facility's URL base path. Adding at root level catches systems
+    # that use the same path from the domain root; path-relative probing in
+    # _crawl_hospital picks up the facility-subpath case.
+    "/financial-information/price-transparency",
+    "/financial-information/hospital-charges",
+    "/financial-information/standard-charges",
+    "/patients/financial-information",
+    "/locations/financial-information/price-transparency",
 )
 
 # CMS rule 45 CFR 180.50 mandates a filename pattern of the form
@@ -372,6 +383,70 @@ _DATA_FILE_EXTS = (
 # the file we're looking for — even if the page happens to contain links to
 # the actual files (those are extracted by _extract_links_from_html and
 # validated separately). The landing page itself is never the MRF.
+# ---------------------------------------------------------------------------
+# Playwright — optional JS-rendering fallback
+# ---------------------------------------------------------------------------
+
+_PLAYWRIGHT_AVAILABLE = False
+try:
+    from playwright.sync_api import sync_playwright as _sync_playwright  # type: ignore[import]
+    _PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    pass
+
+# Maximum concurrent Playwright browser contexts. Each Chromium context uses
+# ~200 MB RAM; 5 contexts = ~1 GB headroom inside the Cloud Run Job container.
+MAX_PLAYWRIGHT_WORKERS = 5
+_PLAYWRIGHT_SEM = _threading.Semaphore(MAX_PLAYWRIGHT_WORKERS)
+
+# Domains where the requests-based crawl always returns an empty/shell HTML
+# response because navigation is client-rendered (React, Next.js, MUI).
+# Hospitals on these domains skip the requests crawl and go straight to
+# Playwright — this avoids wasting 60 workers on no-op fetches.
+_JS_RENDERED_DOMAINS: frozenset[str] = frozenset({
+    "encompasshealth.com",
+    "hcafloridahealthcare.com",
+    "healthcare.ascension.org",
+    "kindredhospitals.com",
+    "adventhealth.com",
+    "medicalcityhealthcare.com",       # HCA Texas
+    "pamhealth.com",
+    "healthy.kaiserpermanente.org",
+    "www.commonspirit.org",
+})
+
+
+def _is_js_shell(html: str) -> bool:
+    """Return True when html looks like a React/Next.js/MUI shell.
+
+    Only checks the first 2 KB (the preamble), which is enough to detect
+    the framework-specific signal strings that appear before any body content.
+    """
+    if not html or len(html) < 500:
+        return True
+    preamble = html[:2000]
+    signals = (
+        '"__NEXT_DATA__"',
+        "/_next/static/",
+        "data-n-css",
+        "data-emotion=",
+        '<div id="root"></div>',
+        '<div id="app"></div>',
+        "__nuxt",
+        "window.__INITIAL_STATE__",
+    )
+    return any(s in preamble for s in signals)
+
+
+def _is_js_rendered(hospital: dict) -> bool:
+    """Return True when a hospital's domain is in the JS-rendered allowlist."""
+    domain = _host_of((hospital.get("hospital_website") or "").strip())
+    return any(
+        domain == jsd or domain.endswith("." + jsd)
+        for jsd in _JS_RENDERED_DOMAINS
+    )
+
+
 _OK_CONTENT_TYPES = (
     "text/csv",
     "text/plain",
@@ -414,7 +489,6 @@ def _http_session() -> requests.Session:
 
 # Process-wide per-host semaphores. Lazy-created on first hit per host so we
 # don't enumerate every possible host upfront. Threadsafe via threading.Lock.
-import threading as _threading
 _PER_HOST_SEMAPHORES: dict[str, _threading.Semaphore] = {}
 _PER_HOST_LOCK = _threading.Lock()
 
@@ -1062,6 +1136,18 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
             probe = f"{parsed.scheme}://{parsed.netloc}{path}"
             _scan(probe, "path_heuristic", depth=0)
 
+        # ---- (2b) Path-relative heuristics ----
+        # For hospitals whose `hospital_website` is a facility-specific subpath
+        # (e.g. encompasshealth.com/locations/amarillo-rehab), MRF pages are
+        # often located at {facility_path}/financial-information/price-transparency
+        # rather than at the domain root. Probe both root-relative and
+        # path-relative variants so neither pattern is missed.
+        base_path = parsed.path.rstrip("/")
+        if base_path and base_path not in ("/", ""):
+            for path in PATH_HEURISTICS:
+                probe = f"{parsed.scheme}://{parsed.netloc}{base_path}{path}"
+                _scan(probe, "path_heuristic", depth=0)
+
         # ---- (3) HEAD-validate every candidate ----
         # Pass found_urls as toc_urls_out so that JSON files failing Gate 3
         # can auto-expand as system index files and inject new candidates.
@@ -1102,6 +1188,137 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
         )
     else:
         logger.debug("[%s] no MRF URL found", label)
+    return validated
+
+
+# ---------------------------------------------------------------------------
+# Playwright per-hospital crawler
+# ---------------------------------------------------------------------------
+
+
+def _pw_fetch_and_scan(
+    page: Any,
+    url: str,
+    method: str,
+    found_urls: dict[str, str],
+) -> None:
+    """Navigate to url with an already-open Playwright page and scan for MRF links.
+
+    Extracts file URLs from the fully-rendered HTML, then follows up to 5
+    keyword-matching anchors one level deep (depth-1 only — each Playwright
+    navigation is expensive relative to a requests GET).
+    """
+    try:
+        resp = page.goto(url, wait_until="networkidle", timeout=30_000)
+        if not resp or resp.status >= 400:
+            return
+    except Exception:
+        return
+    html = page.content()
+    if not html:
+        return
+    for link in _extract_links_from_html(html, url):
+        found_urls.setdefault(link, method)
+    # Depth-1 keyword follow — catches "Price Transparency" links that are only
+    # rendered after the JS framework hydrates the navigation.
+    for follow_url, _ in _follow_keyword_anchors(None, html, url, max_followups=5):  # type: ignore[arg-type]
+        if follow_url in found_urls:
+            continue
+        try:
+            sub_resp = page.goto(follow_url, wait_until="networkidle", timeout=30_000)
+            if not sub_resp or sub_resp.status >= 400:
+                continue
+        except Exception:
+            continue
+        sub_html = page.content()
+        if sub_html:
+            for link in _extract_links_from_html(sub_html, follow_url):
+                found_urls.setdefault(link, "depth_follow")
+
+
+def _crawl_hospital_playwright(hospital: dict[str, Any], browser: Any) -> list[DiscoveredMrf]:
+    """Playwright fallback for hospitals on JS-rendered domains.
+
+    Opens a fresh browser context per hospital (isolated cookies/storage),
+    bounded by _PLAYWRIGHT_SEM so at most MAX_PLAYWRIGHT_WORKERS Chromium
+    contexts run concurrently. Validates candidates with a normal requests
+    session — Playwright is only used for rendering, not HEAD probing.
+
+    Covers:
+      - Encompass Health (/locations/{slug}/financial-information/price-transparency)
+      - HCA Florida / HCA Texas (medicalcityhealthcare.com, hcafloridahealthcare.com)
+      - Ascension (healthcare.ascension.org)
+      - AdventHealth, Kindred, PAM Health
+    Kaiser and CommonSpirit are handled by system_sweepers Playwright sweepers
+    before this function is ever called.
+    """
+    website = (hospital.get("hospital_website") or "").strip().rstrip("/")
+    label = hospital.get("hospital_name") or hospital.get("ccn") or "?"
+    if not website:
+        return []
+    parsed = urllib.parse.urlparse(website)
+    if parsed.scheme not in ("http", "https"):
+        return []
+
+    found_urls: dict[str, str] = {}
+
+    with _PLAYWRIGHT_SEM:
+        try:
+            ctx = browser.new_context(
+                user_agent=BROWSER_UA,
+                viewport={"width": 1280, "height": 900},
+                locale="en-US",
+            )
+            try:
+                page = ctx.new_page()
+                try:
+                    _pw_fetch_and_scan(page, website, "homepage", found_urls)
+                    # Path-relative heuristics: for Encompass-style hospitals where
+                    # hospital_website is a facility subpath (/locations/foo), probe
+                    # MRF pages relative to that subpath rather than the domain root.
+                    base_path = parsed.path.rstrip("/")
+                    if base_path and base_path not in ("/", ""):
+                        for path in PATH_HEURISTICS:
+                            probe = f"{parsed.scheme}://{parsed.netloc}{base_path}{path}"
+                            _pw_fetch_and_scan(page, probe, "path_heuristic", found_urls)
+                finally:
+                    page.close()
+            finally:
+                ctx.close()
+        except Exception:
+            logger.exception("[%s] Playwright context error", label)
+            return []
+
+    validated: list[DiscoveredMrf] = []
+    with _http_session() as session:
+        seen_in_validation: set[str] = set()
+        # Iterative loop: _validate_mrf_url may inject TOC expansion URLs via
+        # toc_urls_out; keep validating until no new candidates appear.
+        while True:
+            pending_v = [(u, m) for u, m in found_urls.items() if u not in seen_in_validation]
+            if not pending_v:
+                break
+            for url, method in pending_v:
+                seen_in_validation.add(url)
+                ok, ct, size = _validate_mrf_url(session, url, toc_urls_out=found_urls)
+                if not ok:
+                    continue
+                validated.append(DiscoveredMrf(
+                    ccn=hospital.get("ccn") or "",
+                    hospital_npi=hospital.get("hospital_npi"),
+                    hospital_name=hospital.get("hospital_name") or "",
+                    state=hospital.get("state"),
+                    mrf_url=url,
+                    discovery_method=method,
+                    file_format=_file_format_from_url(url),
+                    content_type=ct,
+                    file_size_bytes=size,
+                ))
+
+    if validated:
+        logger.info("[%s] Playwright: %d MRF URL(s) found", label, len(validated))
+    else:
+        logger.debug("[%s] Playwright: no MRF URL found", label)
     return validated
 
 
@@ -1449,6 +1666,8 @@ def run(
     went to stderr which Cloud Run didn't ship before container shutdown.
     """
     import random as _random
+    from mrf_discovery import system_sweepers  # local import avoids circular dep
+
     pending = _query_pending(bq, project, dataset, run_id, ccns=ccns)
     if task_count > 1:
         pending = pending[task_index::task_count]
@@ -1470,6 +1689,21 @@ def run(
     failed_ccns: list[str] = []
     flush_buffer_discovered: list[DiscoveredMrf] = []
     flush_buffer_failed: list[str] = []
+
+    def _sweep_to_discovered(sweep_results: list) -> None:
+        """Convert SweepResult list → DiscoveredMrf and add to flush buffer."""
+        for sr in sweep_results:
+            flush_buffer_discovered.append(DiscoveredMrf(
+                ccn=sr.ccn,
+                hospital_npi=sr.hospital_npi,
+                hospital_name=sr.hospital_name,
+                state=sr.state,
+                mrf_url=sr.mrf_url,
+                discovery_method=sr.discovery_method,
+                file_format=sr.file_format,
+                content_type=None,
+                file_size_bytes=None,
+            ))
     total_flushed = 0
     # S3 fix (2026-05-04): track every flush failure so the run summary at
     # the end can raise if any persists never landed. Pre-fix, _flush_batch
@@ -1512,71 +1746,156 @@ def run(
             )
             flush_failures.append((reason, type(exc).__name__))
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_crawl_hospital, h): h for h in pending}
-        completed = 0
-        transient_crashes = 0
-        permanent_crashes = 0
-        for fut in as_completed(futures):
-            hospital = futures[fut]
-            ccn = hospital.get("ccn") or ""
-            result: list[DiscoveredMrf] = []
-            crashed_transient = False
-            try:
-                result = fut.result()
-            except _TRANSIENT_CRAWL_EXCEPTIONS:
-                # S4 fix: transient — log full traceback, leave the
-                # hospital's checkpoint row unchanged so the next run
-                # picks it back up. NOT added to failed_ccns.
-                logger.exception(
-                    "[%s] transient crawler error — leaving hospital unmarked for retry next run",
-                    ccn,
-                )
-                crashed_transient = True
-                transient_crashes += 1
-            except Exception:
-                # Permanent — log full traceback (logger.exception, not warning,
-                # so the trace appears in Cloud Logging) and route to failed_ccns
-                # via the empty-result path below.
-                logger.exception("[%s] crawler crashed (permanent failure)", ccn)
-                permanent_crashes += 1
-            if result:
-                discovered_all.extend(result)
-                flush_buffer_discovered.extend(result)
-            elif not crashed_transient:
-                # Empty result OR permanent crash — mark failed so future runs
-                # don't repeat the same crawl. Transient crashes skip this so
-                # the hospital is retried next quarterly run.
-                failed_ccns.append(ccn)
-                flush_buffer_failed.append(ccn)
-            completed += 1
-            if completed % 500 == 0:
-                logger.info(
-                    "Stage 4 progress: %d/%d (%d discovered URLs so far)",
-                    completed, len(pending), len(discovered_all),
-                )
-            if completed % flush_every == 0:
-                _flush_batch(reason=f"every-{flush_every} at completed={completed}")
+    # ---- System sweeper pre-pass (non-Playwright) ----
+    # Runs before the per-hospital crawl to handle:
+    #   - Tenet Health (off-domain at mrfs.hyvehealthcare.com)
+    #   - Same-domain systems (Sutter, Ascension, etc.) — fetches domain
+    #     transparency pages once instead of N times to avoid 429s.
+    with _http_session() as _sweep_session:
+        sw_results, sweep_resolved = system_sweepers.run(
+            _sweep_session, pending, PATH_HEURISTICS,
+        )
+        _sweep_to_discovered(sw_results)
+        if flush_buffer_discovered:
+            _flush_batch("system_sweep")
 
+    # Remove hospitals resolved by system sweepers — no per-hospital crawl needed.
+    pending = [h for h in pending if h.get("ccn") not in sweep_resolved]
     logger.info(
-        "Stage 4 crawl done: %d hospitals → %d MRF URLs "
-        "(%d hospitals had ≥1 URL, %d permanent crashes, %d transient crashes left for retry)",
-        len(pending),
-        len(discovered_all),
-        len({d.ccn for d in discovered_all}),
-        permanent_crashes,
-        transient_crashes,
+        "Stage 4 pre-pass: %d hospitals resolved, %d remain for per-hospital crawl",
+        len(sweep_resolved), len(pending),
     )
 
-    # Final flush — anything still in the buffers from the last partial batch.
-    _flush_batch(reason="final")
+    # ---- Playwright browser lifecycle ----
+    # Launch once, shared across all Playwright per-hospital crawls and the
+    # Kaiser/CommonSpirit system sweepers. Closed in the finally block below.
+    playwright_ctx = None
+    playwright_browser = None
+    if _PLAYWRIGHT_AVAILABLE:
+        try:
+            playwright_ctx = _sync_playwright().start()
+            playwright_browser = playwright_ctx.chromium.launch(headless=True)
+            logger.info("Playwright: Chromium launched for JS-rendered sites")
+        except Exception:
+            logger.exception(
+                "Playwright launch failed — JS-rendered sites will use requests fallback"
+            )
+            if playwright_ctx:
+                try:
+                    playwright_ctx.stop()
+                except Exception:
+                    pass
+            playwright_browser, playwright_ctx = None, None
 
-    # S3 fix: surface any persist failures via non-zero exit.
-    _assert_flush_complete(
-        len(flush_buffer_discovered),
-        len(flush_buffer_failed),
-        flush_failures,
-    )
+    try:
+        # ---- Playwright system sweepers (Kaiser, CommonSpirit) ----
+        if playwright_browser is not None:
+            for sweep_fn in (
+                system_sweepers.sweep_kaiser_playwright,
+                system_sweepers.sweep_commonspirit_playwright,
+            ):
+                try:
+                    pw_results, pw_resolved = sweep_fn(playwright_browser, pending)
+                    _sweep_to_discovered(pw_results)
+                    sweep_resolved |= pw_resolved
+                except Exception:
+                    logger.exception(
+                        "Playwright system sweeper %s failed — skipping", sweep_fn.__name__
+                    )
+            if flush_buffer_discovered:
+                _flush_batch("playwright_system_sweep")
+            pending = [h for h in pending if h.get("ccn") not in sweep_resolved]
+            logger.info(
+                "Playwright sweepers done: %d remain for per-hospital crawl",
+                len(pending),
+            )
+
+        _browser = playwright_browser  # stable reference for the closures below
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                (
+                    pool.submit(_crawl_hospital_playwright, h, _browser)
+                    if _browser is not None and _is_js_rendered(h)
+                    else pool.submit(_crawl_hospital, h)
+                ): h
+                for h in pending
+            }
+            completed = 0
+            transient_crashes = 0
+            permanent_crashes = 0
+            for fut in as_completed(futures):
+                hospital = futures[fut]
+                ccn = hospital.get("ccn") or ""
+                result: list[DiscoveredMrf] = []
+                crashed_transient = False
+                try:
+                    result = fut.result()
+                except _TRANSIENT_CRAWL_EXCEPTIONS:
+                    # S4 fix: transient — log full traceback, leave the
+                    # hospital's checkpoint row unchanged so the next run
+                    # picks it back up. NOT added to failed_ccns.
+                    logger.exception(
+                        "[%s] transient crawler error — leaving hospital unmarked for retry next run",
+                        ccn,
+                    )
+                    crashed_transient = True
+                    transient_crashes += 1
+                except Exception:
+                    # Permanent — log full traceback (logger.exception, not warning,
+                    # so the trace appears in Cloud Logging) and route to failed_ccns
+                    # via the empty-result path below.
+                    logger.exception("[%s] crawler crashed (permanent failure)", ccn)
+                    permanent_crashes += 1
+                if result:
+                    discovered_all.extend(result)
+                    flush_buffer_discovered.extend(result)
+                elif not crashed_transient:
+                    # Empty result OR permanent crash — mark failed so future runs
+                    # don't repeat the same crawl. Transient crashes skip this so
+                    # the hospital is retried next quarterly run.
+                    failed_ccns.append(ccn)
+                    flush_buffer_failed.append(ccn)
+                completed += 1
+                if completed % 500 == 0:
+                    logger.info(
+                        "Stage 4 progress: %d/%d (%d discovered URLs so far)",
+                        completed, len(pending), len(discovered_all),
+                    )
+                if completed % flush_every == 0:
+                    _flush_batch(reason=f"every-{flush_every} at completed={completed}")
+
+        logger.info(
+            "Stage 4 crawl done: %d hospitals → %d MRF URLs "
+            "(%d hospitals had ≥1 URL, %d permanent crashes, %d transient crashes left for retry)",
+            len(pending),
+            len(discovered_all),
+            len({d.ccn for d in discovered_all}),
+            permanent_crashes,
+            transient_crashes,
+        )
+
+        # Final flush — anything still in the buffers from the last partial batch.
+        _flush_batch(reason="final")
+
+        # S3 fix: surface any persist failures via non-zero exit.
+        _assert_flush_complete(
+            len(flush_buffer_discovered),
+            len(flush_buffer_failed),
+            flush_failures,
+        )
+
+    finally:
+        if playwright_browser is not None:
+            try:
+                playwright_browser.close()
+            except Exception:
+                logger.warning("Playwright: browser close failed")
+        if playwright_ctx is not None:
+            try:
+                playwright_ctx.stop()
+            except Exception:
+                logger.warning("Playwright: context stop failed")
 
     return {
         "pending": len(pending),

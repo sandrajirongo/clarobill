@@ -22,10 +22,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies before copying source so this layer is cached across
-# code-only changes.
+# Playwright/Chromium system dependencies. Installed before pip so this layer
+# is shared across code-only rebuilds. apt list sourced from:
+# https://playwright.dev/python/docs/docker (python:3.11-slim base)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+        libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+        libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+        libfontconfig1 libfreetype6 wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies before copying source so this layer is cached
+# across code-only changes.
 COPY pipeline/requirements.discovery.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && playwright install chromium
 
 # Copy the discovery scripts. The orchestrator at scripts/discover_mrf_pipeline.py
 # imports from scripts/mrf_discovery/, so the directory layout must mirror the
