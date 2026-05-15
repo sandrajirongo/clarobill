@@ -315,17 +315,20 @@ def sweep_tenet_hyve(
         logger.warning("sweep_tenet_hyve: failed to fetch %s", HYVE_TENET_URL)
         return [], set()
 
-    filenames = re.findall(r'"([^"]+_standardcharges\.(?:json|csv))"', html)
-    if not filenames:
-        logger.warning("sweep_tenet_hyve: no files found in JS array at %s", HYVE_TENET_URL)
+    # Use _extract_cms_urls (backed by _CMS_FILENAME_RE) instead of a hand-rolled
+    # regex so all MRF formats are captured — xlsx, json.gz, csv.gz, xml, and
+    # filenames using a dash separator before "standardcharges". The original
+    # findall regex only matched bare .json / .csv and missed Tenet XLSX/gzip files.
+    all_urls = _extract_cms_urls(html, HYVE_TENET_URL)
+    if not all_urls:
+        logger.warning("sweep_tenet_hyve: no files found at %s", HYVE_TENET_URL)
         return [], set()
 
-    url_name_pairs: list[tuple[str, str]] = []
-    for fname in filenames:
-        url = f"{HYVE_TENET_URL.rstrip('/')}/{fname}"
-        name = extract_name_from_cms_filename(url)
-        if name:
-            url_name_pairs.append((url, name))
+    url_name_pairs: list[tuple[str, str]] = [
+        (url, name)
+        for url in all_urls
+        if (name := extract_name_from_cms_filename(url)) is not None
+    ]
 
     logger.info(
         "sweep_tenet_hyve: %d candidate URLs, matching against %d hospitals",

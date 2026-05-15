@@ -1135,6 +1135,7 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
     found_urls: dict[str, str] = {}  # url -> discovery_method
     toc_seen: set[str] = set()
     visited_pages: set[str] = set()
+    _homepage_js_shell = False  # set True if homepage returns a JS-rendered shell
 
     def _scan(probe_url: str, method: str, depth: int) -> None:
         """Fetch `probe_url`, run extractors, recurse depth-N follow.
@@ -1142,6 +1143,7 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
         Same-host only — never follows cross-domain links. Bounded by
         `visited_pages` (no loops) and `MAX_FOLLOW_DEPTH`.
         """
+        nonlocal _homepage_js_shell
         if probe_url in visited_pages:
             return
         if _host_of(probe_url) != base_host:
@@ -1155,6 +1157,11 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
         if resp is None or resp.status_code != 200 or body is None:
             return
         html = body
+        # Detect JS-rendered shell on the homepage so we can fall back to
+        # Playwright at the end if no MRF URLs are found by requests crawl.
+        if method == "homepage" and depth == 0 and _is_js_shell(html):
+            _homepage_js_shell = True
+            return  # Nothing extractable from a shell response
         _scan_page_for_urls(session, probe_url, html, found_urls, toc_seen, method)
 
         if depth < MAX_FOLLOW_DEPTH:
@@ -1236,6 +1243,16 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
             label, len(validated),
             ",".join(sorted({d.discovery_method for d in validated})),
         )
+    elif _homepage_js_shell and _PLAYWRIGHT_AVAILABLE:
+        # The homepage returned a JS-rendered shell and requests found nothing.
+        # This hospital is on a React/Next.js site not in _JS_RENDERED_DOMAINS.
+        # Fall back to Playwright so the JS renders and MRF links become visible.
+        # _JS_RENDERED_DOMAINS remains an optimisation (pre-routing) but is no
+        # longer the only path to Playwright — any unknown JS site reaches it here.
+        logger.info(
+            "[%s] JS-rendered homepage detected — falling back to Playwright", label
+        )
+        return _crawl_hospital_playwright(hospital)
     else:
         logger.debug("[%s] no MRF URL found", label)
     return validated

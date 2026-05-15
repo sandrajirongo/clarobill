@@ -127,6 +127,71 @@ class TestReadCapped:
         assert "invalid utf-8" in result
 
 
+class TestIsJsShell:
+    """_is_js_shell detects React/Next.js/Nuxt shell responses that contain
+    no extractable content — used to trigger the Playwright fallback."""
+
+    def test_next_js_data_tag_detected(self) -> None:
+        html = '<html><head></head><body><script id="__NEXT_DATA__" type="application/json">{}</script></body></html>'
+        assert s4._is_js_shell(html)
+
+    def test_next_static_path_detected(self) -> None:
+        html = '<html><head><script src="/_next/static/chunks/main.js"></script></head><body></body></html>'
+        assert s4._is_js_shell(html)
+
+    def test_react_root_div_detected(self) -> None:
+        html = '<html><body><div id="root"></div><script src="/bundle.js"></script></body></html>'
+        assert s4._is_js_shell(html)
+
+    def test_emotion_data_attribute_detected(self) -> None:
+        html = '<html><head><style data-emotion="css"></style></head><body></body></html>'
+        assert s4._is_js_shell(html)
+
+    def test_nuxt_global_detected(self) -> None:
+        html = '<html><body><script>window.__nuxt={}</script></body></html>'
+        assert s4._is_js_shell(html)
+
+    def test_empty_html_detected_as_shell(self) -> None:
+        assert s4._is_js_shell("")
+
+    def test_short_html_detected_as_shell(self) -> None:
+        assert s4._is_js_shell("<html></html>")
+
+    def test_real_html_not_detected_as_shell(self) -> None:
+        # Must be >= 500 chars to pass the short-document guard in _is_js_shell.
+        html = (
+            "<html><head><title>Hospital Billing</title></head>"
+            "<body><h1>Standard Charges</h1>"
+            "<p>In compliance with CMS price transparency rules we publish our "
+            "machine readable file below for all inpatient and outpatient services "
+            "provided at our facility. The file is updated annually each January.</p>"
+            "<p>For questions about our standard charges please contact the billing "
+            "department at billing@hospital.example.com or call 1-800-555-0100. "
+            "We are happy to provide an estimate before your visit.</p>"
+            '<a href="/123456789_hospital_standardcharges.csv">Download CSV</a>'
+            "</body></html>"
+        )
+        assert len(html) >= 500, "fixture too short — pad it further"
+        assert not s4._is_js_shell(html)
+
+    def test_hospital_price_page_not_detected_as_shell(self) -> None:
+        # Must be >= 500 chars to pass the short-document guard in _is_js_shell.
+        html = (
+            "<html><body>"
+            "<h2>Price Transparency</h2>"
+            "<p>Download our machine readable file below. This file contains all "
+            "standard charges for items and services provided at our hospital "
+            "including gross charges, payer-specific negotiated rates, and "
+            "de-identified minimum and maximum negotiated rates as required by "
+            "CMS 45 CFR 180.50 and the Hospital Price Transparency Final Rule.</p>"
+            "<p>File last updated: January 1, 2026.</p>"
+            '<a href="https://cdn.example.com/123_hospital_standardcharges.json">File</a>'
+            "</body></html>"
+        )
+        assert len(html) >= 500, "fixture too short — pad it further"
+        assert not s4._is_js_shell(html)
+
+
 class TestTransientCrawlExceptions:
     """S4 fix: distinguish transient (retryable) crawl errors from permanent
     (terminal) ones so the hospital's checkpoint state isn't poisoned by

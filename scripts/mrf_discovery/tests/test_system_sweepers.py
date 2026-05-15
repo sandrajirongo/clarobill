@@ -210,6 +210,33 @@ def test_sweep_tenet_empty_when_no_js_array(mock_get):
     assert resolved == set()
 
 
+_TENET_XLSX_FIXTURE = """
+<html><body>
+<script>
+const files = [
+  "123456789_tenet-mercy-general_standardcharges.xlsx",
+  "987654321_tenet-coastal-hospital_standardcharges.json.gz"
+];
+</script>
+</body></html>
+"""
+
+
+@patch.object(system_sweepers, "_get_html", return_value=_TENET_XLSX_FIXTURE)
+@patch.object(system_sweepers, "_head_ok", return_value=True)
+def test_sweep_tenet_picks_up_xlsx_and_gzip(mock_head, mock_get):
+    # Previous hand-rolled regex only matched .json and .csv — missed .xlsx and .json.gz.
+    hospitals = [
+        _make_hospital("T003", "Tenet Mercy General"),
+        _make_hospital("T004", "Tenet Coastal Hospital"),
+    ]
+    results, resolved = sweep_tenet_hyve(MagicMock(), hospitals)
+    assert len(results) == 2, f"expected 2 results, got {len(results)}: {[r.mrf_url for r in results]}"
+    formats = {r.file_format for r in results}
+    assert "xlsx" in formats
+    assert "json" in formats
+
+
 # ---------------------------------------------------------------------------
 # SweepResult dataclass
 # ---------------------------------------------------------------------------
