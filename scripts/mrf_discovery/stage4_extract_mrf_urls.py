@@ -1236,13 +1236,19 @@ def _pw_fetch_and_scan(
                 found_urls.setdefault(link, "depth_follow")
 
 
-def _crawl_hospital_playwright(hospital: dict[str, Any], browser: Any) -> list[DiscoveredMrf]:
+def _crawl_hospital_playwright(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
     """Playwright fallback for hospitals on JS-rendered domains.
 
-    Opens a fresh browser context per hospital (isolated cookies/storage),
-    bounded by _PLAYWRIGHT_SEM so at most MAX_PLAYWRIGHT_WORKERS Chromium
-    contexts run concurrently. Validates candidates with a normal requests
-    session — Playwright is only used for rendering, not HEAD probing.
+    Each call launches its own sync_playwright() instance so that worker
+    threads never share a browser object. Playwright's sync API wraps an
+    asyncio event loop in a background thread; sharing one browser across
+    multiple OS threads causes Protocol errors on browser.new_context() even
+    with a semaphore. One playwright instance per call is the documented
+    thread-safe approach.
+
+    _PLAYWRIGHT_SEM limits how many Chromium processes run at once
+    (MAX_PLAYWRIGHT_WORKERS=5, ~200 MB RAM each). Validates candidates with
+    a normal requests session — Playwright is only used for rendering.
 
     Covers:
       - Encompass Health (/locations/{slug}/financial-information/price-transparency)
@@ -1264,29 +1270,33 @@ def _crawl_hospital_playwright(hospital: dict[str, Any], browser: Any) -> list[D
 
     with _PLAYWRIGHT_SEM:
         try:
-            ctx = browser.new_context(
-                user_agent=BROWSER_UA,
-                viewport={"width": 1280, "height": 900},
-                locale="en-US",
-            )
-            try:
-                page = ctx.new_page()
+            with _sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
                 try:
-                    _pw_fetch_and_scan(page, website, "homepage", found_urls)
-                    # Path-relative heuristics: for Encompass-style hospitals where
-                    # hospital_website is a facility subpath (/locations/foo), probe
-                    # MRF pages relative to that subpath rather than the domain root.
-                    base_path = parsed.path.rstrip("/")
-                    if base_path and base_path not in ("/", ""):
-                        for path in PATH_HEURISTICS:
-                            probe = f"{parsed.scheme}://{parsed.netloc}{base_path}{path}"
-                            _pw_fetch_and_scan(page, probe, "path_heuristic", found_urls)
+                    ctx = browser.new_context(
+                        user_agent=BROWSER_UA,
+                        viewport={"width": 1280, "height": 900},
+                        locale="en-US",
+                    )
+                    try:
+                        page = ctx.new_page()
+                        try:
+                            _pw_fetch_and_scan(page, website, "homepage", found_urls)
+                            # Path-relative heuristics for Encompass-style hospitals where
+                            # hospital_website is a facility subpath (/locations/foo).
+                            base_path = parsed.path.rstrip("/")
+                            if base_path and base_path not in ("/", ""):
+                                for path in PATH_HEURISTICS:
+                                    probe = f"{parsed.scheme}://{parsed.netloc}{base_path}{path}"
+                                    _pw_fetch_and_scan(page, probe, "path_heuristic", found_urls)
+                        finally:
+                            page.close()
+                    finally:
+                        ctx.close()
                 finally:
-                    page.close()
-            finally:
-                ctx.close()
+                    browser.close()
         except Exception:
-            logger.exception("[%s] Playwright context error", label)
+            logger.exception("[%s] Playwright error", label)
             return []
 
     validated: list[DiscoveredMrf] = []
@@ -1810,13 +1820,11 @@ def run(
                 len(pending),
             )
 
-        _browser = playwright_browser  # stable reference for the closures below
-
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 (
-                    pool.submit(_crawl_hospital_playwright, h, _browser)
-                    if _browser is not None and _is_js_rendered(h)
+                    pool.submit(_crawl_hospital_playwright, h)
+                    if _PLAYWRIGHT_AVAILABLE and _is_js_rendered(h)
                     else pool.submit(_crawl_hospital, h)
                 ): h
                 for h in pending
