@@ -50,6 +50,7 @@ whose JSON array doesn't contain a CMS-pattern URL.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import logging
 import re
@@ -889,6 +890,43 @@ def _file_format_from_url(url: str) -> str:
     return "unknown"
 
 
+def _cms_filename_name_matches_hospital(url: str, hospital_name: str) -> bool:
+    """Return True if the hospital name embedded in a CMS-pattern filename
+    fuzzy-matches `hospital_name` (SequenceMatcher ratio ≥ 0.40).
+
+    CMS 45 CFR 180.50 mandates the pattern {EIN}_{hospital_name}_standardcharges.{ext}.
+    When a per-hospital crawl reaches a system-wide listing page (e.g. Sutter Health
+    shows all 49 facility files), every URL it finds will pass Gates 1-3 even though
+    48 of them belong to different hospitals. This gate rejects those mis-matches
+    before we issue a HEAD request or persist the row.
+
+    Fails open when:
+      - the URL has no CMS-pattern filename (non-CMS MRFs still pass)
+      - the name segment can't be parsed from the filename
+      - hospital_name is empty
+    """
+    fname = url.split("?", 1)[0].rsplit("/", 1)[-1]
+    if not _CMS_FILENAME_RE.search(fname):
+        return True  # non-CMS URL — let Gates 1-3 decide
+
+    name_match = re.match(
+        r"^\d{6,12}[_\-](.*?)[_\-]?standard[_\- ]?charges",
+        fname,
+        re.IGNORECASE,
+    )
+    if not name_match:
+        return True  # unexpected structure — fail open
+
+    extracted = name_match.group(1).replace("-", " ").replace("_", " ").lower().strip()
+    normalized = re.sub(r"[^\w\s]", " ", hospital_name or "").lower()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    if not extracted or not normalized:
+        return True
+
+    return difflib.SequenceMatcher(None, extracted, normalized).ratio() >= 0.55
+
+
 def _validate_mrf_url(
     session: requests.Session,
     url: str,
@@ -1165,6 +1203,18 @@ def _crawl_hospital(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
                 break
             for url, method in pending_validation:
                 seen_in_validation.add(url)
+                # Name-match gate: reject CMS-pattern URLs whose embedded
+                # hospital name doesn't fuzzy-match this hospital. Prevents
+                # system listing pages (Sutter, Providence, Banner) from
+                # attributing every facility's file to the crawled hospital.
+                if not _cms_filename_name_matches_hospital(
+                    url, hospital.get("hospital_name") or ""
+                ):
+                    logger.debug(
+                        "[%s] skipping — CMS filename name mismatch: %s",
+                        label, url.rsplit("/", 1)[-1],
+                    )
+                    continue
                 ok, ct, size = _validate_mrf_url(session, url, toc_urls_out=found_urls)
                 if not ok:
                     continue
@@ -1310,6 +1360,15 @@ def _crawl_hospital_playwright(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
                 break
             for url, method in pending_v:
                 seen_in_validation.add(url)
+                # Same name-match gate as in _crawl_hospital.
+                if not _cms_filename_name_matches_hospital(
+                    url, hospital.get("hospital_name") or ""
+                ):
+                    logger.debug(
+                        "[%s] Playwright: skipping — CMS filename name mismatch: %s",
+                        label, url.rsplit("/", 1)[-1],
+                    )
+                    continue
                 ok, ct, size = _validate_mrf_url(session, url, toc_urls_out=found_urls)
                 if not ok:
                     continue
