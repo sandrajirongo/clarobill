@@ -1268,15 +1268,20 @@ def _pw_fetch_and_scan(
     url: str,
     method: str,
     found_urls: dict[str, str],
+    timeout_ms: int = 30_000,
 ) -> None:
     """Navigate to url with an already-open Playwright page and scan for MRF links.
 
     Extracts file URLs from the fully-rendered HTML, then follows up to 5
     keyword-matching anchors one level deep (depth-1 only — each Playwright
     navigation is expensive relative to a requests GET).
+
+    `timeout_ms` controls the page.goto() timeout. Pass 10_000 for path-heuristic
+    probes to avoid waiting 30 s on 404s; keep the default 30_000 for homepages
+    where a slow JS hydration is expected.
     """
     try:
-        resp = page.goto(url, wait_until="networkidle", timeout=30_000)
+        resp = page.goto(url, wait_until="networkidle", timeout=timeout_ms)
         if not resp or resp.status >= 400:
             return
     except Exception:
@@ -1292,7 +1297,7 @@ def _pw_fetch_and_scan(
         if follow_url in found_urls:
             continue
         try:
-            sub_resp = page.goto(follow_url, wait_until="networkidle", timeout=30_000)
+            sub_resp = page.goto(follow_url, wait_until="networkidle", timeout=timeout_ms)
             if not sub_resp or sub_resp.status >= 400:
                 continue
         except Exception:
@@ -1348,14 +1353,22 @@ def _crawl_hospital_playwright(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
                     try:
                         page = ctx.new_page()
                         try:
-                            _pw_fetch_and_scan(page, website, "homepage", found_urls)
+                            _pw_fetch_and_scan(page, website, "homepage", found_urls, timeout_ms=30_000)
                             # Path-relative heuristics for Encompass-style hospitals where
                             # hospital_website is a facility subpath (/locations/foo).
+                            # Use a shorter timeout (10 s) for path probes — most 404s and
+                            # wrong-path responses resolve well under 10 s; the 30 s default
+                            # was the root cause of Task 1's 16-hour timeout when a shard
+                            # had ~300 JS-rendered hospitals each probing 50+ paths.
+                            # Early-exit once found_urls is non-empty: once we have at least
+                            # one MRF candidate we don't need to probe further paths.
                             base_path = parsed.path.rstrip("/")
                             if base_path and base_path not in ("/", ""):
                                 for path in PATH_HEURISTICS:
+                                    if found_urls:
+                                        break
                                     probe = f"{parsed.scheme}://{parsed.netloc}{base_path}{path}"
-                                    _pw_fetch_and_scan(page, probe, "path_heuristic", found_urls)
+                                    _pw_fetch_and_scan(page, probe, "path_heuristic", found_urls, timeout_ms=10_000)
                         finally:
                             page.close()
                     finally:

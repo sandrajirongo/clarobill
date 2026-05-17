@@ -1130,3 +1130,84 @@ class TestCmsFilenameNameMatchesHospital:
     def test_rejects_hca_file_for_sutter_hospital(self) -> None:
         url = self._url("555666777_hca-florida-osceola-hospital_standardcharges.csv")
         assert not s4._cms_filename_name_matches_hospital(url, "Sutter Davis Hospital")
+
+
+# ---------------------------------------------------------------------------
+# Playwright performance fix — Task 1 timeout root cause (2026-05-17)
+# ---------------------------------------------------------------------------
+
+
+class TestPlaywrightPerformanceFix:
+    """Guards for the Playwright path-heuristic timeout fix.
+
+    Root cause of Task 1's 16-hour timeout: _crawl_hospital_playwright probed
+    all 50+ PATH_HEURISTICS entries with wait_until="networkidle" at 30_000ms
+    each — even 404s waited the full 30 s. A shard with ~300 JS-rendered
+    hospitals × 50 paths × 30 s / 5 concurrent ≈ 90,000 s.
+
+    Fix: (1) path-heuristic probes use timeout_ms=10_000; (2) early exit from
+    the path-heuristic loop once found_urls is non-empty.
+    """
+
+    def test_pw_fetch_and_scan_has_timeout_ms_param(self) -> None:
+        """_pw_fetch_and_scan accepts a timeout_ms keyword argument."""
+        import inspect
+        sig = inspect.signature(s4._pw_fetch_and_scan)
+        assert "timeout_ms" in sig.parameters, (
+            "_pw_fetch_and_scan must accept timeout_ms so callers can pass "
+            "10_000 for path-heuristic probes and 30_000 for the homepage"
+        )
+
+    def test_pw_fetch_and_scan_default_timeout_is_30s(self) -> None:
+        """Default timeout stays 30_000 ms to preserve homepage behaviour."""
+        import inspect
+        sig = inspect.signature(s4._pw_fetch_and_scan)
+        default = sig.parameters["timeout_ms"].default
+        assert default == 30_000, (
+            f"Default timeout_ms should be 30_000 (got {default}); "
+            "homepage navigation needs the full 30 s for JS hydration"
+        )
+
+    def test_crawl_playwright_uses_10s_for_path_probes(self) -> None:
+        """path-heuristic probes inside _crawl_hospital_playwright pass timeout_ms=10_000."""
+        import inspect
+        source = inspect.getsource(s4._crawl_hospital_playwright)
+        assert "timeout_ms=10_000" in source, (
+            "_crawl_hospital_playwright must pass timeout_ms=10_000 to "
+            "_pw_fetch_and_scan for path-heuristic probes (root cause of timeout)"
+        )
+
+    def test_crawl_playwright_uses_30s_for_homepage(self) -> None:
+        """Homepage navigation inside _crawl_hospital_playwright uses 30_000 ms."""
+        import inspect
+        source = inspect.getsource(s4._crawl_hospital_playwright)
+        assert "timeout_ms=30_000" in source, (
+            "_crawl_hospital_playwright must pass timeout_ms=30_000 for the "
+            "homepage navigation — JS hydration can take 10-20 s"
+        )
+
+    def test_crawl_playwright_exits_early_when_found_urls_nonempty(self) -> None:
+        """Once found_urls is non-empty the path-heuristic loop must break."""
+        import inspect
+        source = inspect.getsource(s4._crawl_hospital_playwright)
+        # The early-exit guard must appear before the _pw_fetch_and_scan call
+        # inside the path-heuristic loop.
+        assert "if found_urls:" in source and "break" in source, (
+            "_crawl_hospital_playwright must break out of the path-heuristic "
+            "loop as soon as found_urls is non-empty"
+        )
+
+    def test_early_exit_precedes_probe_call_in_source(self) -> None:
+        """The `if found_urls: break` must come before the probe call in the loop."""
+        import inspect
+        source = inspect.getsource(s4._crawl_hospital_playwright)
+        # Find the relative positions of the early-exit guard and the heuristic probe call.
+        early_exit_pos = source.find("if found_urls:")
+        probe_pos = source.find("timeout_ms=10_000")
+        assert early_exit_pos != -1, "early-exit guard not found in source"
+        assert probe_pos != -1, "timeout_ms=10_000 not found in source"
+        assert early_exit_pos < probe_pos, (
+            "The `if found_urls: break` guard must appear before the "
+            "_pw_fetch_and_scan(..., timeout_ms=10_000) call so the loop "
+            "exits before making a needless Playwright navigation"
+        )
