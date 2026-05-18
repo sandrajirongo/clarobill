@@ -11,6 +11,19 @@ Sentry.init({
     if (event.request?.data) {
       event.request.data = '[redacted]';
     }
+
+    // WORKAROUND: @supabase/supabase-js uses the Web Locks API to synchronize
+    // session state across browser tabs. When a second tab steals the lock, the
+    // displaced tab's pending lock request throws this AbortError as an unhandled
+    // rejection. Supabase handles the contention correctly internally — the session
+    // remains valid — but the error escapes into window.onunhandledrejection.
+    // We cannot fix this inside the library; dropping it here is the correct response.
+    // Upstream issue: https://github.com/supabase/gotrue-js/issues/1004
+    const isSupabaseLockSteal = event.exception?.values?.some(
+      (e) => e.type === 'AbortError' && e.value?.includes('steal'),
+    );
+    if (isSupabaseLockSteal) return null;
+
     return event;
   },
 });
