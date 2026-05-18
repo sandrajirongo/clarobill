@@ -1,25 +1,156 @@
-# Cloud Build config for the MRF pipeline image.
+# Cloud Build config for the MRF pipeline images.
 #
-# Run from repo root: `bash pipeline/deploy.sh`. The Dockerfile lives in
-# pipeline/ but COPYs from both pipeline/ and scripts/mrf_discovery/, so
-# the build context has to be the repo root. This file specifies the
-# Dockerfile path explicitly so the Dockerfile can stay co-located.
+# Triggered automatically on push to main when pipeline/** or
+# scripts/mrf_discovery/** changes. Also invoked by deploy.sh for
+# manual full-deploy (which additionally updates Scheduler + IAM).
+#
+# Build context must be repo root because Dockerfile.discovery COPYs
+# from both pipeline/ and scripts/mrf_discovery/.
 
 steps:
+  # Build the weekly scraper/parser image (mrf-pipeline)
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - --file=pipeline/Dockerfile
-      - --tag=${_IMAGE}
+      - --tag=${_IMAGE}:$COMMIT_SHA
+      - --tag=${_IMAGE}:latest
       - .
+
+  # Build the discovery pipeline image (mrf-discovery)
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - --file=pipeline/Dockerfile.discovery
-      - --tag=${_DISCOVERY_IMAGE}
+      - --tag=${_DISCOVERY_IMAGE}:$COMMIT_SHA
+      - --tag=${_DISCOVERY_IMAGE}:latest
       - .
+
+  # Push all tags for both images
+  - name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, ${_IMAGE}]
+
+  - name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, ${_DISCOVERY_IMAGE}]
+
+  # Update discovery Cloud Run Jobs to the new commit-SHA image.
+  # Using commit-SHA (not :latest) so each execution is pinned to the
+  # exact source that triggered the build — same pattern as the engine.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-discovery-stage4
+      - --image
+      - ${_DISCOVERY_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-discovery-stage3
+      - --image
+      - ${_DISCOVERY_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-discovery-stage2
+      - --image
+      - ${_DISCOVERY_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-discovery-stage1
+      - --image
+      - ${_DISCOVERY_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-discovery-annual
+      - --image
+      - ${_DISCOVERY_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+  # Update scraper and parser jobs to the new mrf-pipeline image
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-scraper
+      - --image
+      - ${_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - clarobill-mrf-parser
+      - --image
+      - ${_IMAGE}:$COMMIT_SHA
+      - --region
+      - us-central1
+      - --project
+      - clarobill-prd
+      - --quiet
+
 images:
-  - ${_IMAGE}
-  - ${_DISCOVERY_IMAGE}
+  - ${_IMAGE}:$COMMIT_SHA
+  - ${_IMAGE}:latest
+  - ${_DISCOVERY_IMAGE}:$COMMIT_SHA
+  - ${_DISCOVERY_IMAGE}:latest
+
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/clarobill-prd/clarobill-pipeline/mrf-pipeline
+  _DISCOVERY_IMAGE: us-central1-docker.pkg.dev/clarobill-prd/clarobill-pipeline/mrf-discovery
+
 options:
   logging: CLOUD_LOGGING_ONLY
