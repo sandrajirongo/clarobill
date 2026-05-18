@@ -123,13 +123,24 @@ def build_clients() -> tuple[bigquery.Client, storage.Client]:
     return bq, gcs
 
 
-def load_hospitals(bq: bigquery.Client) -> list[dict[str, Any]]:
-    """Load all active MRF URLs from hospital_price_transparency, joined to
-    hospital_directory for name/state context.
+def load_hospitals(
+    bq: bigquery.Client,
+    task_index: int = 0,
+    task_count: int = 1,
+) -> list[dict[str, Any]]:
+    """Load this task's shard of active MRF URLs from hospital_price_transparency.
 
-    Returns list of dicts with keys: hospital_npi, ccn, hospital_name, state,
-    mrf_url, last_modified (mapped from last_modified_header).
+    Sharding is pushed into the SQL query via FARM_FINGERPRINT so each task
+    only materialises its own subset — no full-table load into container memory.
+    Previously all rows were loaded then sliced in Python, which OOM'd the
+    container when hospital_price_transparency grew past ~40k rows (execution
+    clarobill-mrf-scraper-4pjh7, 2026-05-18).
     """
+    shard_clause = (
+        f"AND MOD(ABS(FARM_FINGERPRINT(COALESCE(pt.ccn, pt.mrf_url))), {task_count}) = {task_index}"
+        if task_count > 1
+        else ""
+    )
     query = f"""
         SELECT
             pt.ccn,
@@ -144,10 +155,14 @@ def load_hospitals(bq: bigquery.Client) -> list[dict[str, Any]]:
         WHERE pt.is_active = TRUE
           AND pt.mrf_url IS NOT NULL
           AND TRIM(pt.mrf_url) != ''
+          {shard_clause}
         ORDER BY hd.hospital_name
     """
     rows = list(bq.query(query).result())
-    logger.info("Loaded %d active MRF URLs from hospital_price_transparency", len(rows))
+    logger.info(
+        "Task %d/%d — loaded %d MRF URLs from hospital_price_transparency",
+        task_index, task_count, len(rows),
+    )
     return [dict(row) for row in rows]
 
 
@@ -739,18 +754,11 @@ def main() -> None:
     bq, gcs = build_clients()
     bucket = gcs.bucket(GCS_BUCKET)
     archive_bucket = gcs.bucket(GCS_ARCHIVE_BUCKET) if GCS_ARCHIVE_BUCKET else None
-    all_hospitals = load_hospitals(bq)
+    hospitals = load_hospitals(bq, task_index=task_index, task_count=task_count)
 
-    if not all_hospitals:
-        logger.info("No hospitals to scrape — exiting.")
+    if not hospitals:
+        logger.info("Task %d/%d — no hospitals to scrape, exiting.", task_index, task_count)
         sys.exit(0)
-
-    hospitals = _task_shard(all_hospitals, task_index, task_count)
-    if task_count > 1:
-        logger.info(
-            "Task %d/%d — processing %d/%d hospitals",
-            task_index, task_count, len(hospitals), len(all_hospitals),
-        )
 
     scraped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
