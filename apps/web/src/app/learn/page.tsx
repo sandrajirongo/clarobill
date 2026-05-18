@@ -47,6 +47,13 @@ interface Article {
 
 const PUBLISHED_ARTICLES: Article[] = [
   {
+    slug: 'no-surprises-act',
+    title: 'The No Surprises Act: What It Covers, What It Does Not, and How to Use It',
+    description: 'The No Surprises Act bans most surprise bills from out-of-network providers. Here is exactly what it covers, what the exceptions are, and what to do if you receive a bill it prohibits.',
+    date: 'May 18, 2026',
+    readMins: 8,
+  },
+  {
     slug: 'what-happens-after-you-dispute-a-medical-bill',
     title: 'What Happens After You Send a Medical Bill Dispute Letter',
     description: 'You sent the letter. Here is what the hospital does next, how long it takes, what responses to expect, and exactly what to do if they deny your dispute.',
@@ -157,7 +164,7 @@ const PILLARS: Pillar[] = [
     description:
       'Federal and state laws that protect you as a patient. The No Surprises Act, the Hospital Price Transparency Rule, and your statutory right to an itemized bill are legal tools most patients never use because they do not know they exist.',
     topics: [
-      { label: 'No Surprises Act' },
+      { label: 'No Surprises Act', href: '/learn/no-surprises-act' },
       { label: 'Hospital Price Transparency Rule', href: '/learn/hospital-machine-readable-files-explained' },
       { label: 'Right to an itemized bill' },
       { label: 'Charity care and financial assistance' },
