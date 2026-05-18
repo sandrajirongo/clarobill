@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { JsonLd } from '@/components/json-ld';
 import s from '../../blog/blog.module.css';
+import { ArticleBreadcrumb } from '@/components/article-breadcrumb';
 
 export const metadata: Metadata = {
   title: 'Hospital Machine-Readable Files: What They Are and How to Use Them | ClaroBill',
@@ -79,6 +80,14 @@ export default function Article(): JSX.Element {
   return (
     <article>
       <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
+      <ArticleBreadcrumb
+        items={[
+          { label: 'Home', href: '/' },
+          { label: 'Medical Billing Guides', href: '/learn' },
+          { label: 'Hospital Machine-Readable Files: What They Are and How to Use Them' },
+        ]}
+      />
 
       <div className={s.articleByline}>
         <span>May 7, 2026</span>

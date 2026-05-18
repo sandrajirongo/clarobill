@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { JsonLd } from '@/components/json-ld';
 import s from '../../blog/blog.module.css';
+import { ArticleBreadcrumb } from '@/components/article-breadcrumb';
 
 export const metadata: Metadata = {
   title: 'NCCI Edits Explained for Patients: The Federal Rules That Prevent Billing Abuse | ClaroBill',
@@ -87,6 +88,14 @@ export default function Article(): JSX.Element {
   return (
     <article>
       <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
+      <ArticleBreadcrumb
+        items={[
+          { label: 'Home', href: '/' },
+          { label: 'Medical Billing Guides', href: '/learn' },
+          { label: 'NCCI Edits: The Federal Rules That Prevent Billing Abuse' },
+        ]}
+      />
 
       <div className={s.articleByline}>
         <span>May 7, 2026</span>

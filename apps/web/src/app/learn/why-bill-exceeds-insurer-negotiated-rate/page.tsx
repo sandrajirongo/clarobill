@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { JsonLd } from '@/components/json-ld';
+import { ArticleBreadcrumb } from '@/components/article-breadcrumb';
 import s from '../../blog/blog.module.css';
 
 export const metadata: Metadata = {
@@ -75,6 +76,14 @@ export default function Article(): JSX.Element {
           acceptedAnswer: { '@type': 'Answer', text: f.a },
         })),
       }]} />
+
+      <ArticleBreadcrumb
+        items={[
+          { label: 'Home', href: '/' },
+          { label: 'Medical Billing Guides', href: '/learn' },
+          { label: 'Why Your Bill Is Higher Than What Your Insurer Pays' },
+        ]}
+      />
 
       <div className={s.articleByline}>
         <span>May 7, 2026</span>

@@ -14,6 +14,9 @@ export const metadata: Metadata = {
       'en': 'https://www.clarobill.com/learn',
       'x-default': 'https://www.clarobill.com/learn',
     },
+    types: {
+      'application/rss+xml': 'https://www.clarobill.com/learn/feed.xml',
+    },
   },
 };
 

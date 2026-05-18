@@ -122,6 +122,21 @@
   color: var(--txt3);
 }
 
+/* ─── Article breadcrumb ─────────────────────────────────────────────────── */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .2rem;
+  margin-bottom: 1.5rem;
+  font-size: .78rem;
+}
+.breadcrumbItem { display: inline-flex; align-items: center; gap: .2rem; }
+.breadcrumbSep { color: var(--txt3); margin: 0 .1rem; }
+.breadcrumbLink { color: var(--txt3); text-decoration: none; transition: color .15s; }
+.breadcrumbLink:hover { color: var(--sage); }
+.breadcrumbCurrent { color: var(--txt2); }
+
 /* ─── Article page ───────────────────────────────────────────────────────── */
 .articleByline {
   display: flex;

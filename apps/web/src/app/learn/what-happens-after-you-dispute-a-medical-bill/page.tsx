@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import s from '../../blog/blog.module.css';
 import { JsonLd } from '@/components/json-ld';
+import { ArticleBreadcrumb } from '@/components/article-breadcrumb';
 
 const ARTICLE_SCHEMA = {
   '@type': 'Article' as const,
@@ -70,6 +71,14 @@ export default function Article(): JSX.Element {
   return (
     <article>
       <JsonLd schema={[ARTICLE_SCHEMA, BREADCRUMB_SCHEMA, FAQ_SCHEMA]} />
+
+      <ArticleBreadcrumb
+        items={[
+          { label: 'Home', href: '/' },
+          { label: 'Medical Billing Guides', href: '/learn' },
+          { label: 'What Happens After You Send a Medical Bill Dispute Letter' },
+        ]}
+      />
 
       <div className={s.articleByline}>
         <span>May 17, 2026</span>

@@ -3,27 +3,21 @@ import type { MetadataRoute } from 'next';
 const BASE = 'https://www.clarobill.com';
 const NOW = new Date();
 
-const LEARN_SLUGS = [
-  'no-surprises-act',
-  'what-happens-after-you-dispute-a-medical-bill',
-  'common-medical-billing-errors',
-  'how-to-dispute-a-hospital-bill',
-  'how-to-read-an-itemized-medical-bill',
-  'medical-billing-advocates',
-  'what-are-cpt-codes',
-  'why-bill-exceeds-insurer-negotiated-rate',
-  'hospital-machine-readable-files-explained',
-  'ncci-edits-explained-for-patients',
+const LEARN_ARTICLES: { slug: string; date: string }[] = [
+  { slug: 'no-surprises-act',                              date: '2026-05-18' },
+  { slug: 'what-happens-after-you-dispute-a-medical-bill', date: '2026-05-17' },
+  { slug: 'why-bill-exceeds-insurer-negotiated-rate',      date: '2026-05-07' },
+  { slug: 'hospital-machine-readable-files-explained',     date: '2026-05-07' },
+  { slug: 'ncci-edits-explained-for-patients',             date: '2026-05-07' },
+  { slug: 'how-to-dispute-a-hospital-bill',                date: '2026-04-17' },
+  { slug: 'medical-billing-advocates',                     date: '2026-04-17' },
+  { slug: 'how-to-read-an-itemized-medical-bill',          date: '2026-04-07' },
+  { slug: 'common-medical-billing-errors',                 date: '2026-04-07' },
+  { slug: 'what-are-cpt-codes',                            date: '2026-04-07' },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const staticRoutes: MetadataRoute.Sitemap = [
-    {
-      url: `${BASE}/authors/sandra-jirongo`,
-      lastModified: NOW,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
     {
       url: BASE,
       lastModified: NOW,
@@ -42,8 +36,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly' as const,
       priority: 0.7,
     },
-
-
     {
       url: `${BASE}/about`,
       lastModified: NOW,
@@ -51,10 +43,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.6,
     },
     {
-      url: `${BASE}/upload`,
+      url: `${BASE}/authors/sandra-jirongo`,
       lastModified: NOW,
       changeFrequency: 'monthly' as const,
-      priority: 0.9,
+      priority: 0.6,
     },
     {
       url: `${BASE}/learn`,
@@ -82,9 +74,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  const learnRoutes: MetadataRoute.Sitemap = LEARN_SLUGS.map((slug) => ({
+  const learnRoutes: MetadataRoute.Sitemap = LEARN_ARTICLES.map(({ slug, date }) => ({
     url: `${BASE}/learn/${slug}`,
-    lastModified: NOW,
+    lastModified: new Date(date),
     changeFrequency: 'monthly' as const,
     priority: 0.7,
   }));
