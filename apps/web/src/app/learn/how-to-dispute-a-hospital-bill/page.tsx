@@ -189,6 +189,7 @@ function RelatedArticles({ current }: { current: string }): JSX.Element {
 }
 
 const ALL_ARTICLES = [
+  { slug: 'what-happens-after-you-dispute-a-medical-bill', title: 'What Happens After You Send a Medical Bill Dispute Letter' },
   { slug: 'how-to-read-an-itemized-medical-bill', title: 'How to Read an Itemized Medical Bill' },
   { slug: 'common-medical-billing-errors', title: 'The Most Common Medical Billing Errors' },
   { slug: 'what-are-cpt-codes', title: "What Are CPT Codes? A Patient's Guide" },

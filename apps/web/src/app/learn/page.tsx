@@ -47,6 +47,13 @@ interface Article {
 
 const PUBLISHED_ARTICLES: Article[] = [
   {
+    slug: 'what-happens-after-you-dispute-a-medical-bill',
+    title: 'What Happens After You Send a Medical Bill Dispute Letter',
+    description: 'You sent the letter. Here is what the hospital does next, how long it takes, what responses to expect, and exactly what to do if they deny your dispute.',
+    date: 'May 17, 2026',
+    readMins: 7,
+  },
+  {
     slug: 'why-bill-exceeds-insurer-negotiated-rate',
     title: 'Why Your Bill Is Higher Than What Your Insurer Pays',
     description: 'Chargemaster rates, negotiated rates, and Medicare rates. Understanding the gap between what hospitals charge and what they accept is the first step to disputing it.',
