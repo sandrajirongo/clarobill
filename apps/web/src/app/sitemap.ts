@@ -4,6 +4,8 @@ const BASE = 'https://www.clarobill.com';
 const NOW = new Date();
 
 const LEARN_SLUGS = [
+  'no-surprises-act',
+  'what-happens-after-you-dispute-a-medical-bill',
   'common-medical-billing-errors',
   'how-to-dispute-a-hospital-bill',
   'how-to-read-an-itemized-medical-bill',
