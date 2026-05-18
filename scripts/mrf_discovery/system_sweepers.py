@@ -508,7 +508,17 @@ def _pw_extract_cms_urls(browser: Any, url: str) -> list[tuple[str, str]]:
         try:
             page = ctx.new_page()
             try:
-                page.goto(url, wait_until="networkidle", timeout=30_000)
+                # wait_until="load" fires once all sub-resources are fetched.
+                # A short best-effort networkidle wait follows so JS-rendered
+                # links have time to appear. If networkidle doesn't settle we
+                # proceed with whatever DOM state we have rather than blocking
+                # the full 30 s — analytics and tag-manager requests on hospital
+                # sites routinely prevent networkidle from ever firing.
+                page.goto(url, wait_until="load", timeout=15_000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5_000)
+                except Exception:
+                    pass
                 html = page.content()
             finally:
                 page.close()

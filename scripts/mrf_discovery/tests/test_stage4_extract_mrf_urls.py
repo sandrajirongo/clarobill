@@ -1158,14 +1158,21 @@ class TestPlaywrightPerformanceFix:
             "10_000 for path-heuristic probes and 30_000 for the homepage"
         )
 
-    def test_pw_fetch_and_scan_default_timeout_is_30s(self) -> None:
-        """Default timeout stays 30_000 ms to preserve homepage behaviour."""
+    def test_pw_fetch_and_scan_default_timeout_is_15s(self) -> None:
+        """Default timeout is 15_000 ms (load event) + 5 s best-effort networkidle.
+
+        Task5 of execution tswwm ran for 16 hours because page.goto with
+        wait_until="networkidle" blocked the full 30 s on every hospital site
+        that never settles (analytics, tag managers, WebSockets). Switching to
+        wait_until="load" with a 5 s best-effort networkidle wait caps worst-case
+        per-page time at 20 s while still giving JS frameworks time to render.
+        """
         import inspect
         sig = inspect.signature(s4._pw_fetch_and_scan)
         default = sig.parameters["timeout_ms"].default
-        assert default == 30_000, (
-            f"Default timeout_ms should be 30_000 (got {default}); "
-            "homepage navigation needs the full 30 s for JS hydration"
+        assert default == 15_000, (
+            f"Default timeout_ms should be 15_000 (got {default}); "
+            "homepage navigation uses load + 5 s networkidle best-effort"
         )
 
     def test_crawl_playwright_uses_10s_for_path_probes(self) -> None:
@@ -1177,13 +1184,13 @@ class TestPlaywrightPerformanceFix:
             "_pw_fetch_and_scan for path-heuristic probes (root cause of timeout)"
         )
 
-    def test_crawl_playwright_uses_30s_for_homepage(self) -> None:
-        """Homepage navigation inside _crawl_hospital_playwright uses 30_000 ms."""
+    def test_crawl_playwright_homepage_uses_default_timeout(self) -> None:
+        """Homepage call to _pw_fetch_and_scan uses the default timeout (no override)."""
         import inspect
         source = inspect.getsource(s4._crawl_hospital_playwright)
-        assert "timeout_ms=30_000" in source, (
-            "_crawl_hospital_playwright must pass timeout_ms=30_000 for the "
-            "homepage navigation — JS hydration can take 10-20 s"
+        assert 'found_urls)' in source or '"homepage", found_urls)' in source, (
+            "_crawl_hospital_playwright homepage call must use the default timeout "
+            "— do not pass timeout_ms=30_000 which re-introduces the networkidle stall"
         )
 
     def test_crawl_playwright_exits_early_when_found_urls_nonempty(self) -> None:

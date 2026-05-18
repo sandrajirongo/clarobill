@@ -1268,7 +1268,7 @@ def _pw_fetch_and_scan(
     url: str,
     method: str,
     found_urls: dict[str, str],
-    timeout_ms: int = 30_000,
+    timeout_ms: int = 15_000,
 ) -> None:
     """Navigate to url with an already-open Playwright page and scan for MRF links.
 
@@ -1277,13 +1277,20 @@ def _pw_fetch_and_scan(
     navigation is expensive relative to a requests GET).
 
     `timeout_ms` controls the page.goto() timeout. Pass 10_000 for path-heuristic
-    probes to avoid waiting 30 s on 404s; keep the default 30_000 for homepages
-    where a slow JS hydration is expected.
+    probes to avoid waiting 30 s on 404s. Homepages use the default 15_000 with a
+    5 s best-effort networkidle wait — analytics and tag managers on hospital sites
+    routinely prevent networkidle from ever firing within 30 s.
     """
     try:
-        resp = page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+        resp = page.goto(url, wait_until="load", timeout=timeout_ms)
         if not resp or resp.status >= 400:
             return
+        # Best-effort: give JS frameworks a short window to render links after
+        # load. If networkidle doesn't settle we proceed with current DOM state.
+        try:
+            page.wait_for_load_state("networkidle", timeout=5_000)
+        except Exception:
+            pass
     except Exception:
         return
     html = page.content()
@@ -1353,7 +1360,7 @@ def _crawl_hospital_playwright(hospital: dict[str, Any]) -> list[DiscoveredMrf]:
                     try:
                         page = ctx.new_page()
                         try:
-                            _pw_fetch_and_scan(page, website, "homepage", found_urls, timeout_ms=30_000)
+                            _pw_fetch_and_scan(page, website, "homepage", found_urls)
                             # Path-relative heuristics for Encompass-style hospitals where
                             # hospital_website is a facility subpath (/locations/foo).
                             # Use a shorter timeout (10 s) for path probes — most 404s and
