@@ -31,7 +31,6 @@ parsed.  The parser job (parse_hospital_mrfs.py) reads from this prefix.
 import gzip
 import io
 import json
-import tempfile
 import logging
 import os
 import re
@@ -83,15 +82,14 @@ GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive")
 # in io.BytesIO before knowing the sha-based object name. A 321 MiB CSV
 # × N workers grew unbounded with file size.
 #
-# 2026-05-01 architectural fix: archive_writer now stream-writes to a tmp
-# GCS blob via blob.open("wb"), hashes in flight, then server-side renames
-# to the final sha-based path. Per-worker peak memory = chunk_size × 2
-# (~32 MiB) regardless of file size.
+# 2026-05-18 fix: both _download_to_gcs (BlobWriter) and archive_writer
+# (tmp GCS blob + server-side copy) now stream directly to GCS with zero
+# tmpfs usage. Per-worker peak memory = chunk_size (~16 MiB for BlobWriter
+# internal buffer + concurrent HTTP buffers).
 #
-# With that fix, MAX_WORKERS=40 fits comfortably in 8 GiB:
-#   40 workers × 32 MiB = ~1.3 GiB, leaves ~6 GiB for Python overhead +
+# MAX_WORKERS=40 fits comfortably in 8 GiB:
+#   40 workers × ~32 MiB = ~1.3 GiB, leaves ~6 GiB for Python overhead +
 #   ThreadPoolExecutor state + concurrent BigQuery clients.
-# Throughput vs 20: 2x scrape rate, fleet completes in ~half the time.
 MAX_WORKERS = 40
 
 # GCS resumable upload chunk size (bytes). 16MB is a good balance — large
@@ -386,22 +384,15 @@ def _download_to_gcs(
         # If urllib3 decompresses on the fly, the byte count exceeds what
         # the Content-Range header declares, causing a GCS 400.
         resp.raw.decode_content = False
-        # Download to a disk-backed temp file first, then upload seekably.
-        # BlobWriter (blob.open("wb")) was tried but fails under GCS 429s:
-        # when GCS confirms 0 bytes after we've written 16MB, BlobWriter
-        # tries to seek the source back to 0 — but iter_content chunks are
-        # already consumed and gone. tempfile.TemporaryFile() is seekable,
-        # so GCS's built-in retry can re-read from any confirmed offset.
-        with tempfile.TemporaryFile() as tmpf:
-            tmpf.write(prefix)
+        # Stream directly from HTTP response into GCS via BlobWriter.
+        # BlobWriter buffers one chunk at a time in its own internal BytesIO
+        # and retries failed chunks from that local cache — it does NOT seek
+        # the source stream. Zero tmpfs usage regardless of MRF file size.
+        with blob.open("wb", content_type=content_type or "application/octet-stream") as gcs_out:
+            gcs_out.write(prefix)
             for chunk in resp.iter_content(chunk_size=GCS_UPLOAD_CHUNK_SIZE):
                 if chunk:
-                    tmpf.write(chunk)
-            tmpf.seek(0)
-            blob.upload_from_file(
-                tmpf,
-                content_type=content_type or "application/octet-stream",
-            )
+                    gcs_out.write(chunk)
         logger.info("[%s] Uploaded to gs://%s/%s", label, bucket.name, blob_name)
         return blob_name, fmt
     except Exception as exc:

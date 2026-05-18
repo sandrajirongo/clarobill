@@ -10,8 +10,8 @@ Tests focus on two pieces:
     underlying body (kept for backward-compat; _download_to_gcs no longer
     uses it directly but the class is public API).
   - `_download_to_gcs`: rejects HTML/PDF/unknown responses without
-    writing anything to GCS, and uploads accepted files via seekable
-    tempfile + blob.upload_from_file().
+    writing anything to GCS, and streams accepted files via BlobWriter
+    (blob.open("wb")) with zero tmpfs usage.
 """
 
 from __future__ import annotations
@@ -98,18 +98,33 @@ def _mock_response(body: bytes, content_type: str = "application/json") -> Magic
     return resp
 
 
+class _WriteCaptureContextManager:
+    """Context manager that captures all bytes written through blob.open("wb")."""
+
+    def __init__(self, captured: list[bytes]) -> None:
+        self._buf = io.BytesIO()
+        self._captured = captured
+
+    def write(self, data: bytes) -> None:
+        self._buf.write(data)
+
+    def __enter__(self) -> "_WriteCaptureContextManager":
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        self._captured.append(self._buf.getvalue())
+        return False
+
+
 def _mock_bucket() -> tuple[MagicMock, list[bytes]]:
-    """Returns (bucket_mock, captured_chunks) where captured_chunks collects upload_from_file calls."""
+    """Returns (bucket_mock, captured_chunks) where captured_chunks collects bytes written via blob.open("wb")."""
     bucket = MagicMock()
     bucket.name = "mrf-staging"
     blob = MagicMock()
     bucket.blob.return_value = blob
     captured: list[bytes] = []
 
-    def _capture_upload(f, **kwargs: object) -> None:  # type: ignore[no-untyped-def]
-        captured.append(f.read())
-
-    blob.upload_from_file.side_effect = _capture_upload
+    blob.open.side_effect = lambda *args, **kwargs: _WriteCaptureContextManager(captured)
     return bucket, captured
 
 
@@ -128,7 +143,7 @@ class TestDownloadToGcsValidation:
             scraped_at="2026-05-04T00:00:00Z",
         )
         assert result is None, "HTML response must be rejected before upload"
-        bucket.blob.return_value.upload_from_file.assert_not_called()
+        bucket.blob.return_value.open.assert_not_called()
 
     def test_rejects_pdf_response(self) -> None:
         bucket, _ = _mock_bucket()
@@ -143,7 +158,7 @@ class TestDownloadToGcsValidation:
             scraped_at="2026-05-04T00:00:00Z",
         )
         assert result is None
-        bucket.blob.return_value.upload_from_file.assert_not_called()
+        bucket.blob.return_value.open.assert_not_called()
 
     def test_accepts_json_and_uploads(self) -> None:
         bucket, _ = _mock_bucket()
@@ -159,7 +174,7 @@ class TestDownloadToGcsValidation:
             scraped_at="2026-05-04T00:00:00Z",
         )
         assert result is not None
-        bucket.blob.return_value.upload_from_file.assert_called_once()
+        bucket.blob.return_value.open.assert_called_once()
 
     def test_accepts_gzipped_json(self) -> None:
         bucket, _ = _mock_bucket()

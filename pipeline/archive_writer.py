@@ -38,7 +38,7 @@ import io
 import json
 import logging
 import sys
-import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,29 +103,27 @@ def write_archive(
 ) -> ArchiveResult:
     """Stream `byte_stream` to GCS, computing SHA256 inline.
 
-    Memory contract (2026-05-01 rewrite):
-      Per-worker peak memory is bounded by UPLOAD_CHUNK_SIZE (16 MiB)
-      regardless of MRF size. We do this with a tee-write pattern:
+    Memory contract: per-worker peak memory is bounded by UPLOAD_CHUNK_SIZE
+    (16 MiB) regardless of MRF file size. Approach:
 
-        byte_stream  →  GCS resumable upload at a tmp path (streaming)
-                     →  SHA256 hasher (incremental update)
+      1. Stream byte_stream into a temporary GCS blob via BlobWriter,
+         hashing inline. BlobWriter buffers one chunk at a time in its own
+         internal BytesIO and retries failed chunks from that cache — no
+         tmpfs, no seekable source required.
+      2. After upload completes we know SHA256. Build the final
+         content-addressed object name.
+      3. Check idempotency: if the final blob already exists, delete the
+         tmp blob and return — we already have this content archived.
+      4. Server-side copy tmp blob → final path (metadata-only op, no
+         data leaves GCS, no RAM). Delete tmp blob.
 
-      Then a server-side copy renames the tmp blob to the final
-      sha-based name, and the tmp is deleted. No GCS-side data transfer
-      twice; copy is metadata-only.
+    Why this matters: a 321 MiB Baylor Scott & White MRF × 40 concurrent
+    workers using tempfile.TemporaryFile() (which is in-memory tmpfs in
+    Cloud Run) OOM'd an 8 GiB container. BlobWriter is the only approach
+    that provides retry-safe uploads without tmpfs buffering.
 
-    Why this matters: a 321 MiB Baylor Scott & White MRF × 20 concurrent
-    workers × 2x prior buffering (download_as_bytes + io.BytesIO) blew an
-    8 GiB Cloud Run container at the first big-file convergence. The
-    earlier inline-buffer comment "MRF files average ~5 MB, max ~500 MB"
-    was wrong on the upper bound — Baylor's MRF is 321 MiB; some hospital
-    systems publish 1+ GiB JSON. Stream-write is the only architecture
-    that survives without an explicit per-file size check.
-
-    Idempotency: after we know the SHA, we check whether the final blob
-    already exists. If yes, skip the rename and delete the tmp blob —
-    we already have this exact content archived. This handles re-scrapes
-    of unchanged MRFs and worker-shard overlap.
+    Idempotency: handles re-scrapes of unchanged MRFs and any worker-shard
+    overlap — the tmp blob is always cleaned up regardless of outcome.
 
     Args:
         storage_client: shared GCS client (one per process is fine).
@@ -146,23 +144,24 @@ def write_archive(
     bucket = storage_client.bucket(bucket_name)
     content_type_or_default = content_type or "application/octet-stream"
 
-    # Step 1: buffer byte_stream to a local seekable tempfile, hashing in
-    # flight. Buffering locally lets GCS's built-in retry seek to any
-    # confirmed offset on 429s or dropped connections — blob.open("wb")
-    # (BlobWriter) can't do this because iter_content chunks are consumed
-    # and gone before GCS confirms receipt. We also learn SHA256 before the
-    # GCS upload, which lets us upload directly to the final content-addressed
-    # path and skip the tmp-blob → server-side-copy dance entirely.
+    # Step 1: stream byte_stream into a temporary GCS blob, hashing inline.
+    # BlobWriter buffers one chunk in its own internal BytesIO and retries
+    # failed chunks from that cache — no tmpfs required, no seekable source.
     hasher = hashlib.sha256()
     total_bytes = 0
-    with tempfile.TemporaryFile() as tmpf:
-        while True:
-            chunk = byte_stream.read(UPLOAD_CHUNK_SIZE)
-            if not chunk:
-                break
-            hasher.update(chunk)
-            tmpf.write(chunk)
-            total_bytes += len(chunk)
+    tmp_name = f"_tmp/{uuid.uuid4().hex}"
+    tmp_blob = bucket.blob(tmp_name, chunk_size=UPLOAD_CHUNK_SIZE)
+
+    try:
+        with tmp_blob.open("wb", content_type=content_type_or_default) as gcs_out:
+            while True:
+                chunk = byte_stream.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+                gcs_out.write(chunk)
+                total_bytes += len(chunk)
+
         sha256 = hasher.hexdigest()
 
         # Step 2: build the final content-addressed object name.
@@ -189,11 +188,15 @@ def write_archive(
                 file_size_bytes=total_bytes, skipped_existing=True,
             )
 
-        # Step 4: upload directly to the final path. tmpf is seekable so
-        # GCS's built-in retry (DEFAULT_RETRY) can re-read from any confirmed
-        # offset without any extra work from us.
-        tmpf.seek(0)
-        data_blob.upload_from_file(tmpf, content_type=content_type_or_default)
+        # Step 4: server-side copy tmp → final content-addressed path.
+        # No data leaves GCS, no RAM. Then clean up the tmp blob.
+        bucket.copy_blob(tmp_blob, bucket, object_name)
+
+    finally:
+        try:
+            tmp_blob.delete()
+        except Exception:
+            pass
 
     # Build + upload sibling meta.json (small, single put)
     meta = archive_layout.ArchiveMeta(
