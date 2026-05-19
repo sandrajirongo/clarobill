@@ -74,7 +74,7 @@ from mrf_discovery import archive_layout  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ARCHIVE_BUCKET = "mrf-archive"
+DEFAULT_ARCHIVE_BUCKET = "clarobill-mrf-archive-uscentral"
 UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16 MiB; matches existing scraper
 
 

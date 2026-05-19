@@ -74,7 +74,7 @@ GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 # lands in BOTH mrf-staging (legacy parser path, ephemeral) AND mrf-archive
 # (year-partitioned, immutable). Parser reads from staging today; future
 # parser revision reads from archive. Set as env var so tests can override.
-GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "mrf-archive")
+GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "clarobill-mrf-archive-uscentral")
 
 # Concurrent download workers. Two prior calibrations:
 #   2026-04-30 first run: 60 workers OOM'd at 4 GiB.
