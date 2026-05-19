@@ -32,6 +32,7 @@ import gzip
 import io
 import json
 import logging
+import time
 import os
 import re
 import sys
@@ -99,8 +100,9 @@ GCS_UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
 # Separate timeouts for HEAD checks vs file downloads.
 # Hospital web servers are often slow — 30s HEAD timeouts cause many false
 # skips. Downloads can take minutes for large (100-500 MB) MRF files.
-HEAD_TIMEOUT = 60   # seconds — generous for slow hospital DNS + TLS handshake
-GET_TIMEOUT  = 120  # seconds — large files need time to start streaming
+HEAD_TIMEOUT = 60               # seconds
+GET_TIMEOUT  = (60, 300)        # (connect_s, read_s) — 5 min read covers Azure Blob pauses
+MAX_DOWNLOAD_ATTEMPTS = 3       # retry GET on transient failures (timeout, conn reset)
 
 # No file size limit — files stream from hospital servers directly to GCS in
 # 16MB chunks so memory usage is constant regardless of file size.
@@ -319,12 +321,22 @@ def _download_to_gcs(
     url = hospital["mrf_url"]
     label = name or url
 
-    try:
-        resp = session.get(url, timeout=GET_TIMEOUT, stream=True, allow_redirects=True)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        logger.error("[%s] GET failed: %s", label, exc)
-        return None
+    resp = None
+    for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+        try:
+            resp = session.get(url, timeout=GET_TIMEOUT, stream=True, allow_redirects=True)
+            resp.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            if resp is not None:
+                resp.close()
+            if attempt == MAX_DOWNLOAD_ATTEMPTS:
+                logger.error("[%s] GET failed after %d attempts: %s", label, attempt, exc)
+                return None
+            delay = 2 ** attempt
+            logger.warning("[%s] GET attempt %d failed, retrying in %ds: %s", label, attempt, delay, exc)
+            time.sleep(delay)
+    assert resp is not None
 
     content_type = resp.headers.get("Content-Type", "")
     content_encoding = resp.headers.get("Content-Encoding", "").lower()
