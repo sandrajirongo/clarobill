@@ -8,6 +8,7 @@ const PUBLIC_PREFIXES = [
   '/legal/',
   '/blog',
   '/learn',                    // hub + all /learn/* pillars
+  '/answers',                  // answers.clarobill.com GEO pages
   '/compare',                  // T-025 comparison pages
   '/cpt/',                     // T-035 programmatic CPT pages
   '/hospital/',                // T-046 programmatic hospital pages
@@ -30,6 +31,16 @@ const PUBLIC_EXACT = new Set([
 ]);
 
 export async function middleware(request: NextRequest) {
+  // Rewrite answers.clarobill.com/* → /answers/* so the Next.js app router
+  // serves pages from app/answers/ while the URL stays on the subdomain.
+  const host = request.headers.get('host') || '';
+  if (host === 'answers.clarobill.com') {
+    const url = request.nextUrl.clone();
+    const rewritePath = url.pathname === '/' ? '/answers' : `/answers${url.pathname}`;
+    url.pathname = rewritePath;
+    return NextResponse.rewrite(url);
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
