@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
+import { getAuthenticatedUser, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { updateLoopsContact } from '@/lib/loops';
 
 const PatchSchema = z.object({
@@ -42,7 +42,9 @@ export async function PATCH(
     );
   }
 
-  const supabase = await createSupabaseServerClient();
+  // Service client bypasses RLS — safe here because user identity is already
+  // verified via getAuthenticatedUser() and the update is scoped to user.id.
+  const supabase = createSupabaseServiceClient();
   const { error } = await supabase
     .from('user_profiles')
     .update({
