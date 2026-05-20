@@ -50,7 +50,7 @@ gcloud run jobs create clarobill-mrf-scraper \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral" \
   --project "${PROJECT}" \
   2>/dev/null || \
 gcloud run jobs update clarobill-mrf-scraper \
@@ -62,7 +62,7 @@ gcloud run jobs update clarobill-mrf-scraper \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral" \
   --project "${PROJECT}"
 
 echo "==> Creating/updating clarobill-mrf-parser Cloud Run Job..."
@@ -76,7 +76,7 @@ gcloud run jobs create clarobill-mrf-parser \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral" \
   --project "${PROJECT}" \
   2>/dev/null || \
 gcloud run jobs update clarobill-mrf-parser \
@@ -89,7 +89,7 @@ gcloud run jobs update clarobill-mrf-parser \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
-  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive" \
+  --set-env-vars "GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral" \
   --project "${PROJECT}"
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ gcloud run jobs update clarobill-mrf-parser \
 # ---------------------------------------------------------------------------
 DISCOVERY_IMAGE="us-central1-docker.pkg.dev/${PROJECT}/clarobill-pipeline/mrf-discovery:latest"
 DISCOVERY_SA="${PIPELINE_SA}"
-DISCOVERY_ENVVARS="GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=mrf-archive,DISCOVERY_RUN_ID="
+DISCOVERY_ENVVARS="GCP_PROJECT_ID=${PROJECT},BIGQUERY_DATASET=hospital_prices,GCS_MRF_STAGING_BUCKET=mrf-staging,GCS_MRF_ARCHIVE_BUCKET=clarobill-mrf-archive-uscentral,DISCOVERY_RUN_ID="
 
 # Helper: create-or-update a discovery stage job.
 # Usage: _create_or_update_discovery_job <job-name> <start-stage> <stop-stage> <memory>
@@ -151,7 +151,7 @@ spec:
             - name: GCS_MRF_STAGING_BUCKET
               value: mrf-staging
             - name: GCS_MRF_ARCHIVE_BUCKET
-              value: mrf-archive
+              value: clarobill-mrf-archive-uscentral
             - name: DISCOVERY_RUN_ID
               value: ""
             resources:

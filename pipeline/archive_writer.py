@@ -17,7 +17,7 @@ inconsistently:
      same key, same sha256), we skip the upload. Saves bandwidth on weekly
      re-scrapes of unchanged hospital MRFs.
 
-The archive bucket is `mrf-archive` (Standard storage class
+The archive bucket is `clarobill-mrf-archive-uscentral` (Standard storage class
 as of 2026-05-03 — was Coldline, but the parser actively re-reads the
 bucket so retrieval fees + Class B op rates were burning ~$100/day; see
 docs/postmortem/2026-05-03-mrf-pipeline-postmortem.md). Versioning is

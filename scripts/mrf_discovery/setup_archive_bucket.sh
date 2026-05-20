@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Create and configure gs://mrf-archive-clarobill-prd — the immutable historical
+# Create and configure gs://clarobill-mrf-archive-uscentral — the immutable historical
 # archive of every hospital MRF file we have ever downloaded.
 #
 # Bucket name note: GCS bucket names are globally unique across all of GCP, so
-# the unsuffixed `mrf-archive` was already taken. We use the project-ID suffix
-# pattern that GCP itself applies to Cloud Build (`clarobill-prd_cloudbuild`)
-# and Cloud Run sources (`run-sources-clarobill-prd-us-central1`).
+# the unsuffixed `mrf-archive` was already taken. We use the product-prefix
+# convention (`clarobill-mrf-archive-uscentral`) matching the actual bucket
+# created for this project.
 #
 # Layout:
-#   gs://mrf-archive-clarobill-prd/pricing-year={year}/{npi-or-uuid}/{sha256_first16}.{ext}
-#   gs://mrf-archive-clarobill-prd/pricing-year={year}/{npi-or-uuid}/{sha256_first16}.meta.json
+#   gs://clarobill-mrf-archive-uscentral/pricing-year={year}/{npi-or-uuid}/{sha256_first16}.{ext}
+#   gs://clarobill-mrf-archive-uscentral/pricing-year={year}/{npi-or-uuid}/{sha256_first16}.meta.json
 #
 # Why a separate bucket from mrf-staging:
 #   - mrf-staging holds ephemeral working files for the weekly scraper/parser.
@@ -41,7 +41,7 @@
 set -euo pipefail
 
 PROJECT="${GCP_PROJECT_ID:-clarobill-prd}"
-BUCKET="mrf-archive-clarobill-prd"
+BUCKET="clarobill-mrf-archive-uscentral"
 LOCATION="US"             # multi-region — same as BigQuery dataset, no egress cost on cross-service reads
 STORAGE_CLASS="COLDLINE"
 PIPELINE_SA="clarobill-pipeline-sa@${PROJECT}.iam.gserviceaccount.com"

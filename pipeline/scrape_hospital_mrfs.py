@@ -71,7 +71,7 @@ GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "clarobill-prd")
 BQ_DATASET = os.environ.get("BIGQUERY_DATASET", "hospital_prices")
 GCS_BUCKET = os.environ.get("GCS_MRF_STAGING_BUCKET", "mrf-staging")
 # Phase 4 archive bucket (immutable historical). Dual-write: every download
-# lands in BOTH mrf-staging (legacy parser path, ephemeral) AND mrf-archive
+# lands in BOTH mrf-staging (legacy parser path, ephemeral) AND clarobill-mrf-archive-uscentral
 # (year-partitioned, immutable). Parser reads from staging today; future
 # parser revision reads from archive. Set as env var so tests can override.
 GCS_ARCHIVE_BUCKET = os.environ.get("GCS_MRF_ARCHIVE_BUCKET", "clarobill-mrf-archive-uscentral")
@@ -428,7 +428,7 @@ def scrape_hospital(
     leave stale buffers when connections are reused across threads.
 
     Phase 4: dual-writes to BOTH the legacy mrf-staging bucket (for the
-    existing parser) AND the immutable mrf-archive bucket
+    existing parser) AND the immutable clarobill-mrf-archive-uscentral bucket
     (year-partitioned, content-hashed). Returns archive metadata so the
     caller can also insert a row into mrf_archive_index.
 
