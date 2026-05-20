@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { GoogleAnalytics } from '@/components/google-analytics';
+import { Analytics } from '@vercel/analytics/next';
 import { Fraunces, Syne } from 'next/font/google';
 import { Suspense } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -110,6 +111,7 @@ export default async function RootLayout({
     <html lang="en" className={`${fraunces.variable} ${syne.variable}`}>
       <body>
         <GoogleAnalytics />
+        <Analytics />
         <JsonLd schema={[ORGANIZATION_SCHEMA, WEBSITE_SCHEMA]} />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Suspense>
