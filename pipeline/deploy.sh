@@ -36,17 +36,17 @@ gcloud builds submit \
   --project "${PROJECT}" \
   .
 
-# Task timeout: 16 hours (57600s) — applied uniformly across all jobs.
-# All jobs default to 6 tasks. Each task reads CLOUD_RUN_TASK_INDEX and
-# processes its shard (hospitals[index::6]). Parallelism defaults to 0
-# (unlimited) so all 6 tasks run concurrently.
+# Task timeout: 24 hours (86400s) — applied uniformly across all jobs.
+# All jobs default to 12 tasks. Each task reads CLOUD_RUN_TASK_INDEX and
+# processes its shard (hospitals[index::12]). Parallelism defaults to 0
+# (unlimited) so all 12 tasks run concurrently.
 echo "==> Creating/updating clarobill-mrf-scraper Cloud Run Job..."
 gcloud run jobs create clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --tasks 6 \
-  --task-timeout 57600 \
+  --tasks 12 \
+  --task-timeout 86400 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -57,8 +57,8 @@ gcloud run jobs update clarobill-mrf-scraper \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --tasks 6 \
-  --task-timeout 57600 \
+  --tasks 12 \
+  --task-timeout 86400 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -71,8 +71,8 @@ gcloud run jobs create clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --tasks 6 \
-  --task-timeout 57600 \
+  --tasks 12 \
+  --task-timeout 86400 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -84,8 +84,8 @@ gcloud run jobs update clarobill-mrf-parser \
   --command "python,parse_hospital_mrfs.py" \
   --region "${REGION}" \
   --service-account "${PIPELINE_SA}" \
-  --tasks 6 \
-  --task-timeout 57600 \
+  --tasks 12 \
+  --task-timeout 86400 \
   --max-retries 0 \
   --memory 8Gi \
   --cpu 2 \
@@ -125,11 +125,11 @@ metadata:
 spec:
   template:
     spec:
-      taskCount: 6
+      taskCount: 12
       template:
         spec:
           serviceAccountName: ${DISCOVERY_SA}
-          timeoutSeconds: "57600"
+          timeoutSeconds: "86400"
           maxRetries: 0
           containers:
           - image: ${DISCOVERY_IMAGE}
@@ -172,8 +172,8 @@ gcloud run jobs create clarobill-mrf-discovery-annual \
   --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
   --region "${REGION}" \
   --service-account "${DISCOVERY_SA}" \
-  --tasks 6 \
-  --task-timeout 57600 \
+  --tasks 12 \
+  --task-timeout 86400 \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
@@ -186,8 +186,8 @@ gcloud run jobs update clarobill-mrf-discovery-annual \
   --args "/app/scripts/discover_mrf_pipeline.py,--project,${PROJECT}" \
   --region "${REGION}" \
   --service-account "${DISCOVERY_SA}" \
-  --tasks 6 \
-  --task-timeout 57600 \
+  --tasks 12 \
+  --task-timeout 86400 \
   --max-retries 0 \
   --memory 4Gi \
   --cpu 2 \
@@ -293,7 +293,7 @@ echo "    Scraper mid-year:  Aug 15 02:00 UTC"
 echo "    Parser annual:     Feb 15 06:00 UTC"
 echo "    Parser mid-year:   Aug 15 06:00 UTC"
 echo ""
-echo "    Manual trigger (6 tasks by default — all run concurrently):"
+echo "    Manual trigger (12 tasks by default — all run concurrently):"
 echo "      gcloud run jobs execute clarobill-mrf-scraper --region ${REGION}"
 echo "      gcloud run jobs execute clarobill-mrf-parser  --region ${REGION}"
 echo "      gcloud run jobs execute clarobill-mrf-discovery-stage4 \\"
