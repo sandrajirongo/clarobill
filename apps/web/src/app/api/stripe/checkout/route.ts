@@ -2,12 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { stripe, getPriceTier } from '@/lib/stripe';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
-import { isBetaMode } from '@/lib/beta';
 import type { ApiErrorResponse } from '@clarobill/shared';
-
-// Beta mode is read from NEXT_PUBLIC_BETA_MODE via the shared helper so the
-// frontend (paywall CTA, marketing nav, /pricing page) and this checkout
-// route always agree. See apps/web/src/lib/beta.ts for the launch-flip path.
 
 const REFERRAL_DISCOUNT_CENTS = 500; // $5.00 — applies to any paid tier
 
@@ -70,52 +65,6 @@ export async function POST(
 
   const origin = request.headers.get('origin') ?? 'http://localhost:3000';
 
-  // ─── BETA: Stripe is disabled — grant access for free ───────────────────────
-  if (isBetaMode()) {
-    await supabase.from('payments').upsert(
-      {
-        user_id: user.id,
-        bill_id: billId,
-        stripe_session_id: `beta_${billId}`,
-        amount_cents: 0,
-        currency: 'usd',
-        status: 'complete',
-      },
-      { onConflict: 'stripe_session_id' }
-    );
-
-    const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
-    const idToken = await getCloudRunIdToken(engineUrl);
-    // Fire report generation without awaiting — PDF + email can take 30–60s,
-    // which would exceed the Vercel function timeout. Payment is already recorded;
-    // the report will be generated and emailed in the background.
-    // Engine returns 202 immediately (BackgroundTask) so this await completes in < 500ms
-    // and does not risk a Vercel function timeout. void fetch() was unreliable because
-    // Vercel terminated the function when the response was sent, killing the pending request.
-    try {
-      const reportRes = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
-          ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
-        },
-        body: JSON.stringify({ user_email: user.email, user_id: user.id }),
-      });
-      if (!reportRes.ok) {
-        console.error('[beta-checkout] Report generation failed for bill %s, status %d', billId, reportRes.status);
-      }
-    } catch (err: unknown) {
-      console.error('[beta-checkout] Report generation request error for bill %s:', billId, err);
-    }
-
-    return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
-  }
-  // ─── END BETA ────────────────────────────────────────────────────────────────
-
-  // ─── PRODUCTION: Live Stripe checkout ────────────────────────────────────────
-  // Uncomment this block (and set BETA_MODE = false above) when ready for launch.
-  //
   // Free tier: savings ≤ $20 — paywall should not show in this case, but guard here
   // to prevent a $0 Stripe session from being created.
   if (finalAmountCents === 0) {
@@ -133,14 +82,16 @@ export async function POST(
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
   }
 
-  // Guard against double-charging: if a payment already exists for this bill,
-  // return the success URL without creating a second Stripe session.
+  // Guard against double-charging: only match real Stripe sessions (cs_*).
+  // Beta-era synthetic sessions (beta_*, free_*) are intentionally excluded
+  // so users with beta records get routed through real Stripe checkout.
   const { data: existingPayment } = await service
     .from('payments')
     .select('id')
     .eq('bill_id', billId)
     .eq('user_id', user.id)
     .in('status', ['pending', 'complete'])
+    .like('stripe_session_id', 'cs_%')
     .maybeSingle();
   if (existingPayment) {
     return NextResponse.json({ checkoutUrl: `${origin}/dashboard/bills/${billId}?payment=success` });
@@ -193,5 +144,4 @@ export async function POST(
   });
 
   return NextResponse.json({ checkoutUrl: session.url });
-  // ─── END PRODUCTION ───────────────────────────────────────────────────────────
 }
