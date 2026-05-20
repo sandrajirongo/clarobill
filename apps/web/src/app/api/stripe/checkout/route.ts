@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { stripe, getPriceTier } from '@/lib/stripe';
-import { getCloudRunIdToken } from '@/lib/gcp-auth';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 const REFERRAL_DISCOUNT_CENTS = 500; // $5.00 — applies to any paid tier
