@@ -513,3 +513,5 @@ Avoid: paid guest posts, link exchanges, PBNs, comment links, directory submissi
 **Phase 2 (Oct → Dec):** All 50 state pages, first 500 CPT pages, dispute letter tool, case studies, Reddit presence, listicle placements, weekly GEO monitoring cadence.
 
 **Phase 3 (Jan → June 2027):** Annual data report (Month 9), hospital cost tool, Wikipedia (Month 10), Spanish /learn/* expansion, 1,000 hospital pages.
+
+gcloud run jobs update clarobill-mrf-scraper --tasks 12 --task-timeout 86400 --region us-central1 --project clarobill-prd

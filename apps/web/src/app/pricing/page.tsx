@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MarketingNav } from '@/components/marketing-nav';
 import { JsonLd } from '@/components/json-ld';
-import { isBetaMode, BETA_COPY } from '@/lib/beta';
 import { PricingFaq } from './pricing-faq';
 import { TIERS, HOW_STEPS, FAQS } from './pricing-data';
 import s from './pricing.module.css';
@@ -49,22 +48,11 @@ export const metadata: Metadata = {
 };
 
 export default function PricingPage(): JSX.Element {
-  const beta = isBetaMode();
   return (
     <div className={s.shell}>
       <JsonLd schema={PRICING_SCHEMAS} />
 
       <MarketingNav activePath="/pricing" />
-
-      {beta && (
-        <section className={s.betaCallout}>
-          <div className={s.betaCalloutInner}>
-            <span className={s.betaCalloutEyebrow}>{BETA_COPY.pricingCallout.eyebrow}</span>
-            <h2 className={s.betaCalloutTitle}>{BETA_COPY.pricingCallout.title}</h2>
-            <p className={s.betaCalloutBody}>{BETA_COPY.pricingCallout.body}</p>
-          </div>
-        </section>
-      )}
 
       <section className={s.hero}>
         <div className={s.heroInner}>
@@ -84,7 +72,7 @@ export default function PricingPage(): JSX.Element {
           </div>
           <div className={s.heroCtaRow}>
             <Link className={s.btnSage} href="/auth/sign-in">
-              Upload your bill. It&apos;s free.
+              Upload your bill
             </Link>
             <span className={s.heroMicro}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -132,49 +120,30 @@ export default function PricingPage(): JSX.Element {
           </div>
 
           <div className={s.tiersGrid}>
-            {TIERS.map((tier) => {
-              const isPaidTier = tier.price !== 'Free';
-              const showStrikethrough = beta && isPaidTier;
-              return (
-                <div
-                  key={tier.tag}
-                  className={`${s.tierCard} ${showStrikethrough ? s.tierCardBeta : ''}`}
-                >
-                  {showStrikethrough && (
-                    <span className={s.tierBetaBadge}>{BETA_COPY.paywall.badge}</span>
+            {TIERS.map((tier) => (
+              <div key={tier.tag} className={s.tierCard}>
+                <span className={s.rangePill}>
+                  {tier.range} found
+                </span>
+                <div className={s.priceRow}>
+                  <span className={s.price}>{tier.price}</span>
+                  {tier.priceSub && (
+                    <span className={s.priceSub}>{tier.priceSub}</span>
                   )}
-                  <span className={s.rangePill}>
-                    {tier.range} found
-                  </span>
-                  <div className={s.priceRow}>
-                    {showStrikethrough ? (
-                      <>
-                        <span className={s.priceStrike}>{tier.price}</span>
-                        <span className={s.price}>Free</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className={s.price}>{tier.price}</span>
-                        {tier.priceSub && (
-                          <span className={s.priceSub}>{tier.priceSub}</span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <p className={s.tierTag}>{tier.tag}</p>
-                  <p className={s.tierTagline}>{tier.tagline}</p>
-                  <div className={s.keepLine}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    {showStrikethrough ? 'You keep 100% during beta' : tier.keepNote}
-                  </div>
-                  <Link className={s.tierBtn} href="/auth/sign-in">
-                    Upload your bill
-                  </Link>
                 </div>
-              );
-            })}
+                <p className={s.tierTag}>{tier.tag}</p>
+                <p className={s.tierTagline}>{tier.tagline}</p>
+                <div className={s.keepLine}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  {tier.keepNote}
+                </div>
+                <Link className={s.tierBtn} href="/auth/sign-in">
+                  Upload your bill
+                </Link>
+              </div>
+            ))}
           </div>
 
           <p className={s.tiersNote}>
@@ -238,9 +207,9 @@ export default function PricingPage(): JSX.Element {
 
       <section className={s.ctaSection}>
         <h2 className={s.ctaH2}>Your bill deserves a second opinion</h2>
-        <p className={s.ctaP}>Free to analyze. You only pay when we save you money.</p>
+        <p className={s.ctaP}>You only pay when we find real errors worth disputing.</p>
         <Link className={s.btnCtaLime} href="/auth/sign-in">
-          Upload your bill. It&apos;s free.
+          Upload your bill
         </Link>
         <p className={s.ctaNote}>HIPAA-aligned &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card to start</p>
       </section>
