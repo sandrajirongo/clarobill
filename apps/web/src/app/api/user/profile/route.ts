@@ -56,7 +56,9 @@ export async function PATCH(
     );
 
   if (error) {
-    console.error('[user-profile] upsert failed user=%s code=%s msg=%s', user.id, error.code, error.message);
+    console.error('[up-err-code=%s]', error.code);
+    console.error('[up-err-msg=%s]', error.message?.slice(0, 80));
+    console.error('[up-err-hint=%s]', error.hint?.slice(0, 80));
     return NextResponse.json(
       { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
       { status: 500 }
