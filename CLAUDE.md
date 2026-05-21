@@ -2,6 +2,21 @@
 
 ---
 
+## MANDATORY PRE-TASK GATE
+
+**Before calling ANY tool (Bash, Read, Edit, Write, Agent, or any other) for any task, you MUST:**
+
+1. **Identify every file that is obviously related to the task** — API route, UI component, shared types, migrations, tests, server utilities. Name them explicitly in your reasoning.
+2. **Call Read on every one of those files, in sequence.** Do not call Bash. Do not search. Do not grep. Open each file and read it completely.
+3. **Trace the full execution path** from end to end before forming any opinion about the bug or the fix.
+4. **Only after all files are read**, use Bash for verification (running tests, checking git history, confirming env).
+
+**If you skip this gate and call Bash before reading the known-relevant files, you are violating the most important rule in this file. Stop immediately and start over from step 1.**
+
+This gate is not a suggestion. It is not covered by memory. It applies on every task, every session, without exception.
+
+---
+
 ## PROJECT IDENTITY
 
 **Product:** ClaroBill — an AI-powered web app that analyzes medical bills for errors, overcharges, and coding mistakes, then generates plain-English reports and dispute letters.
