@@ -463,7 +463,11 @@ async def _run_analysis_pipeline(
             "report_url": None,
         }, on_conflict="bill_id").execute()
 
-        supabase.table("bills").update({"status": BillStatus.COMPLETE}).eq("id", bill_id).execute()
+        supabase.table("bills").update({
+            "status": BillStatus.COMPLETE,
+            "error_count": len(billing_errors),
+            "total_potential_savings": float(total_savings),
+        }).eq("id", bill_id).execute()
         logger.info("Analysis complete for bill %s — %d errors found", bill_id, len(billing_errors))
         posthog_client.capture(
             distinct_id=user_id,
