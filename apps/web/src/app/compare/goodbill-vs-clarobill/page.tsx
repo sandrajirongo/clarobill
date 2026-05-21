@@ -93,7 +93,7 @@ export default function GoodbillVsClarobill(): JSX.Element {
             <tr><td>Insurer negotiation</td><td className={c.win}>Yes</td><td className={c.lose}>No</td></tr>
             <tr><td>Free to analyze</td><td className={c.lose}>No — contingency applies</td><td className={c.win}>Yes — analysis always free</td></tr>
             <tr><td>Works on bills under $5,000</td><td className={c.neutral}>Yes, but fee may be high</td><td className={c.win}>Yes — flat fee scales well</td></tr>
-            <tr><td>HIPAA-aligned data handling</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
+            <tr><td>HIPAA-compliant data handling</td><td className={c.win}>Yes</td><td className={c.win}>Yes</td></tr>
           </tbody>
         </table>
 

@@ -56,7 +56,7 @@ export default function LandingPage(): JSX.Element {
                 <rect x="3" y="11" width="18" height="11" rx="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
-              HIPAA-aligned · You only pay if we save you money
+              HIPAA-compliant · You only pay if we save you money
             </span>
             <p className={s.heroPlans}>
               Every major US insurance plan, plus Medicare, Medicaid, TRICARE, and self-pay or uninsured patients.
@@ -74,7 +74,7 @@ export default function LandingPage(): JSX.Element {
               <rect x="3" y="11" width="18" height="11" rx="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            HIPAA-aligned
+            HIPAA-compliant
           </span>
         </div>
         <div className={s.carouselTrackWrap}>
@@ -197,7 +197,7 @@ export default function LandingPage(): JSX.Element {
         <Link className={s.btnCta} href="/auth/sign-in">
           Upload your bill. It&apos;s free.
         </Link>
-        <p className={s.ctaNote}>HIPAA-aligned &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card required</p>
+        <p className={s.ctaNote}>HIPAA-compliant &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card required</p>
       </section>
 
       {/* FOOTER */}

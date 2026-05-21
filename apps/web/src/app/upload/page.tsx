@@ -46,7 +46,7 @@ const ACCEPTED_FORMATS = [
 
 const TRUST_ITEMS = [
   'Encrypted in transit and at rest',
-  'HIPAA-aligned data handling',
+  'HIPAA-compliant data handling',
   'Never used to train AI models',
   'Never sold to third parties',
   'Delete your data at any time',
@@ -70,7 +70,7 @@ export default function UploadPage(): JSX.Element {
             Upload my bill. It&apos;s free.
           </Link>
           <p className={s.trustLine}>
-            HIPAA-aligned &nbsp;&middot;&nbsp; Encrypted &nbsp;&middot;&nbsp; No auto-charges
+            HIPAA-compliant &nbsp;&middot;&nbsp; Encrypted &nbsp;&middot;&nbsp; No auto-charges
           </p>
         </div>
       </section>
@@ -128,7 +128,7 @@ export default function UploadPage(): JSX.Element {
         <h2 className={s.ctaH2}>Ready to check your bill?</h2>
         <Link href="/auth/sign-in" className={s.ctaBtn}>Upload my bill. It&apos;s free.</Link>
         <p className={s.trustLine}>
-          No credit card &nbsp;&middot;&nbsp; HIPAA-aligned &nbsp;&middot;&nbsp; Encrypted
+          No credit card &nbsp;&middot;&nbsp; HIPAA-compliant &nbsp;&middot;&nbsp; Encrypted
         </p>
       </section>
 
