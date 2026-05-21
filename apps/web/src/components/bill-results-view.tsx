@@ -43,7 +43,10 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
         const { status } = await parseJsonResponse(res, StatusResponseSchema);
         if (status === 'complete' || status === 'failed') {
           clearInterval(interval);
-          if (!cancelled) router.refresh(); // re-run Server Component to get results
+          if (!cancelled) {
+            if (status === 'complete') Analytics.analysisCompleted(bill.id);
+            router.refresh();
+          }
         }
       } catch { /* network blip — keep polling */ }
     }, 2500);

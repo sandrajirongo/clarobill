@@ -9,6 +9,9 @@ export const Analytics = {
   analysisStarted: (billId: string) =>
     posthog.capture('analysis_started', { bill_id: billId }),
 
+  analysisCompleted: (billId: string) =>
+    posthog.capture('analysis_completed', { bill_id: billId }),
+
   checkoutStarted: (billId: string) =>
     posthog.capture('checkout_started', { bill_id: billId }),
 

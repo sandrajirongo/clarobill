@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { getCloudRunIdToken } from '@/lib/gcp-auth';
+import { captureServerEvent } from '@/lib/analytics-server';
 import type { ApiErrorResponse } from '@clarobill/shared';
 
 interface VerifyBody {
@@ -156,5 +157,6 @@ export async function POST(
     );
   }
 
+  void captureServerEvent(user.id, 'analysis_started', { bill_id: billId });
   return NextResponse.json({ accepted: true });
 }

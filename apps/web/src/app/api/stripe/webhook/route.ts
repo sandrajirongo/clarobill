@@ -78,6 +78,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     .eq('stripe_session_id', session.id);
 
   // Trigger PDF report generation and email delivery via the engine
+  void captureServerEvent(userId, 'report_generation_requested', { bill_id: billId });
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
   const idToken = await getCloudRunIdToken(engineUrl);
   const reportResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/report`, {
@@ -91,10 +92,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   });
 
   if (!reportResponse.ok) {
-    // Log but don't throw — payment is confirmed, report generation can be retried
     console.error('[webhook] Report generation failed for bill %s, status %d', billId, reportResponse.status);
   } else {
     console.info('[webhook] Report generated and emailed for bill %s', billId);
+    void captureServerEvent(userId, 'report_generated', { bill_id: billId });
   }
 
   // Fetch user email (needed for Loops transactional email)
