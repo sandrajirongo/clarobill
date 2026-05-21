@@ -42,20 +42,19 @@ export async function PATCH(
     );
   }
 
-  // Use an RPC instead of a direct REST update. PostgREST caches column schemas
-  // at startup and does not automatically reload when columns are added via
-  // ALTER TABLE — the RPC bypasses that cache entirely.
   const supabase = createSupabaseServiceClient();
-  const { error } = await supabase.rpc('update_user_profile_name', {
-    p_user_id:    user.id,
-    p_first_name: parsed.data.first_name,
-    p_last_name:  parsed.data.last_name,
-  });
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({
+      first_name: parsed.data.first_name,
+      last_name: parsed.data.last_name,
+    })
+    .eq('id', user.id);
 
   if (error) {
-    console.error('[user-profile] RPC failed for user %s: %s', user.id, error.message);
+    console.error('[user-profile] update failed user=%s code=%s msg=%s', user.id, error.code, error.message);
     return NextResponse.json(
-      { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
+      { error: { code: 'DB_ERROR', detail: error.message } },
       { status: 500 }
     );
   }
