@@ -52,7 +52,7 @@ export async function PATCH(
     .eq('id', user.id);
 
   if (error) {
-    console.error('[profile PATCH] upsert error', { code: error.code, message: error.message, hint: error.hint, userId: user.id });
+    console.error('[profile PATCH] update error', { code: error.code, message: error.message, hint: error.hint, userId: user.id });
     return NextResponse.json(
       { error: { code: 'DB_ERROR', detail: 'Unable to save profile. Please try again.' } },
       { status: 500 }
