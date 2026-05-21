@@ -42,30 +42,24 @@ export async function PATCH(
     );
   }
 
-  // Service client bypasses RLS — safe here because user identity is already
-  // verified via getAuthenticatedUser() and the update is scoped to user.id.
+  // Use an RPC instead of a direct REST update. PostgREST caches column schemas
+  // at startup and does not automatically reload when columns are added via
+  // ALTER TABLE — the RPC bypasses that cache entirely.
   const supabase = createSupabaseServiceClient();
-  const { error, data: updatedRows } = await supabase
-    .from('user_profiles')
-    .update({
-      first_name: parsed.data.first_name,
-      last_name: parsed.data.last_name,
-    })
-    .eq('id', user.id)
-    .select('id');
-
-  console.info('[user-profile] update user=%s rows_updated=%d error=%s',
-    user.id, updatedRows?.length ?? 0, error?.message ?? 'none');
+  const { error } = await supabase.rpc('update_user_profile_name', {
+    p_user_id:    user.id,
+    p_first_name: parsed.data.first_name,
+    p_last_name:  parsed.data.last_name,
+  });
 
   if (error) {
-    console.error('[user-profile] Update failed for user %s code=%s msg=%s', user.id, error.code, error.message);
+    console.error('[user-profile] RPC failed for user %s: %s', user.id, error.message);
     return NextResponse.json(
-      { error: { code: 'DB_ERROR', detail: error.message, pg_code: error.code } },
+      { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
       { status: 500 }
     );
   }
 
-  // Keep Loops contact properties in sync — Supabase owns identity, Loops owns email workflows.
   if (user.email) {
     const loopsProps: Record<string, string> = {};
     if (parsed.data.first_name) loopsProps['firstName'] = parsed.data.first_name;
