@@ -56,11 +56,8 @@ export async function PATCH(
     );
 
   if (error) {
-    console.error('[up-err-code=%s]', error.code);
-    console.error('[up-err-msg=%s]', error.message?.slice(0, 80));
-    console.error('[up-err-hint=%s]', error.hint?.slice(0, 80));
     return NextResponse.json(
-      { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
+      { error: { code: error.code, detail: error.message, hint: error.hint } },
       { status: 500 }
     );
   }
