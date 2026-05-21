@@ -45,13 +45,17 @@ export async function PATCH(
   // Service client bypasses RLS — safe here because user identity is already
   // verified via getAuthenticatedUser() and the update is scoped to user.id.
   const supabase = createSupabaseServiceClient();
-  const { error } = await supabase
+  const { error, data: updatedRows } = await supabase
     .from('user_profiles')
     .update({
       first_name: parsed.data.first_name,
       last_name: parsed.data.last_name,
     })
-    .eq('id', user.id);
+    .eq('id', user.id)
+    .select('id');
+
+  console.info('[user-profile] update user=%s rows_updated=%d error=%s',
+    user.id, updatedRows?.length ?? 0, error?.message ?? 'none');
 
   if (error) {
     console.error('[user-profile] Update failed for user %s: %s', user.id, error.message);
