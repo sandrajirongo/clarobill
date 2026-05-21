@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getAuthenticatedUser, createSupabaseServiceClient } from '@/lib/supabase/server';
+import { getAuthenticatedUser, createSupabaseServerClient } from '@/lib/supabase/server';
 import { updateLoopsContact } from '@/lib/loops';
 
 const PatchSchema = z.object({
@@ -42,18 +42,14 @@ export async function PATCH(
     );
   }
 
-  const supabase = createSupabaseServiceClient();
+  const supabase = await createSupabaseServerClient();
   const { error } = await supabase
     .from('user_profiles')
-    .upsert(
-      {
-        id: user.id,
-        email: user.email ?? '',
-        first_name: parsed.data.first_name,
-        last_name: parsed.data.last_name,
-      },
-      { onConflict: 'id' }
-    );
+    .update({
+      first_name: parsed.data.first_name,
+      last_name: parsed.data.last_name,
+    })
+    .eq('id', user.id);
 
   if (error) {
     console.error('[profile PATCH] upsert error', { code: error.code, message: error.message, hint: error.hint, userId: user.id });
