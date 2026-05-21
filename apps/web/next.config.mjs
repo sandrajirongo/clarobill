@@ -5,6 +5,10 @@ const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // posthog-js minifies ternary+float as `?.4` (e.g. `isNaN(d)?.4:d`) which
+  // some parsers misread as optional chaining. Recompiling through SWC emits
+  // the float as `0.4`, making the ternary unambiguous for all parsers.
+  transpilePackages: ['posthog-js'],
   async redirects() {
     return [
       {
