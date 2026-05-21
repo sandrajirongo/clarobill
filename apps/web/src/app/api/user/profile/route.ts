@@ -45,16 +45,20 @@ export async function PATCH(
   const supabase = createSupabaseServiceClient();
   const { error } = await supabase
     .from('user_profiles')
-    .update({
-      first_name: parsed.data.first_name,
-      last_name: parsed.data.last_name,
-    })
-    .eq('id', user.id);
+    .upsert(
+      {
+        id: user.id,
+        email: user.email ?? '',
+        first_name: parsed.data.first_name,
+        last_name: parsed.data.last_name,
+      },
+      { onConflict: 'id' }
+    );
 
   if (error) {
-    console.error('[user-profile] update failed user=%s code=%s msg=%s', user.id, error.code, error.message);
+    console.error('[user-profile] upsert failed user=%s code=%s msg=%s', user.id, error.code, error.message);
     return NextResponse.json(
-      { error: { code: 'DB_ERROR', detail: error.message } },
+      { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
       { status: 500 }
     );
   }
