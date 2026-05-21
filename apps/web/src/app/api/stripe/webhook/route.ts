@@ -166,6 +166,11 @@ async function settleReferral(referralId: string, referrerUserId: string): Promi
     p_amount: REFERRAL_REWARD_CENTS,
   });
 
+  void captureServerEvent(referrerUserId, 'referral_converted', {
+    referral_id: referralId,
+    credit_cents: REFERRAL_REWARD_CENTS,
+  });
+
   // Look up the referrer's email and notify them of their new credit
   const { data: { user: referrer } } = await service.auth.admin.getUserById(referrerUserId);
   if (referrer?.email) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { captureServerEvent } from '@/lib/analytics-server';
 
 // GET /ref/[code]
 //
@@ -22,6 +23,10 @@ export async function GET(
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
+  });
+
+  void captureServerEvent('anonymous', 'referral_link_visited', {
+    $process_person_profile: false,
   });
 
   return NextResponse.redirect(new URL('/auth/sign-in', request.url));

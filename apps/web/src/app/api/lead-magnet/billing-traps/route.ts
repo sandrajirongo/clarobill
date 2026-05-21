@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { captureServerEvent } from '@/lib/analytics-server';
 
 const LOOPS_API = 'https://app.loops.so/api/v1';
 const GUIDE_URL = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.clarobill.com'}/billing-traps-guide/guide`;
@@ -79,6 +80,11 @@ export async function POST(
       { status: 502 }
     );
   }
+
+  void captureServerEvent('anonymous', 'lead_magnet_requested', {
+    $process_person_profile: false,
+    guide: 'billing_traps',
+  });
 
   return NextResponse.json({ ok: true });
 }

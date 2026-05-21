@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase/server';
 import { stripe, getPriceTier } from '@/lib/stripe';
 import type { ApiErrorResponse } from '@clarobill/shared';
+import { captureServerEvent } from '@/lib/analytics-server';
 
 const REFERRAL_DISCOUNT_CENTS = 500; // $5.00 — applies to any paid tier
 
@@ -140,6 +141,13 @@ export async function POST(
     amount_cents: finalAmountCents,
     currency: 'usd',
     status: 'pending',
+  });
+
+  void captureServerEvent(user.id, 'checkout_session_created', {
+    bill_id: billId,
+    amount_cents: finalAmountCents,
+    tier_label: tier.label,
+    has_referral_discount: discountCents > 0,
   });
 
   return NextResponse.json({ checkoutUrl: session.url });

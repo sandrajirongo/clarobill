@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseServiceClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { sendLoopsEvent } from '@/lib/loops';
 import type { BillUploadResponse, ApiErrorResponse } from '@clarobill/shared';
+import { captureServerEvent } from '@/lib/analytics-server';
 
 const STORAGE_BUCKET = 'bills';
 
@@ -117,6 +118,12 @@ export async function POST(request: Request): Promise<NextResponse<BillUploadRes
   if (user.email) {
     void sendLoopsEvent(user.email, 'bill_uploaded', { bill_id: bill.id });
   }
+
+  void captureServerEvent(user.id, 'bill_upload_initiated', {
+    bill_id: bill.id,
+    mime_type: mimeType,
+    file_size_bytes: fileSize,
+  });
 
   return NextResponse.json(
     { billId: bill.id, uploadUrl: signedUpload.signedUrl } satisfies BillUploadResponse,
