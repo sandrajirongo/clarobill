@@ -90,6 +90,6 @@ export const FAQS = [
   },
   {
     q: 'Is my bill data kept private?',
-    a: 'Yes. Uploads are encrypted in transit and at rest. We retain your bill only as long as your account is active; you can delete it at any time. We never sell or share your data, and we are HIPAA-compliant in our handling of protected health information.',
+    a: 'Yes. Uploads are encrypted in transit and at rest. We retain your bill only as long as your account is active; you can delete it at any time. We never sell or share your data.',
   },
 ] as const;

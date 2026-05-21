@@ -35,7 +35,7 @@ const FAQS = [
   },
   {
     q: 'Is my information safe with ClaroBill?',
-    a: 'Yes. Uploads are encrypted in transit and at rest. Access is restricted to the systems that produce your report and is logged for audit. We are HIPAA-compliant in our handling of protected health information. We retain your bill only as long as your account is active; you can delete it at any time. We never sell or share your data.',
+    a: 'Yes. Uploads are encrypted in transit and at rest. Access is restricted to the systems that produce your report and is logged for audit. We retain your bill only as long as your account is active; you can delete it at any time. We never sell or share your data.',
   },
 ] as const;
 

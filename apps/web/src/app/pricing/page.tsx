@@ -79,7 +79,7 @@ export default function PricingPage(): JSX.Element {
                 <rect x="3" y="11" width="18" height="11" rx="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
-              HIPAA-compliant · No credit card needed to start
+              No credit card needed to start
             </span>
           </div>
         </div>
@@ -211,7 +211,7 @@ export default function PricingPage(): JSX.Element {
         <Link className={s.btnCtaLime} href="/auth/sign-in">
           Upload your bill
         </Link>
-        <p className={s.ctaNote}>HIPAA-compliant &nbsp;·&nbsp; Encrypted &nbsp;·&nbsp; No credit card to start</p>
+        <p className={s.ctaNote}>Encrypted &nbsp;·&nbsp; No credit card to start</p>
       </section>
 
       <footer className={s.footer}>
