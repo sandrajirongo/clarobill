@@ -58,9 +58,9 @@ export async function PATCH(
     user.id, updatedRows?.length ?? 0, error?.message ?? 'none');
 
   if (error) {
-    console.error('[user-profile] Update failed for user %s: %s', user.id, error.message);
+    console.error('[user-profile] Update failed for user %s code=%s msg=%s', user.id, error.code, error.message);
     return NextResponse.json(
-      { error: { code: 'DB_ERROR', detail: 'Could not save profile. Please try again.' } },
+      { error: { code: 'DB_ERROR', detail: error.message, pg_code: error.code } },
       { status: 500 }
     );
   }
