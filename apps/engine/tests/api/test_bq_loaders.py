@@ -87,10 +87,10 @@ class TestQueryChargesByNpi:
         bq = _bq_returning([[{"code": "99214", "gross_charge": 395.00}]])
         result = _query_charges_by_npi(bq, "proj.dataset", ["99214"], "1234567893", 2025)
         assert result == {"99214": Decimal("395.00")}
-        # Verify the query uses hospital_charges_latest and references @service_year.
+        # Verify the query uses hospital_charges and references @service_year.
         # (bigquery is fully mocked in tests so we inspect the query string directly.)
         query_str = bq.query.call_args.args[0]
-        assert "hospital_charges_latest" in query_str
+        assert "hospital_charges" in query_str
         assert "@service_year" in query_str
 
     def test_returns_empty_when_no_prior_year_data(self) -> None:
@@ -448,12 +448,12 @@ class TestLoadNegotiatedCeiling:
         assert result == {}
 
     def test_uses_year_aware_query(self) -> None:
-        """Ceiling query must target hospital_charges_latest with @service_year filter."""
+        """Ceiling query must target hospital_charges with @service_year filter."""
         bq = _bq_returning([[{"code": "99214", "ceiling_rate": 410.00}]])
         _load_negotiated_ceiling(
             bq, ["99214"], hospital_npi="1234567893", hospital_name=None,
             service_year=2024,
         )
         query_str = bq.query.call_args.args[0]
-        assert "hospital_charges_latest" in query_str
+        assert "hospital_charges" in query_str
         assert "@service_year" in query_str

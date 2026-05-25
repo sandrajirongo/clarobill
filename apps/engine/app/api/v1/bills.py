@@ -1273,7 +1273,7 @@ def _load_hospital_charges(
 ) -> dict[str, Decimal]:
     """Load the hospital's published gross charges for the CPT codes on the bill.
 
-    Queries hospital_charges_latest using the closest pricing year <= service_year:
+    Queries hospital_charges using the closest pricing year <= service_year:
       1. NPI match (exact) — preferred; always unambiguous.
       2. Name match (progressive) — fallback when NPI unavailable. Uses state and
          zip (extracted from OCR bill header) to disambiguate same-name hospitals
@@ -1309,7 +1309,7 @@ def _query_charges_by_npi(
     hospital_npi: str,
     service_year: int,
 ) -> dict[str, Decimal]:
-    """Query hospital_charges_latest for a specific NPI, returning gross charge per CPT code.
+    """Query hospital_charges for a specific NPI, returning gross charge per CPT code.
 
     Selects the closest pricing year <= service_year via a window function, then takes
     MAX(gross_charge) per code across all settings/payer rows for that year.
@@ -1323,7 +1323,7 @@ def _query_charges_by_npi(
         FROM (
           SELECT code, gross_charge,
             DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
-          FROM `{dataset}.hospital_charges_latest`
+          FROM `{dataset}.hospital_charges`
           WHERE hospital_npi = @npi
             AND code IN UNNEST(@codes)
             AND pricing_effective_year <= @service_year
@@ -1582,7 +1582,7 @@ def _load_negotiated_charges(
 ) -> dict[str, Decimal]:
     """Load the insurer-specific contracted rate for each CPT code on this bill.
 
-    Queries hospital_charges_latest with the closest pricing year <= service_year.
+    Queries hospital_charges with the closest pricing year <= service_year.
     Returns MAX(negotiated_charge) per code when multiple rows match (e.g. different
     settings or negotiated_type values for the same year).
 
@@ -1629,7 +1629,7 @@ def _load_negotiated_charges(
             FROM (
               SELECT code, negotiated_charge,
                 DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
-              FROM `{dataset}.hospital_charges_latest`
+              FROM `{dataset}.hospital_charges`
               WHERE hospital_npi = @npi
                 AND payer_name IN UNNEST(@payer_aliases)
                 AND CONTAINS_SUBSTR(plan_name, @plan_substr)
@@ -1658,7 +1658,7 @@ def _load_negotiated_charges(
             FROM (
               SELECT code, negotiated_charge,
                 DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
-              FROM `{dataset}.hospital_charges_latest`
+              FROM `{dataset}.hospital_charges`
               WHERE hospital_npi = @npi
                 AND CONTAINS_SUBSTR(payer_name, @payer_substr)
                 AND CONTAINS_SUBSTR(plan_name, @plan_substr)
@@ -1751,7 +1751,7 @@ def _load_negotiated_ceiling(
         FROM (
           SELECT code, max_negotiated,
             DENSE_RANK() OVER (PARTITION BY code ORDER BY pricing_effective_year DESC) AS yr_rank
-          FROM `{dataset}.hospital_charges_latest`
+          FROM `{dataset}.hospital_charges`
           WHERE hospital_npi = @npi
             AND code IN UNNEST(@codes)
             AND pricing_effective_year <= @service_year
