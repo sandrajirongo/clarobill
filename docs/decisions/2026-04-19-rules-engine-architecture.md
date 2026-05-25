@@ -2,6 +2,8 @@
 
 **Date:** 2026-04-19  
 **Updated:** 2026-04-20 — Added MUE detection, insurance-type-aware NCCI loading, date-aware NCCI lookups for historical bills  
+**Updated:** 2026-04-29 — Added REDUNDANT_CLINICAL_PAIR (rule 13)  
+**Updated:** 2026-05-25 — Fixed rule numbering (9→11→10 corrected to 9–13); added NEGOTIATED_CEILING_EXCEEDED (rule 11)  
 **Status:** Active
 
 ---
@@ -192,7 +194,40 @@ Used for rules where the benchmark is the exact agreed or published price:
 
 ---
 
-### 11. MUE_EXCEEDED
+### 10. NEGOTIATED_RATE_EXCEEDED
+
+**What:** Flags charges exceeding 1.1× the insurer-specific contracted rate for this hospital.
+
+**Why it fires:** The negotiated rate is the exact dollar amount the patient's insurer has contractually agreed to pay this hospital for each procedure. In-network providers cannot bill above their contracted rate. Billing above it is either an error or improper balance-billing.
+
+**This is the strongest benchmark in the engine.** When available, it should be considered definitive evidence of a billing error.
+
+**Data source:** Hospital MRFs, filtered to `payer_name` + `plan_name` for the patient's plan via the `payer_name_aliases` canonical mapping.
+
+**Severity:** Critical
+
+---
+
+### 11. NEGOTIATED_CEILING_EXCEEDED
+
+**What:** Flags charges exceeding 1.1× the highest negotiated rate any insurer pays at this hospital for this code.
+
+**Why it fires:** The `max_negotiated` ceiling is extracted from the hospital's MRF and represents the hospital-wide maximum across all payers. If the billed charge exceeds even the highest any insurer pays, it is almost certainly an error.
+
+**Relationship to NEGOTIATED_RATE_EXCEEDED:** These two rules form a tiered fallback:
+1. Exact payer/plan rate available → NEGOTIATED_RATE_EXCEEDED fires (critical — definitive)
+2. Exact rate unavailable, but ceiling fires → NEGOTIATED_CEILING_EXCEEDED fires (warning — hedged)
+3. Neither fires → PRICE_OUTLIER is the fallback benchmark (weakest signal)
+
+NEGOTIATED_CEILING_EXCEEDED is suppressed for any code where NEGOTIATED_RATE_EXCEEDED already fired.
+
+**Data source:** `hospital_charges` BigQuery table, `max_negotiated` column.
+
+**Severity:** Warning (cross-payer, not patient-specific; report language should hedge)
+
+---
+
+### 12. MUE_EXCEEDED
 
 **What:** Flags line items where the billed quantity exceeds the CMS Medically Unlikely Edit (MUE) limit for that code.
 
@@ -214,17 +249,19 @@ Used for rules where the benchmark is the exact agreed or published price:
 
 ---
 
-### 10. NEGOTIATED_RATE_EXCEEDED
+### 13. REDUNDANT_CLINICAL_PAIR
 
-**What:** Flags charges exceeding 1.1× the insurer-specific contracted rate for this hospital.
+**What:** Flags pairs of CPT codes that are clinically redundant when billed for the same encounter but are not formal CMS NCCI PTP edits.
 
-**Why it fires:** The negotiated rate is the exact dollar amount the patient's insurer has contractually agreed to pay this hospital for each procedure. In-network providers cannot bill above their contracted rate. Billing above it is either an error or improper balance-billing.
+**Why it fires:** Commercial payer medical-policy documents routinely deny procedure pairs that CMS has not formally bundled. Without this rule, the engine would miss these findings entirely. The rule uses a hand-curated allowlist (`apps/engine/app/data/redundant_clinical_pairs.py`) rather than a data-driven source, because no machine-readable cross-payer policy database exists.
 
-**This is the strongest benchmark in the engine.** When available, it should be considered definitive evidence of a billing error.
+**Relationship to NCCI_UNBUNDLING:** If a pair on this list also appears as a formal NCCI edit on the specific bill, NCCI wins — REDUNDANT_CLINICAL_PAIR stays silent for that pair. This prevents double-reporting when CMS adopts a previously-payer-policy-only edit.
 
-**Data source:** Hospital MRFs, filtered to `payer_name` + `plan_name` for the patient's plan.
+**Curated categories (as of 2026-04-29):** OB ultrasound pairs (76801/76805/76815 ↔ 76817, 76817 ↔ 76819), lab panels (86900 ↔ 86901, 82565 ↔ 82550), E&M with routine venipuncture (36415 ↔ 99211 without modifier 25).
 
-**Severity:** Critical
+**Data source:** `apps/engine/app/data/redundant_clinical_pairs.py` (hand-curated, version-controlled).
+
+**Severity:** Warning (payer policy varies; report language should recommend requesting justification, not demanding a refund)
 
 ---
 

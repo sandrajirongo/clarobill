@@ -14,28 +14,31 @@ anon key honors RLS so the frontend can never read another user's data.
 
 | Table | Primary purpose | Key columns | Constraints worth knowing |
 |---|---|---|---|
-| `bills` | One row per uploaded bill | `id`, `user_id`, `file_path` (unique), `status`, OCR-extracted `hospital_*` fields, confirmed `payer_name`, `plan_name`, `profile_member_id` | `mime_type` ∈ {pdf, jpeg, png}; `status` ∈ {uploading, ocr_processing, analyzing, complete, failed}; `file_size` ≤ 20 MB |
+| `bills` | One row per uploaded bill | `id`, `user_id`, `file_path` (unique), `status`, OCR-extracted `hospital_*` fields, confirmed `payer_name`, `plan_name`, `profile_member_id`, `error_count`, `total_potential_savings` | `mime_type` ∈ {pdf, jpeg, png}; `status` ∈ {uploading, ocr_processing, analyzing, complete, failed}; `file_size` ≤ 20 MB |
 | `line_items` | Parsed CPT codes + charges per bill | `bill_id`, `cpt_code`, `service_date`, `quantity`, `unit_charge`, `total_charge`, `modifier`, `diagnosis_pointers` | `quantity > 0`; charges `≥ 0`; FK cascade-deletes on bill delete |
-| `analysis_results` | One-to-one with `bills`. Rules engine output + AI summary + report URLs | `bill_id` (unique), `errors` (JSONB camelCase BillingError[]), `total_charges`, `estimated_fair_value`, `total_potential_savings`, `ai_summary`, `report_url`, `dispute_letter_url` | `bill_id` UNIQUE — re-analyze hits this constraint and currently fails (Phase-8 backlog: S6) |
-| `payments` | Stripe payment records | `user_id`, `bill_id`, `stripe_session_id` (unique), `amount_cents`, `status` | `amount_cents > 0`; `status` ∈ {pending, complete, failed, refunded} |
+| `analysis_results` | One-to-one with `bills`. Rules engine output + AI summary + report URLs | `bill_id` (unique), `errors` (JSONB camelCase BillingError[]), `total_charges`, `estimated_fair_value`, `total_potential_savings`, `ai_summary`, `report_url`, `dispute_letter_url` | `bill_id` UNIQUE — re-analyze uses upsert (`ON CONFLICT DO UPDATE`) so re-running is safe |
+| `payments` | Stripe payment records | `user_id`, `bill_id`, `stripe_session_id` (unique), `amount_cents`, `status` | `amount_cents >= 0`; `status` ∈ {pending, complete, failed, refunded} |
 | `profile_members` | Insured members per account (account holder + dependents) | `user_id`, `full_name`, `date_of_birth`, `state`, `county`, `zip_code`, `is_primary` | One `is_primary=true` per `user_id` (partial unique index); `state` is uppercase CMS state name |
 | `insurance_plans` | One member can hold N plans | `profile_member_id`, `payer_name`, `plan_name`, `member_id`, `plan_type`, `is_primary_plan` | `plan_type` ∈ {commercial, medicare, medicaid, tricare, self_pay} |
-| `referral_codes` | Per-user referral code | `user_id` (unique), `code` (unique) | Each user gets exactly one |
-| `referrals` | Tracks who referred whom | `referrer_user_id`, `referred_user_id`, `referral_code_id` | One `referred_user_id` ever |
-| `deleted_bill_files` | Tombstone for retention/GDPR delete | `user_id`, `file_path`, `deleted_at` | Used by retention purge |
+| `user_profiles` | Account-holder identity (name + email sync) | `id` (FK → auth.users), `email`, `first_name`, `last_name`, `created_at`, `updated_at` | Auto-created by `on_auth_user_created` trigger on signup; email synced by `on_auth_user_email_updated` trigger. Used by `PATCH /api/user/profile` and Stripe webhook email lookup. |
+| `referral_codes` | Per-user referral code | `user_id` (unique), `code` (unique), `credits` | Each user gets exactly one code on signup |
+| `referrals` | Tracks who referred whom | `referrer_user_id`, `referred_user_id`, `referral_code_id`, `status` | `status` ∈ {pending, complete}; one `referred_user_id` ever; settled to `complete` in Stripe webhook |
+| `deleted_bill_files` | Tombstone for retention/GDPR delete | `user_id`, `file_path`, `deleted_at` | Used by retention purge job |
 
 #### RLS policy shape
 
 Every user-scoped table has the same logical policy:
-- Direct-user tables (`bills`, `payments`, `profile_members`): `auth.uid() = user_id`
+- Direct-user tables (`bills`, `payments`, `profile_members`, `user_profiles`, `referral_codes`): `auth.uid() = user_id` (or `= id` for `user_profiles`)
 - Indirect tables (`line_items`, `analysis_results`, `insurance_plans`): `EXISTS` join through the parent that owns `user_id`
+- `referrals`: SELECT only for participants (`referrer_user_id = auth.uid() OR referred_user_id = auth.uid()`); writes via service role only
 
 Reference tables are public-readable, never user-scoped.
 
-### Reference tables (public read-only via RLS)
+### Reference tables (service-role access only)
 
 These are bulk-loaded from CMS data via `scripts/load_*.py`. The engine reads
-them through the service-role key during analysis.
+them through the service-role key during analysis. RLS is enabled on all of
+them with no policies — deny by default for all non-service-role requests.
 
 | Table | Purpose |
 |---|---|
@@ -48,13 +51,16 @@ them through the service-role key during analysis.
 | `cms_ambulance_rates` | Ambulance fee schedule per HCPC + locality + year |
 | `cms_ambulance_zip_locality` | ZIP → ambulance locality + rural indicator |
 | `cms_hcpcs_codes` | HCPCS Level II metadata (coverage_code, pricing_indicator, termination_date) |
-| `medicare_fee_schedule` | Legacy single-table fee schedule (superseded by `cms_pfs_indicators` + computed rates) |
 | `ncci_edit_pairs` | NCCI Procedure-to-Procedure unbundling pairs, by service_type + payer_type + effective_date |
-| `ncci_mue_limits` | Medically Unlikely Edit thresholds per HCPC |
+| `ncci_mue_limits` | Medically Unlikely Edit thresholds per HCPC, by service_type + payer_type + effective_date |
 
 ### Update triggers
 
 Tables with `updated_at` use a generic `set_updated_at()` plpgsql function.
+
+Two additional triggers on `auth.users` maintain `user_profiles`:
+- `on_auth_user_created` — inserts a `user_profiles` row on every new signup
+- `on_auth_user_email_updated` — syncs `user_profiles.email` when a user changes their auth email
 
 ### Migration history
 
@@ -70,20 +76,27 @@ Tables with `updated_at` use a generic `set_updated_at()` plpgsql function.
 - `20260423000021` — modifier nullable on line_items
 - `20260430000022` — bills.hospital_city/state/zip
 - `20260504000023` — JSONB camelCase backfill on `analysis_results.errors` (S1 fix)
+- `20260505000024` — bills columns patch (idempotent add for columns from earlier migrations)
+- `20260505000025` — `user_profiles` table + `on_auth_user_created` / `on_auth_user_email_updated` triggers + backfill from `auth.users`
+- `20260505000026` — additional bills columns patch
+- `20260511000027` — `first_name` + `last_name` (nullable) added to `user_profiles`
+- `20260521000028` — `update_user_profile_name` RPC added (never used; dropped next migration)
+- `20260521000029` — `error_count integer` + `total_potential_savings numeric(10,2)` added to `bills` (denormalized from `analysis_results` for dashboard summary display without join)
+- `20260521000030` — drop `update_user_profile_name` RPC
 
 ## BigQuery (`clarobill-prd.hospital_prices`)
 
-MRF data. Loaded via Cloud Run Jobs (annual + mid-year).
+MRF data. Loaded via Cloud Run Jobs (annual + mid-year). See `docs/architecture/gcp-resources.md` for the full BigQuery section.
 
 | Table | Purpose | Partitioning / clustering |
 |---|---|---|
-| `hospital_directory` | One row per US hospital. CCN, NPI, name, MRF URL, scrape state. ~13,833 rows. | None |
-| `hospital_charges` | Per-hospital, per-CPT charges. Largest table; billions of rows at full coverage. | RANGE partitioned by `pricing_effective_year` (2024-2034); clustered `(hospital_npi, code)` |
-| `hospital_charges_legacy_stale` | Frozen pre-effective-dating snapshot. NEVER READ. | None — destined to be dropped 2026 H2 |
-| `mrf_archive_index` | Canonical index of every MRF blob in GCS. Drives the parser's work queue. | Clustered `(hospital_npi, sha256)` |
-| `mrf_discovery_checkpoint` | Per-stage state for the annual discovery pipeline. One row per (run_id, ccn). | Clustered `(run_id, ccn)` |
-| `mrf_discovery_runs` | Annual summary; one row per discovery run. | None |
-| `payer_name_aliases` | Canonical payer_group → known MRF aliases. | None |
+| `hospital_directory` | One row per US hospital. CCN, NPI, name, MRF URL, scrape state. ~13,833 rows. | Partitioned by `DATE(last_website_validated_at)`; clustered `(ccn, hospital_npi)` |
+| `hospital_charges` | Per-hospital, per-CPT charges. Largest table; billions of rows at full coverage. Append-only; deduplication via `DENSE_RANK() OVER (ORDER BY pricing_effective_year DESC)` at query time. | RANGE partitioned by `pricing_effective_year` (2024–2034); clustered `(hospital_npi, code)` |
+| `hospital_charges_legacy_stale` | Frozen pre-effective-dating snapshot. NEVER READ. | None — will be dropped 2026 H2 |
+| `mrf_archive_index` | Canonical index of every MRF blob in the immutable GCS archive. Drives the parser's work queue. | Clustered `(hospital_npi, sha256)` |
+| `mrf_discovery_checkpoint` | Per-stage state for the annual discovery pipeline. One row per `(run_id, ccn)`. | Clustered `(run_id, ccn)` |
+| `mrf_discovery_runs` | Annual summary; one row per discovery run with coverage metrics. | None |
+| `payer_name_aliases` | Canonical payer_group → known MRF aliases. Used by `_resolve_payer_aliases()` to normalize user-entered insurer names against MRF variants. | None |
 
 ### Why two databases
 
@@ -106,18 +119,19 @@ delete permission, so this is the chain-of-custody vault.
 | Engine module | Tables read | Tables written |
 |---|---|---|
 | `app/api/v1/bills.py::analyze_bill` | `bills`, `profile_members`, `insurance_plans` | `bills.status` |
-| `app/api/v1/bills.py::_run_analysis_pipeline` | every `cms_*` + `ncci_*` reference table; `bills`; BQ `hospital_directory`, `hospital_charges`, `payer_name_aliases` | `bills.status`, `bills.hospital_*`, `line_items` (delete + insert), `analysis_results` (insert) |
+| `app/api/v1/bills.py::_run_analysis_pipeline` | every `cms_*` + `ncci_*` reference table; `bills`; BQ `hospital_directory`, `hospital_charges`, `payer_name_aliases` | `bills.status`, `bills.hospital_*`, `bills.error_count`, `bills.total_potential_savings`, `line_items` (delete + insert), `analysis_results` (upsert) |
 | `app/api/v1/bills.py::generate_report` | `bills`, `analysis_results`, `profile_members`, `insurance_plans` | `analysis_results.report_url`, `dispute_letter_url`; `bills.report_*` |
 | `app/api/insurance_card.py` | none | none — stateless extraction |
 
 ## Schema invariants worth memorizing
 
 1. **Every user-scoped table has RLS on.** Adding a new user-scoped table without RLS will leak data — there's no app-layer second line of defense.
-2. **`analysis_results.bill_id` is UNIQUE.** Re-analyze fails the second insert. Phase-8 backlog item S6 fixes this with upsert.
+2. **`analysis_results.bill_id` is UNIQUE.** Re-analyze uses `.upsert({...}, on_conflict="bill_id")` in `bills.py` — safe to re-run without error.
 3. **`bills.file_path` is UNIQUE.** Two bills can't reference the same Storage object. Re-uploads must use a new path.
 4. **`plan_type` is a closed set.** New values require a migration AND a coordinated update of `app/models/bill.py::PlanType`. The DB CHECK constraint is the second line of defense.
 5. **`hospital_charges.pricing_effective_year` is NOT NULL.** Inserting a row without a vintage is impossible; this prevents historical bills from being benchmarked against a future chargemaster.
-6. **`mrf_archive_index.parse_status` lifecycle:** `pending → parsed | failed | skipped`. The `skipped` state currently has no reset path (Phase-8 SF1).
+6. **`mrf_archive_index.parse_status` lifecycle:** `pending → parsed | failed | skipped`. The `skipped` state has no automatic reset path (Phase-8 SF1 backlog item).
+7. **`user_profiles` is auto-populated.** Every `auth.users` row gets a `user_profiles` row via trigger. Never manually insert — the trigger handles it.
 
 ## Reading the migrations
 
@@ -129,4 +143,4 @@ workflow.
 
 ---
 
-_Last reviewed: 2026-05-05_
+_Last reviewed: 2026-05-25_

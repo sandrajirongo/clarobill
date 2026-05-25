@@ -105,6 +105,42 @@ present in `_non_payable_codes` — one finding per issue.
 
 ---
 
+## Savings Calculation Methodology
+
+`total_potential_savings` is calculated by `bills.py` after all rules have run, using
+a **MAX-per-affected-group** strategy to prevent double-counting when multiple rules
+fire on the same line item.
+
+```python
+savings_groups: dict[tuple[str, ...], Decimal] = {}
+for error in errors:
+    key = tuple(sorted(str(i) for i in error.affected_indices))
+    current = savings_groups.get(key, Decimal("0"))
+    if error.estimated_overcharge > current:
+        savings_groups[key] = error.estimated_overcharge
+total_savings = sum(savings_groups.values(), Decimal("0"))
+```
+
+**Why MAX, not SUM:**  
+PRICE_OUTLIER, HOSPITAL_CHARGE_OUTLIER, and NEGOTIATED_RATE_EXCEEDED can all fire
+on the same line item independently (each is a valid finding for the report). If their
+overcharge amounts were summed, the total savings figure would be inflated — the
+patient can only recover the actual overcharge once. Taking MAX per affected-line-item
+group reports the single largest overcharge across all rules that flagged the same
+lines.
+
+**Multi-line errors:**  
+NCCI_UNBUNDLING errors cover multiple indices (the component code's position in the
+line item list). The key includes all affected indices, so NCCI overcharges on
+line items 2+4 are grouped separately from PRICE_OUTLIER on line item 2 alone.
+
+**Denormalized to `bills` table:**  
+After calculation, `total_potential_savings` and `error_count` are written to the
+`bills` row (migration 20260521000029) so the dashboard can display totals without
+joining `analysis_results`.
+
+---
+
 ## Quantity Handling
 
 All pricing rules compare the **per-unit charge** against the per-unit benchmark rate,
@@ -141,6 +177,7 @@ self._detect_hospital_charge_outliers(line_items)
 self._detect_negotiated_rate_exceeded(line_items)
 self._detect_negotiated_ceiling_exceeded(line_items)
 self._detect_mue_violations(line_items)
+self._detect_redundant_clinical_pairs(line_items)
 ```
 
 ---
@@ -487,6 +524,80 @@ expected user action is to request justification, not to demand a refund.
 
 ---
 
+### BENCHMARK_UNAVAILABLE
+**Severity:** warning (informational)  
+**Data source:** None (meta-rule — emitted by the pipeline, not the rules engine)
+
+**What it detects:**  
+Not a billing error rule. BENCHMARK_UNAVAILABLE is emitted once per analysis when
+one or more BigQuery data loaders fail — typically because the engine is running
+without GCP credentials (local dev) or because BigQuery is temporarily unreachable.
+
+**Mechanism:**  
+Each BigQuery loader is wrapped by `_safe_load(name, loader_fn)` in `bills.py`.
+If the loader raises any exception, `_safe_load` catches it, appends `name` to
+`bq_unavailable_sources`, and returns an empty result. After all loaders run, if
+`bq_unavailable_sources` is non-empty, a single BENCHMARK_UNAVAILABLE error is
+emitted listing the failed sources:
+
+```python
+sources_label = ", ".join(sorted(set(bq_unavailable_sources)))
+# → e.g. "hospital_charges (gross), hospital_charges (negotiated)"
+```
+
+**Effect on analysis:**  
+Rules that depend on the failed sources are silently skipped (no false positives).
+Rules backed by Supabase reference data (PRICE_OUTLIER, NCCI_UNBUNDLING, etc.) are
+unaffected. The analysis completes; the report notes that hospital-specific pricing
+comparisons were unavailable.
+
+**Estimated overcharge:** `Decimal("0")` — this entry does not contribute to savings.
+
+---
+
+## AI Analysis Layer
+
+After the rules engine runs, `bills.py` calls `app/services/ai_analysis.py` to
+produce the `ai_summary` field stored in `analysis_results`.
+
+### Model configuration
+
+| Role | Model | Provider |
+|---|---|---|
+| Primary | `gemini-2.5-flash-lite` | Google Vertex AI (`us-central1`) |
+| Fallback | `claude-sonnet-4-6` | Anthropic API |
+
+The Vertex AI client is initialized via `vertexai.init(project=settings.gcp_project_id, location=settings.vertex_ai_location)` inside `AiAnalysisService.__init__`. When `settings.gcp_project_id` is unset (local dev without ADC), Vertex AI initialization is skipped and the Claude fallback is used for all calls.
+
+### Inputs
+
+The AI receives the full context assembled by the pipeline:
+- OCR extracted text (raw bill image text)
+- Structured line items (CPT codes, charges, quantities, dates)
+- All `BillingError` objects produced by the rules engine, including error codes, descriptions, and estimated overcharges
+
+### Output
+
+Returns an `ai_summary` object (JSON) containing:
+- **narrative** — plain-English explanation of what errors were found and why they matter to the patient
+- **recommendations** — ordered list of actions the patient should take (dispute, request itemization, contact insurer)
+
+The `ai_summary` is stored in `analysis_results.ai_summary` (JSONB) and rendered in the patient-facing report.
+
+### Fallback trigger
+
+Any exception raised by the Vertex AI call causes `ai_analysis.py` to retry with
+the Claude fallback. If both fail, the pipeline continues without an AI summary
+(the rules engine output is still saved).
+
+### Local dev
+
+Without GCP credentials (`settings.gcp_project_id` is None), the Vertex AI path
+is bypassed entirely. Set `ANTHROPIC_API_KEY` in `.env.local` to use the Claude
+fallback during local development.
+
+---
+
 ## Reference Data Sources
 
 | Table | Source | Loader |
@@ -534,9 +645,9 @@ See `docs/future-improvements/` for detailed design docs on:
 
 ---
 
-*Last updated: April 29 2026 (added REDUNDANT_CLINICAL_PAIR + Phase 4 effective-dated MRF pipeline references)*  
+*Last updated: 2026-05-25 (added BENCHMARK_UNAVAILABLE, AI analysis layer, savings calculation methodology, `_detect_redundant_clinical_pairs` to run order)*  
 *Owner: ClaroBill Engineering*
 
 ---
 
-_Last reviewed: 2026-05-05_
+_Last reviewed: 2026-05-25_

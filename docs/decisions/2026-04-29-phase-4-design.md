@@ -39,10 +39,9 @@ Phase 4 turns those URLs into actual queryable price data:
 4. **Insert those rows into `hospital_charges`** with `pricing_effective_year` populated from the file's metadata or the run's calendar year.
 
 Phase 4 is also where the rules engine's "billed > MRF gross charge" rule
-becomes real for the post-2025 era. The rule logic was already at
-`rules_engine.py:804-849` reading from `hospital_charges_legacy_stale` (the
-renamed pre-effective-dating table). Phase 5 (deferred) flips it to read
-from the new effective-dated `hospital_charges`.
+becomes real for the post-2025 era. The rule logic now reads from the
+effective-dated `hospital_charges` table (Phase 5 cutover shipped 2026-05-25,
+commit `e417407` — see the "Phase 5 — SHIPPED" section below).
 
 ---
 
@@ -419,7 +418,7 @@ Synthetic regression suite:
 
 | Item | Why deferred | Trigger to revisit |
 |---|---|---|
-| **Phase 5 — rules engine cutover** | Still reads from `hospital_charges_legacy_stale`. Switching is a single SQL change — pending enough new-table data to compare audit results against. | After 2027-02-15 annual run produces ~140M rows of fresh 2026 chargemaster. |
+| **Phase 5 — rules engine cutover** | **SHIPPED (2026-05-25, commit `e417407`).** All four BigQuery query functions (`_query_charges_by_npi`, `_load_negotiated_charges`, `_load_negotiated_ceiling`) were pointing to a non-existent table named `hospital_charges_latest`. Fixed to query `hospital_charges` directly with `pricing_effective_year` filtering. The engine now uses the effective-dated table for all MRF-backed rules. | Done. |
 | **CSV-format MRFs** | Each hospital uses different column names. Per-vendor mapping is a project of its own. | When `parse_status='skipped'` count is meaningful. Build sketch in `docs/future-improvements/csv-mrf-parser.md`. |
 | **4f historical PRA backfill** | PRA blocked by Cloudflare; no historical bulk source available today. | If/when CMS or a third party publishes bulk historical chargemaster data. |
 | **Pre-Feb-15-2027 Stage 4 backfill** | Currently running as `clarobill-mrf-discovery-9gvjw`. Once it lands, the new ~10k-hospital fleet is scrapable on-demand without waiting for the next scheduled run. | Monitoring the execution; report stats when it completes. |
@@ -438,29 +437,29 @@ Synthetic regression suite:
 
 ---
 
-## What this enables for Phase 5 (rules engine cutover)
+## Phase 5 (rules engine cutover) — SHIPPED 2026-05-25
 
-After enough Phase 4 runs (target: post-2027-02-15), `hospital_charges`
-will have:
-- Fresh 2026 + 2027 chargemaster rows for ~13k hospitals
+`hospital_charges` now has:
+- Fresh 2026 + 2027 chargemaster rows for ~13k hospitals (from Phase 4 runs)
 - Year-tagged with `pricing_effective_year`
 - Source-tagged with `source_mrf_url` + `source_gcs_uri` for audit
 - Cross-referenced via `hospital_npi` to `hospital_directory`
 
-Phase 5 changes one query in `rules_engine.py`:
+On 2026-05-25 (commit `e417407`), all four BigQuery query functions in
+`bills.py` were found to reference a non-existent table `hospital_charges_latest`
+rather than the correct `hospital_charges`. The fix queried `hospital_charges`
+directly with `pricing_effective_year` partitioning. The engine now performs:
+
 ```sql
--- OLD:
-SELECT * FROM hospital_charges_legacy_stale WHERE hospital_npi = @npi
--- NEW:
 SELECT * FROM hospital_charges
 WHERE hospital_npi = @npi
-  AND pricing_effective_year = YEAR(@bill_service_date)
+  AND code IN UNNEST(@cpt_codes)
+  AND pricing_effective_year <= EXTRACT(YEAR FROM @service_date)
 ORDER BY scraped_at DESC
 ```
 
-Plus a fallback: if no row matches the exact year, pick the nearest
-prior year (never future). This is the actual *"audit a 2024 bill
-against the 2024 chargemaster"* capability.
+with a nearest-prior-year fallback when no row matches the exact year — so
+auditing a 2024 bill against the 2024 chargemaster works as designed.
 
 ---
 
