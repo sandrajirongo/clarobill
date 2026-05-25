@@ -22,7 +22,7 @@ anon key honors RLS so the frontend can never read another user's data.
 | `insurance_plans` | One member can hold N plans | `profile_member_id`, `payer_name`, `plan_name`, `member_id`, `plan_type`, `is_primary_plan` | `plan_type` ∈ {commercial, medicare, medicaid, tricare, self_pay} |
 | `user_profiles` | Account-holder identity (name + email sync) | `id` (FK → auth.users), `email`, `first_name`, `last_name`, `created_at`, `updated_at` | Auto-created by `on_auth_user_created` trigger on signup; email synced by `on_auth_user_email_updated` trigger. Used by `PATCH /api/user/profile` and Stripe webhook email lookup. |
 | `referral_codes` | Per-user referral code | `user_id` (unique), `code` (unique), `credits` | Each user gets exactly one code on signup |
-| `referrals` | Tracks who referred whom | `referrer_user_id`, `referred_user_id`, `referral_code_id`, `status` | `status` ∈ {pending, complete}; one `referred_user_id` ever; settled to `complete` in Stripe webhook |
+| `referrals` | Tracks who referred whom | `referrer_user_id`, `referred_user_id`, `referral_code_id`, `status` | `status` ∈ {pending, converted}; one `referred_user_id` ever; settled to `converted` in Stripe webhook |
 | `deleted_bill_files` | Tombstone for retention/GDPR delete | `user_id`, `file_path`, `deleted_at` | Used by retention purge job |
 
 #### RLS policy shape
