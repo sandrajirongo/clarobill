@@ -43,12 +43,30 @@ These are non-negotiable. They apply to every line of every email.
 
 | Font | When |
 |---|---|
-| `'Helvetica Neue', Helvetica, Arial, sans-serif` | Default for body, eyebrows, bullets |
-| `Georgia, 'Times New Roman', serif` | Logo wordmark, all major headlines, the italic "ClaroBill" inline mark |
+| `'Helvetica Neue', Helvetica, Arial, sans-serif` | Default for body, eyebrows, bullets, sign-off, the inline "ClaroBill" mention in prose |
+| `Georgia, 'Times New Roman', serif` | Logo wordmark only, and major headlines |
 
-The italic serif "ClaroBill" inline mark is a recurring signature element. Wherever the
-brand name appears inside running prose (the eyebrow, the sign-off), it should render
-in Georgia italic at the sage color, not in the default sans-serif body font.
+**Critical:** Inside running prose (the eyebrow, the sign-off, the QUICK HITS body),
+"ClaroBill" appears as **plain unstyled text** — same font, same weight, same color
+as the surrounding body copy. No bold, no italic, no serif, no color shift. The
+italic serif treatment is reserved exclusively for the logo block at the top of
+the email. Stylizing the brand name inline reads as performative and breaks the
+conversational tone.
+
+| Layout | Default alignment |
+|---|---|
+| Eyebrow `THIS WEEK FROM CLAROBILL` | Left-aligned. Plain uppercase muted sans-serif. No special treatment on "CLAROBILL". |
+| Lead headline (Georgia serif) | Left-aligned. |
+| Lead paragraph | Left-aligned. |
+| Category eyebrow (`EXPLAINER`, `GUIDE`, etc.) | Left-aligned. |
+| Article title | Left-aligned. |
+| Article body paragraphs | Left-aligned. |
+| QUICK HITS card contents | Left-aligned. |
+| Sign-off paragraph | Left-aligned. |
+| Buttons (CTA) | Center-aligned (the only centered element below the logo). |
+
+**The logo is the only centered element above the divider.** Everything else flows
+left-aligned, matching standard newsletter reading patterns.
 
 ---
 
@@ -96,40 +114,50 @@ Sections appear in this exact order. Some are optional per the table; most are f
 | # | Section | Required | Notes |
 |---|---|---|---|
 | 1 | Top sage accent bar | yes | 5px sage bar at the very top |
-| 2 | Logo block | yes | Centered. Lime "C" bug + Georgia italic wordmark. |
-| 3 | Eyebrow `THIS WEEK FROM ClaroBill` | yes | Centered, muted caps, italic serif sage on the brand name |
-| 4 | Lead headline (Georgia serif, centered) | yes | The week's theme statement. One sentence. Brand promise, not article title. |
-| 5 | Lead paragraph (centered) | yes | One short paragraph setting up the week's content. |
-| 6 | Divider rule | yes | Thin `#E2DDD4` border |
-| 7 | Category eyebrow | yes | One of: `EXPLAINER`, `GUIDE`, `STORY`, `UPDATE`, `Q&A` |
-| 8 | Article title (Georgia serif, left-aligned) | yes | The actual content title for this week |
-| 9 | Article body (left-aligned paragraphs) | yes | 2 to 4 short paragraphs. Conversational. |
-| 10 | Optional inline media | no | Video thumbnail, image, or pull quote. If a video, see §5. |
-| 11 | Primary CTA button (centered) | yes | "Read the full guide" or equivalent. Sage background, white text, pill shape. |
-| 12 | QUICK HITS card | yes | Cream rounded card, 3 to 5 bolded-lead bullets. See §6. |
-| 13 | Sign-off paragraph (centered) | yes | Warmth + "ClaroBill" italic serif mark. See §7. |
+| 2 | Logo block | yes | Centered. Lime "C" bug + Georgia italic wordmark. Only centered block. |
+| 3 | Eyebrow `THIS WEEK FROM CLAROBILL` | yes | **Left-aligned.** Plain uppercase muted sans-serif. No italic serif on the brand name. |
+| 4 | Lead headline (Georgia serif) | yes | **Left-aligned.** One sentence brand-promise statement. Avoid hyphenated compounds (`5-digit`, `30-second`) that wrap awkwardly. |
+| 5 | Lead paragraph | yes | **Left-aligned.** One short paragraph setting up the week's content. |
+| 6 | Divider rule | yes | Thin `#E2DDD4` border, full content width. |
+| 7 | Category eyebrow | yes | **Left-aligned.** One of: `EXPLAINER`, `GUIDE`, `STORY`, `UPDATE`, `Q&A` |
+| 8 | Article title (Georgia serif) | yes | **Left-aligned.** The actual content title for this week. |
+| 9 | Article body | yes | **Left-aligned.** 2 to 4 short paragraphs. Conversational. |
+| 10 | Optional video block | no | Caption + button, no thumbnail. See §5. |
+| 11 | Primary CTA button | yes | Centered. "Read the full guide" or equivalent. Sage background, white text, pill shape. |
+| 12 | QUICK HITS card | yes | Cream rounded card, contents left-aligned, 3 to 5 bolded-lead bullets. See §6. |
+| 13 | Sign-off paragraph | yes | **Left-aligned.** Warmth + plain unstyled "ClaroBill" (no bold, no italic, matches body). See §7. |
 | 14 | Footer | yes | Privacy / Terms / Support / `{unsubscribe_link}`. See §8. |
 
 ---
 
 ## 5. Video embedding (when the week's content includes a video)
 
-Email clients do not render `<iframe>`. The universal pattern is:
+Email clients do not render `<iframe>`. **Do not use YouTube thumbnail hotlinks.**
+`img.youtube.com` is consistently blocked by:
 
-1. **Thumbnail image** linked to the watch URL.
-   Use `https://img.youtube.com/vi/<VIDEO_ID>/hqdefault.jpg` (always available, every video).
-   Not `maxresdefault.jpg` — that only exists for HD uploads and silently breaks on shorts.
-2. **Caption line** under the thumbnail: `"30 seconds, no jargon"` style. Muted color, small.
-3. **Play button** below the caption. Same sage-white pill as other CTAs. Label states the
-   duration: `Play the 30-second video`.
-4. **Center-align** the entire video block (image, caption, button).
+- The Loops dashboard preview pane
+- Corporate Outlook gateways
+- Many image-proxy services used by privacy-focused inboxes
 
-The thumbnail and the button both link to the same `youtube.com/watch?v=...` URL.
-Two click targets is intentional — image-blocked clients still get the button.
+When the thumbnail breaks, you get a broken-image icon and dangling alt text. That
+looks worse than no thumbnail at all.
 
-If a real send shows a broken thumbnail (some corporate gateways blacklist
-`img.youtube.com`), the fallback is to download the thumbnail, upload it to a public
-Supabase Storage bucket, and reference your own hosted copy in the `src=`.
+**The pattern that works in every client** is button-only:
+
+1. **Caption line** (muted text, left-aligned with the surrounding paragraphs):
+   `Watch the video. 30 seconds, no jargon.`
+2. **Play button** (centered, sage-white pill, label: `Play the video`)
+
+The button links to `https://www.youtube.com/watch?v=<VIDEO_ID>`.
+
+**If you really need a thumbnail in a future campaign** (because the visual is the
+point), the only reliable path is to self-host:
+
+1. Download `https://img.youtube.com/vi/<VIDEO_ID>/hqdefault.jpg`
+2. Upload to a public Supabase Storage bucket (or any CDN)
+3. Use that hosted URL in `mj-image src=`
+
+Never reference `img.youtube.com` directly.
 
 ---
 
