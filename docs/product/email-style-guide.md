@@ -151,33 +151,36 @@ looks worse than no thumbnail at all.
 
 The button links to `https://www.youtube.com/watch?v=<VIDEO_ID>`.
 
-**When you need a thumbnail** (because the visual reinforces the topic), self-host
-on the Next.js web app's public folder:
+**When you need a thumbnail**, use YouTube's own CDN. If the video has a custom
+uploaded thumbnail (branded design), YouTube serves it at:
 
-1. Download the thumbnail:
-   ```bash
-   curl -sL "https://img.youtube.com/vi/<VIDEO_ID>/hqdefault.jpg" \
-     -o apps/web/public/email-assets/<descriptive-slug>.jpg
-   ```
-2. Commit and push. Vercel serves it at `https://www.clarobill.com/email-assets/<slug>.jpg` in ~60 seconds.
-3. Reference that URL in `<mj-image src=>`.
-4. Wait until Vercel has deployed before sending the campaign. Loops will cache the
-   image into its own send-time CDN once an actual send happens, but the first preview
-   pulls from your origin.
+```
+https://img.youtube.com/vi/<VIDEO_ID>/maxresdefault.jpg
+```
 
-The full video block when a thumbnail is used:
+For default auto-generated thumbnails (no custom upload), `maxresdefault.jpg` may not
+exist; fall back to `hqdefault.jpg` which is always available.
+
+The full video block:
 
 | Order | Element | Notes |
 |---|---|---|
-| 1 | `<mj-image>` thumbnail | `src` is your self-hosted URL. `href` links to the YouTube watch URL. `width="520px"`, `border-radius: 12px`, `align: center`. |
-| 2 | Caption line | Muted text, centered. Example: `30 seconds, no jargon`. |
+| 1 | `<mj-image>` thumbnail | `src` is the YouTube CDN URL. `href` links to the YouTube watch URL. `width="520px"`, `border-radius: 12px`, `align: center`. |
+| 2 | Caption line | Muted text. Example: `30 seconds, no jargon`. |
 | 3 | Play button | Centered sage-white pill. Label states the duration: `Play the video` or `Play the 30-second video`. |
 
 Both the thumbnail and the button link to `https://www.youtube.com/watch?v=<VIDEO_ID>`.
 Two click targets is intentional — clients that block the image still get the button.
 
-**Never reference `img.youtube.com` directly.** That domain is consistently blocked
-by Loops preview and corporate Outlook.
+**Preview pane caveat.** The Loops in-dashboard preview blocks remote images including
+`img.youtube.com`, so the thumbnail will look broken in preview but render correctly
+in actual sends. Trust the test-send result, not the preview pane.
+
+**Fallback to self-hosting** only if a real send to a real inbox confirms the
+thumbnail is being blocked at delivery time (some corporate Outlook gateways do this).
+At that point, save the image under `apps/web/public/email-assets/<slug>.png` and
+reference `https://www.clarobill.com/email-assets/<slug>.png`. Do not preemptively
+self-host — YouTube's CDN is the default.
 
 ---
 
