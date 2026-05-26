@@ -113,20 +113,21 @@ Sections appear in this exact order. Some are optional per the table; most are f
 
 | # | Section | Required | Notes |
 |---|---|---|---|
-| 1 | Top sage accent bar | yes | 5px sage bar at the very top |
-| 2 | Logo block | yes | Centered. Lime "C" bug + Georgia italic wordmark. Only centered block. |
-| 3 | Eyebrow `THIS WEEK FROM CLAROBILL` | yes | **Left-aligned.** Plain uppercase muted sans-serif. No italic serif on the brand name. |
-| 4 | Lead headline (Georgia serif) | yes | **Left-aligned.** One sentence brand-promise statement. Avoid hyphenated compounds (`5-digit`, `30-second`) that wrap awkwardly. |
-| 5 | Lead paragraph | yes | **Left-aligned.** One short paragraph setting up the week's content. |
+| 1 | Top sage accent bar | yes | 5px sage bar at the very top. Full width. |
+| 2 | Logo block | yes | Centered. Lime "C" bug + Georgia wordmark ("Claro" plain serif + "Bill" italic serif). Only centered block above the divider. |
+| 3 | Eyebrow `THIS WEEK FROM CLAROBILL` | yes | **Left-aligned.** Plain uppercase muted sans-serif, letter-spacing ~0.12em, size ~12px. No italic serif, no special color on the brand name. |
+| 4 | Lead headline (Georgia serif) | yes | **Left-aligned.** Sentence case, ends with period. One sentence brand-promise. ~28px, bold, ink (`#1A1A14`). Avoid hyphenated compounds (`5-digit`, `30-second`) that wrap awkwardly. |
+| 5 | Lead paragraph | yes | **Left-aligned.** One short paragraph setting up the week's content. Body color. |
 | 6 | Divider rule | yes | Thin `#E2DDD4` border, full content width. |
-| 7 | Category eyebrow | yes | **Left-aligned.** One of: `EXPLAINER`, `GUIDE`, `STORY`, `UPDATE`, `Q&A` |
-| 8 | Article title (Georgia serif) | yes | **Left-aligned.** The actual content title for this week. |
-| 9 | Article body | yes | **Left-aligned.** 2 to 4 short paragraphs. Conversational. |
-| 10 | Optional video block | no | Caption + button, no thumbnail. See §5. |
-| 11 | Primary CTA button | yes | Centered. "Read the full guide" or equivalent. Sage background, white text, pill shape. |
-| 12 | QUICK HITS card | yes | Cream rounded card, contents left-aligned, 3 to 5 bolded-lead bullets. See §6. |
-| 13 | Sign-off paragraph | yes | **Left-aligned.** Warmth + plain unstyled "ClaroBill" (no bold, no italic, matches body). See §7. |
-| 14 | Footer | yes | Privacy / Terms / Support / `{unsubscribe_link}`. See §8. |
+| 7 | Category eyebrow | yes | **Left-aligned.** Sage (`#2D4A2A`) uppercase, letter-spacing ~0.08em, size ~12px. One of: `GUIDE`, `EXPLAINER`, `STORY`, `UPDATE`, `Q&A`. |
+| 8 | Article title (Georgia serif) | yes | **Left-aligned.** Title Case (e.g. "How to Dispute a Hospital Bill"). ~22px, bold, ink color. No trailing period. |
+| 9 | Article intro paragraph | yes | **Left-aligned.** 1 to 2 sentences setting up what the article will cover. Body color. |
+| 10 | Article body — bolded-lead paragraphs | yes | **Left-aligned.** 4 to 6 paragraphs, each opening with a bolded lead phrase ending in a period, followed by 1 to 3 sentences of detail. See §6. |
+| 11 | Optional video block | no | Caption + button, no thumbnail. Can sit before the article body or after the intro. See §5. |
+| 12 | Primary CTA button | yes | **Centered.** "Read the full guide" or equivalent. Sage background (`#2D4A2A`), white text, pill shape (`border-radius: 999px`), 14px-32px inner padding, font-weight 700. |
+| 13 | QUICK HITS card | yes | Cream (`#F4F2EC`) rounded card (border-radius 12px), 20px-24px padding. `QUICK HITS` eyebrow inside. Contents left-aligned, 3 to 5 bolded-lead bullets (shorter and more action-oriented than article body paragraphs). See §6. |
+| 14 | Sign-off paragraph | yes | **Left-aligned.** Warmth + plain unstyled "ClaroBill" (no bold, no italic, matches body). One short paragraph, 1 to 2 sentences. See §7. |
+| 15 | Footer | yes | Single line, 12px muted. © 2026 ClaroBill · Privacy · Terms · support@clarobill.com · Unsubscribe. 1px top border in `#E2DDD4`. See §8. |
 
 ---
 
@@ -161,23 +162,60 @@ Never reference `img.youtube.com` directly.
 
 ---
 
-## 6. QUICK HITS card
+## 6. Bolded-lead paragraph pattern
 
-A cream-background rounded card with 3 to 5 bullets. Each bullet follows this pattern:
+This is the signature structure of the weekly newsletter. It appears in two distinct
+places with two distinct tones:
 
-> **\<Bold lead phrase ending with a period.\>** \<One sentence of follow-through copy.\>
+### 6a. Article body paragraphs
 
-The bold lead is the takeaway. The follow-through gives just enough context to make
-it actionable. No nested bullets. No "click to learn more" links inside the card —
-the card is the synthesis, the full guide is reached via the primary CTA above it.
+The main article body is structured as 4 to 6 **bolded-lead paragraphs**, not plain
+prose. Each paragraph follows this exact shape:
 
-Examples (anchor-style, for shape only — do not reuse verbatim):
+> **\<Bold lead sentence ending with a period.\>** \<1 to 3 sentences of detailed follow-through.\>
 
-- **Get the itemized bill.** Summary bills hide the codes. Without them you cannot verify anything.
-- **Match codes to what happened.** Each line should map to an actual procedure from your visit.
-- **Question, then dispute.** If something does not add up, ask for an explanation in writing.
+The bold lead names the action or insight. The follow-through gives the reader the
+context, the reasoning, or the concrete next step. Each paragraph is a fully formed
+thought, not a one-liner.
 
-Eyebrow above the card: `QUICK HITS` in sage caps, same styling as section eyebrows.
+Article-body bolded leads are usually verbs in the imperative ("Start with your
+itemized bill.", "Request your Explanation of Benefits.", "Identify the errors.",
+"Always write a dispute letter."). The follow-through can be 1 to 3 sentences long
+and may include lists embedded in running prose.
+
+These paragraphs sit between the article intro paragraph (§4 row 9) and the primary
+CTA button (§4 row 12). They are **not inside a card** — they sit directly on the
+white email background with normal paragraph spacing.
+
+A short transitional line is allowed just before the first bolded-lead paragraph,
+for example: `Here's what you need to know:`. This is optional.
+
+### 6b. QUICK HITS card
+
+After the primary CTA button, the email closes with a `QUICK HITS` card. This is a
+cream rounded card holding 3 to 5 **shorter** bolded-lead bullets:
+
+> **\<Bold lead phrase ending with a period.\>** \<One short sentence of follow-through.\>
+
+QUICK HITS bullets are tighter than article-body paragraphs. The follow-through is
+exactly one sentence. They serve as an at-a-glance summary the reader can scan after
+finishing the article, or instead of it.
+
+Card styling:
+- Background `#F4F2EC`
+- Border radius 12px
+- Padding 20px-24px
+- `QUICK HITS` eyebrow at the top in sage caps with letter-spacing
+- No nested bullets, no "learn more" links inside the card
+
+### 6c. The bolded lead itself
+
+In both contexts, the bold lead:
+- Ends with a period (`.`), not a colon (`:`)
+- Uses ink color `#1A1A14` (slightly darker than body text)
+- Wraps with `<strong>`, not styled spans
+- Sentence case, not Title Case
+- Stands alone as a complete short sentence ("Get the itemized bill.", not "Itemized bill")
 
 ---
 
@@ -229,21 +267,39 @@ Variations are fine. The voice should feel like a small team writing to one pers
 
 Run this before clicking Send in Loops. Every item must pass.
 
-- [ ] Dark-mode head scaffold present (meta + mj-style + mj-raw wrapper div)
-- [ ] `{unsubscribe_link}` in the footer href
-- [ ] Zero em-dashes (`grep —` returns 0)
+**Layout**
+- [ ] Logo block is the **only** centered element above the divider
+- [ ] `THIS WEEK FROM CLAROBILL` eyebrow is **left-aligned**, plain uppercase, no italic serif
+- [ ] Lead headline is **left-aligned**, Georgia serif, sentence case, ends with period
+- [ ] Lead paragraph is **left-aligned**
+- [ ] Divider rule present between lead and article
+- [ ] Category eyebrow (`GUIDE`, `EXPLAINER`, etc.) is **left-aligned**, sage caps
+- [ ] Article title is **left-aligned**, Georgia serif, Title Case, no trailing period
+- [ ] Article body uses the **bolded-lead paragraph pattern** (4 to 6 paragraphs)
+- [ ] Each article-body bold lead ends with a period (`.`), not a colon
+- [ ] Primary CTA button is centered, white-on-sage, pill shape
+- [ ] QUICK HITS card present, cream background, 3 to 5 short bolded-lead bullets
+- [ ] Sign-off is **left-aligned**, plain text "ClaroBill" (no bold/italic/serif)
+
+**Brand voice**
+- [ ] Zero em-dashes (`grep "—"` returns 0)
 - [ ] Zero emojis
 - [ ] Zero vendor names in body copy
 - [ ] Zero methodology terms (Medicare, NCCI, fee schedule, benchmark)
-- [ ] Italic-serif "ClaroBill" mark used at least twice (eyebrow + sign-off)
-- [ ] Primary CTA button is white-on-sage, pill shape, centered
+- [ ] Itemized-bill recommendation appears at least once
+
+**Technical**
+- [ ] Dark-mode head scaffold present (meta + mj-style + mj-raw wrapper div)
+- [ ] `{unsubscribe_link}` in the footer href (Loops requires this exact placeholder)
 - [ ] All headlines use Georgia serif; all body uses Helvetica Neue
-- [ ] QUICK HITS card present, 3 to 5 bullets, bolded leads
+- [ ] No `img.youtube.com` hotlinks (use button-only video block)
+
+**Send-time**
 - [ ] Test send to your own inbox on **mobile Gmail (iOS)** AND **desktop Apple Mail**
 - [ ] On the mobile test, the background is cream, not dark
-- [ ] On the mobile test, the video thumbnail loads (if a video is present)
-- [ ] All links open the correct URL with no extra tracking parameters in the visible href
+- [ ] All links open the correct URL with no extra tracking parameters
 - [ ] Subject and preview text set in the Loops UI
+- [ ] Audience filter set (default: free-tier users who have not uploaded a bill)
 
 ---
 
