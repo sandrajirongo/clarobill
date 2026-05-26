@@ -114,7 +114,7 @@ Sections appear in this exact order. Some are optional per the table; most are f
 | # | Section | Required | Notes |
 |---|---|---|---|
 | 1 | Top sage accent bar | yes | 5px sage bar at the very top. Full width. |
-| 2 | Logo block | yes | Centered. Lime "C" bug + Georgia wordmark ("Claro" plain serif + "Bill" italic serif). Only centered block above the divider. |
+| 2 | Logo block | yes | Centered. Lime "C" bug + Georgia wordmark ("Claro" plain serif + "Bill" italic serif). Wrapped in `<a href="https://www.clarobill.com">` so the whole logo is clickable. `text-decoration:none; color:inherit;` on the anchor so visual styling is preserved. Only centered block above the divider. |
 | 3 | Eyebrow `THIS WEEK FROM CLAROBILL` | yes | **Left-aligned.** Plain uppercase muted sans-serif, letter-spacing ~0.12em, size ~12px. No italic serif, no special color on the brand name. |
 | 4 | Lead headline (Georgia serif) | yes | **Left-aligned.** Sentence case, ends with period. One sentence brand-promise. ~28px, bold, ink (`#1A1A14`). Avoid hyphenated compounds (`5-digit`, `30-second`) that wrap awkwardly. |
 | 5 | Lead paragraph | yes | **Left-aligned.** One short paragraph setting up the week's content. Body color. |
