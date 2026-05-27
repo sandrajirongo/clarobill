@@ -21,6 +21,14 @@ const nextConfig = {
         destination: '/upload',
         permanent: true,
       },
+      // /resources is a memorable marketing URL; the content lives at /blog.
+      // Redirects fire at the edge before middleware, so this stays public
+      // regardless of auth state.
+      {
+        source: '/resources',
+        destination: '/blog',
+        permanent: true,
+      },
     ];
   },
 };
