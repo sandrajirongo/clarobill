@@ -16,7 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import PdfThumbnail from 'react-native-pdf-thumbnail';
 
 import { BrandLogo } from '@/components/brand-logo';
-import { initBillUpload, putBillFile } from '@/lib/api/bills';
+import { initBillUpload, putBillFile, triggerAnalysis } from '@/lib/api/bills';
 import { ApiError } from '@/lib/api/client';
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB — matches /api/bills/upload server-side limit
@@ -49,11 +49,19 @@ function resolveImageMime(
   return 'image/jpeg';
 }
 
+type UploadStep = 'uploading' | 'analyzing' | null;
+
+type SubmissionResult = {
+  billId: string;
+  // null = analysis kicked off OK; string = upload OK but analysis failed (we keep the bill)
+  analysisError: string | null;
+};
+
 export default function UploadScreen() {
   const [picked, setPicked] = useState<PickedFile | null>(null);
   const [isPicking, setIsPicking] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadedBillId, setUploadedBillId] = useState<string | null>(null);
+  const [step, setStep] = useState<UploadStep>(null);
+  const [submission, setSubmission] = useState<SubmissionResult | null>(null);
 
   function validate(file: PickedFile): string | null {
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -188,30 +196,51 @@ export default function UploadScreen() {
 
   function handleClear() {
     setPicked(null);
-    setUploadedBillId(null);
+    setSubmission(null);
+    setStep(null);
   }
 
   async function handleUpload() {
     if (!picked) return;
-    setIsUploading(true);
+    setStep('uploading');
+
+    // Phase 1: upload. A failure here is fatal — nothing to fall back to.
+    let billId: string;
     try {
-      const { billId, uploadUrl } = await initBillUpload({
+      const init = await initBillUpload({
         fileName: picked.name,
         fileSize: picked.size,
         mimeType: picked.mimeType as 'application/pdf' | 'image/jpeg' | 'image/png',
       });
+      billId = init.billId;
       await putBillFile({
-        uploadUrl,
+        uploadUrl: init.uploadUrl,
         fileUri: picked.uri,
         mimeType: picked.mimeType,
       });
-      setUploadedBillId(billId);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.detail : e instanceof Error ? e.message : String(e);
+      const msg = e instanceof ApiError ? `${e.code}: ${e.detail}` : e instanceof Error ? e.message : String(e);
       Alert.alert('Upload failed', msg);
-    } finally {
-      setIsUploading(false);
+      setStep(null);
+      return;
     }
+
+    // Phase 2: kick off analysis. Failure here is NON-fatal — the file is
+    // already safe in Storage and the bill row exists. We surface a warning
+    // but treat the overall flow as a success so the user doesn't have to
+    // re-upload. The engine can be retried later when the service is back.
+    setStep('analyzing');
+    let analysisError: string | null = null;
+    try {
+      await triggerAnalysis(billId);
+    } catch (e) {
+      analysisError =
+        e instanceof ApiError ? `${e.code}: ${e.detail}` :
+        e instanceof Error ? e.message : String(e);
+    }
+
+    setSubmission({ billId, analysisError });
+    setStep(null);
   }
 
   return (
@@ -239,8 +268,8 @@ export default function UploadScreen() {
               file={picked}
               onClear={handleClear}
               onUpload={handleUpload}
-              isUploading={isUploading}
-              uploadedBillId={uploadedBillId}
+              step={step}
+              submission={submission}
             />
           ) : (
             <View style={styles.actions}>
@@ -309,25 +338,32 @@ function PickedFilePreview({
   file,
   onClear,
   onUpload,
-  isUploading,
-  uploadedBillId,
+  step,
+  submission,
 }: {
   file: PickedFile;
   onClear: () => void;
   onUpload: () => void;
-  isUploading: boolean;
-  uploadedBillId: string | null;
+  step: UploadStep;
+  submission: SubmissionResult | null;
 }) {
   const sizeKb = file.size / 1024;
   const sizeStr =
     sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb.toFixed(0)} KB`;
-  const isUploaded = Boolean(uploadedBillId);
+  const isSubmitted = Boolean(submission);
+  const analysisDeferred = submission?.analysisError != null;
+  const busy = step !== null;
+
+  const eyebrow =
+    step === 'uploading' ? 'UPLOADING…' :
+    step === 'analyzing' ? 'ANALYZING…' :
+    submission && !analysisDeferred ? 'SUBMITTED FOR ANALYSIS' :
+    submission && analysisDeferred ? 'SAVED — ANALYSIS PENDING' :
+    'READY TO UPLOAD';
 
   return (
     <View style={styles.preview}>
-      <Text style={styles.previewEyebrow}>
-        {isUploaded ? 'UPLOADED' : isUploading ? 'UPLOADING…' : 'READY TO UPLOAD'}
-      </Text>
+      <Text style={styles.previewEyebrow}>{eyebrow}</Text>
 
       {file.isImage ? (
         <Image
@@ -356,43 +392,57 @@ function PickedFilePreview({
         {file.mimeType} · {sizeStr}
       </Text>
 
-      {isUploaded && uploadedBillId ? (
-        <Text style={styles.billIdMeta} selectable>
-          Bill ID: {uploadedBillId}
-        </Text>
+      {submission ? (
+        <>
+          <Text style={styles.billIdMeta} selectable>
+            Bill ID: {submission.billId}
+          </Text>
+          {analysisDeferred ? (
+            <Text style={styles.statusHintWarn}>
+              Your bill is saved. We couldn&rsquo;t start the analysis right
+              now (the service is temporarily unavailable). It will retry
+              automatically — no need to upload again.
+            </Text>
+          ) : (
+            <Text style={styles.statusHint}>
+              Analysis is running in the background. The bill will appear on
+              the Home tab when it&rsquo;s ready (status polling lands in 4e).
+            </Text>
+          )}
+        </>
       ) : null}
 
       <View style={styles.previewActions}>
         <Pressable
           onPress={onClear}
-          disabled={isUploading}
+          disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel={isUploaded ? 'Upload another bill' : 'Choose a different file'}
+          accessibilityLabel={isSubmitted ? 'Upload another bill' : 'Choose a different file'}
           style={({ pressed }) => [
             styles.secondaryBtn,
             pressed && styles.actionBtnPressed,
-            isUploading && styles.actionBtnDisabled,
+            busy && styles.actionBtnDisabled,
           ]}
         >
           <Text style={styles.secondaryBtnText}>
-            {isUploaded ? 'Upload another bill' : 'Choose a different file'}
+            {isSubmitted ? 'Upload another bill' : 'Choose a different file'}
           </Text>
         </Pressable>
 
-        {!isUploaded ? (
+        {!isSubmitted ? (
           <Pressable
             onPress={onUpload}
-            disabled={isUploading}
+            disabled={busy}
             accessibilityRole="button"
             accessibilityLabel="Upload bill"
-            accessibilityState={{ disabled: isUploading, busy: isUploading }}
+            accessibilityState={{ disabled: busy, busy }}
             style={({ pressed }) => [
               styles.actionBtn,
               pressed && styles.actionBtnPressed,
-              isUploading && styles.actionBtnDisabled,
+              busy && styles.actionBtnDisabled,
             ]}
           >
-            {isUploading ? (
+            {busy ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
               <Text style={styles.actionBtnText}>Upload bill</Text>
@@ -496,6 +546,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#2D4A2A',
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    marginBottom: 10,
+  },
+  statusHint: {
+    fontSize: 13,
+    color: '#5A5A50',
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  statusHintWarn: {
+    fontSize: 13,
+    color: '#7A5A1A',
+    backgroundColor: '#F4EEDC',
+    lineHeight: 19,
+    padding: 12,
+    borderRadius: 8,
     marginBottom: 16,
   },
   previewActions: { gap: 10 },

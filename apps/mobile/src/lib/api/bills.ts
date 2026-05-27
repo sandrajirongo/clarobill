@@ -51,3 +51,27 @@ export async function putBillFile(params: {
     );
   }
 }
+
+/**
+ * Step 3 of bill upload: kick off the analysis pipeline.
+ *
+ * Fire-and-forget on the server side — the engine processes asynchronously
+ * and updates `bills.status` as it progresses ('uploading' → 'analyzing'
+ * → 'complete' or 'error'). The mobile UI polls `getBill()` to track.
+ *
+ * Optional `state` + `county` adjust Medicare GPCI locality benchmarks.
+ * Mobile defaults to national rates by omitting both — the bill verification
+ * screen (future step) will collect this when the user confirms the bill.
+ */
+export async function triggerAnalysis(
+  billId: string,
+  options: { state?: string; county?: string } = {},
+): Promise<{ accepted?: boolean } | unknown> {
+  return apiFetch(`/api/bills/${billId}/analyze`, {
+    method: 'POST',
+    body: {
+      state: options.state ?? null,
+      county: options.county ?? null,
+    },
+  });
+}
