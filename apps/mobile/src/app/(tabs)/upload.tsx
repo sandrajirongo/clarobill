@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import PdfThumbnail from 'react-native-pdf-thumbnail';
@@ -57,7 +57,13 @@ type SubmissionResult = {
   analysisError: string | null;
 };
 
+// iOS 26 Liquid Glass floating tab bar is ~88pt tall and doesn't auto-inset
+// content. Add this on top of safe-area bottom so the last button always
+// clears the bar comfortably (44pt min tap + margin).
+const TAB_BAR_CLEARANCE = 100;
+
 export default function UploadScreen() {
+  const insets = useSafeAreaInsets();
   const [picked, setPicked] = useState<PickedFile | null>(null);
   const [isPicking, setIsPicking] = useState(false);
   const [step, setStep] = useState<UploadStep>(null);
@@ -246,8 +252,13 @@ export default function UploadScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollFlex}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE },
+        ]}
         showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
       >
         <View style={styles.brandRow}>
           <BrandLogo size="md" />
@@ -358,7 +369,7 @@ function PickedFilePreview({
     step === 'uploading' ? 'UPLOADING…' :
     step === 'analyzing' ? 'ANALYZING…' :
     submission && !analysisDeferred ? 'SUBMITTED FOR ANALYSIS' :
-    submission && analysisDeferred ? 'SAVED — ANALYSIS PENDING' :
+    submission && analysisDeferred ? 'SAVED. ANALYSIS PENDING.' :
     'READY TO UPLOAD';
 
   return (
@@ -400,8 +411,8 @@ function PickedFilePreview({
           {analysisDeferred ? (
             <Text style={styles.statusHintWarn}>
               Your bill is saved. We couldn&rsquo;t start the analysis right
-              now (the service is temporarily unavailable). It will retry
-              automatically — no need to upload again.
+              now because the service is temporarily unavailable. It will
+              retry automatically. No need to upload again.
             </Text>
           ) : (
             <Text style={styles.statusHint}>
@@ -456,7 +467,9 @@ function PickedFilePreview({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F4F2EC' },
-  scroll: { paddingHorizontal: 24, paddingBottom: 32 },
+  scrollFlex: { flex: 1 },
+  // paddingBottom is overridden inline with insets.bottom + TAB_BAR_CLEARANCE.
+  scroll: { paddingHorizontal: 24, paddingTop: 0 },
   brandRow: { alignItems: 'center', paddingVertical: 16, marginBottom: 24 },
   body: { width: '100%', maxWidth: 420, alignSelf: 'center' },
   heading: {
