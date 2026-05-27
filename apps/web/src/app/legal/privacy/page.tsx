@@ -14,7 +14,7 @@ const ORG_SCHEMA = {
   '@type': 'Organization' as const,
   name: 'ClaroBill',
   url: 'https://www.clarobill.com',
-  description: 'AI-powered medical bill error finder.',
+  description: 'A line-by-line medical bill audit.',
 };
 
 export default function PrivacyPolicyPage(): JSX.Element {

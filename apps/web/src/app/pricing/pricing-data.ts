@@ -49,7 +49,7 @@ export const HOW_STEPS = [
   {
     num: '1',
     title: 'We analyze your bill first',
-    body: 'Upload your medical bill or EOB. Our AI runs a deep audit across every line item to find errors and overcharges. No payment required.',
+    body: 'Upload your medical bill or EOB. We audit every line item to surface errors and overcharges. No payment required.',
   },
   {
     num: '2',

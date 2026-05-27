@@ -157,7 +157,7 @@ export default async function OgImage(): Promise<ImageResponse> {
             marginBottom: 36,
           }}
         >
-          AI-powered analysis finds overcharges, duplicate charges, and coding mistakes in minutes.
+          A line-by-line audit identifies overcharges, duplicate charges, and coding mistakes in minutes.
         </div>
 
         {/* CTA pill — lime background, sage-dark text, Syne 700. Wrapper row

@@ -9,7 +9,7 @@ import { SocialsRow } from '@/components/socials-row';
 
 export const metadata: Metadata = {
   title: 'ClaroBill: Find Errors in Your Medical Bill',
-  description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+  description: 'A line-by-line medical bill audit. Surface overcharges, duplicate charges, and billing errors in minutes.',
   alternates: {
     canonical: 'https://www.clarobill.com',
     languages: { 'en': 'https://www.clarobill.com', 'x-default': 'https://www.clarobill.com' },
@@ -39,12 +39,12 @@ export default function LandingPage(): JSX.Element {
       {/* HERO */}
       <section className={s.hero}>
         <div className={s.heroInner}>
-          <div className={s.heroEyebrow}>AI Medical Bill Review</div>
+          <div className={s.heroEyebrow}>Medical Bill Audit</div>
           <h1 className={s.heroH1}>
             Medical bills are <em>wrong</em>{' '}80% of the time
           </h1>
           <p className={s.heroSub}>
-            ClaroBill uses AI to find duplicate charges, upcoding errors, and billing
+            ClaroBill detects duplicate charges, upcoding errors, and billing
             violations. Then it gives you the exact words to dispute them and save money.
           </p>
           <div className={s.heroCtaRow}>
@@ -131,8 +131,8 @@ export default function LandingPage(): JSX.Element {
             <div className={`${s.step} ${s.stepHiLime}`}>
               <div className={s.snum}>2</div>
               <div>
-                <div className={s.st}>ClaroBill AI reviews your bill</div>
-                <div className={s.sd}>Our AI runs a deep audit across every line item. It catches the errors humans miss.</div>
+                <div className={s.st}>ClaroBill audits your bill</div>
+                <div className={s.sd}>We audit every line of your bill to surface errors and overcharges. We catch what humans miss.</div>
               </div>
             </div>
             <div className={s.step}>

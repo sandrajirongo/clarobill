@@ -46,7 +46,7 @@ const ACCEPTED_FORMATS = [
 
 const TRUST_ITEMS = [
   'Encrypted in transit and at rest',
-  'Never used to train AI models',
+  'Never used to train any models',
   'Never sold to third parties',
   'Delete your data at any time',
 ];

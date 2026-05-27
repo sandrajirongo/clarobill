@@ -46,7 +46,7 @@ const ORGANIZATION_SCHEMA = {
   name: 'ClaroBill',
   url: 'https://www.clarobill.com',
   description:
-    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills to find overcharges, duplicate charges, and coding errors, then generates a dispute letter with a citation for every finding.',
+    'A line-by-line medical bill audit. ClaroBill detects overcharges, duplicate charges, and coding errors on hospital bills, then generates a dispute letter with a citation for every finding.',
   sameAs: [
     'https://www.instagram.com/clarobill/',
     'https://x.com/clarobillai',
@@ -68,10 +68,10 @@ const WEBSITE_SCHEMA = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'ClaroBill: Find Errors in Your Medical Bill',
-  description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+  description: 'A line-by-line medical bill audit. Surface overcharges, duplicate charges, and billing errors in minutes.',
   openGraph: {
     title: 'ClaroBill: Find Errors in Your Medical Bill',
-    description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+    description: 'A line-by-line medical bill audit. Surface overcharges, duplicate charges, and billing errors in minutes.',
     siteName: 'ClaroBill',
     type: 'website',
     url: SITE_URL,
@@ -87,7 +87,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'ClaroBill: Find Errors in Your Medical Bill',
-    description: 'AI-powered medical bill analysis. Find overcharges, duplicate charges, and billing errors in minutes.',
+    description: 'A line-by-line medical bill audit. Surface overcharges, duplicate charges, and billing errors in minutes.',
     images: ['/opengraph-image'],
   },
   ...(process.env.GOOGLE_SITE_VERIFICATION && {

@@ -14,7 +14,7 @@ const ORG_SCHEMA = {
   '@type': 'Organization' as const,
   name: 'ClaroBill',
   url: 'https://www.clarobill.com',
-  description: 'AI-powered medical bill error finder.',
+  description: 'A line-by-line medical bill audit.',
 };
 
 export default function DisclaimerPage(): JSX.Element {
@@ -76,7 +76,7 @@ export default function DisclaimerPage(): JSX.Element {
 
       <Section title="3. Analysis Accuracy">
         <p>
-          Clarobill uses automated rules and AI-assisted analysis to identify potential billing errors. While we
+          Clarobill uses automated rules and verified data sources to identify potential billing errors. While we
           strive for accuracy, our analysis:
         </p>
         <ul className="list-disc pl-6 mt-2 space-y-1 text-gray-700">

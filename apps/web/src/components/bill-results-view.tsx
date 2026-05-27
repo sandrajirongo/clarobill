@@ -226,7 +226,8 @@ export function BillResultsView(props: BillResultsViewProps): JSX.Element {
           />
         </div>
 
-        {/* AI Summary */}
+        {/* Plain-English summary generated for the user — comment named for
+            historical reasons; the UI label says "Summary". */}
         <div className={s.card}>
           <p className={s.cardLabel}>Summary</p>
           <p className={s.summaryText}>{analysis.aiSummary}</p>

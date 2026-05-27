@@ -18,7 +18,7 @@ const PRICING_SCHEMAS = [
     '@type': 'Product' as const,
     name: 'ClaroBill Medical Bill Analysis',
     description:
-      'AI-powered medical bill error detection and dispute letter generation. Free analysis on every bill. Pay a one-time flat fee only when errors worth disputing are found.',
+      'A line-by-line medical bill audit with dispute letter generation. Free analysis on every bill. Pay a one-time flat fee only when errors worth disputing are found.',
     url: 'https://www.clarobill.com/pricing',
     offers: [
       { '@type': 'Offer' as const, name: 'Clean Bill', price: '0', priceCurrency: 'USD', description: 'No billing errors found worth disputing. Free, always.' },
@@ -61,7 +61,7 @@ export default function PricingPage(): JSX.Element {
             Pay only when we find <em>real savings</em>
           </h1>
           <p className={s.heroSub}>
-            Every bill analysis is free to run. If our AI finds no errors worth disputing,
+            Every bill audit is free to run. If we find no errors worth disputing,
             you owe nothing. Simple, performance-based pricing aligned with your outcome.
           </p>
           <div className={s.heroGuarantee}>

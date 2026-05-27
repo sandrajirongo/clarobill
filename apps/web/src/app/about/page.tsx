@@ -7,7 +7,7 @@ import s from './about.module.css';
 import bs from '../blog/blog.module.css';
 
 export const metadata: Metadata = {
-  title: 'About ClaroBill: AI Medical Bill Error Finder',
+  title: 'About ClaroBill: Medical Bill Audit',
   description:
     'ClaroBill was built to fix a broken system. Learn about our mission, how we analyze medical bills, and what makes our approach different.',
   alternates: {
@@ -33,7 +33,7 @@ const ORG_SCHEMA = {
   name: 'ClaroBill',
   url: 'https://www.clarobill.com',
   description:
-    'AI-powered medical bill error finder. ClaroBill analyzes hospital bills to find overcharges, duplicate charges, and coding errors, then generates a dispute letter with a citation for every finding.',
+    'A line-by-line medical bill audit. ClaroBill detects overcharges, duplicate charges, and coding errors on hospital bills, then generates a dispute letter with a citation for every finding.',
   sameAs: [
     'https://www.instagram.com/clarobill/',
     'https://x.com/clarobillai',
