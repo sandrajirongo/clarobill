@@ -17,7 +17,9 @@ import PdfThumbnail from 'react-native-pdf-thumbnail';
 
 import { BrandLogo } from '@/components/brand-logo';
 import { initBillUpload, putBillFile, triggerAnalysis } from '@/lib/api/bills';
+import { useBillStatus } from '@/lib/api/use-bill-status';
 import { ApiError } from '@/lib/api/client';
+import type { BillStatus } from '@clarobill/shared';
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB — matches /api/bills/upload server-side limit
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -68,6 +70,11 @@ export default function UploadScreen() {
   const [isPicking, setIsPicking] = useState(false);
   const [step, setStep] = useState<UploadStep>(null);
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
+
+  // Poll the bill status once we have a billId. Stops automatically on
+  // 'complete' or 'failed'. Disabled before the file is submitted and after
+  // the user clears the screen.
+  const liveStatus = useBillStatus(submission?.billId ?? null);
 
   function validate(file: PickedFile): string | null {
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -281,6 +288,7 @@ export default function UploadScreen() {
               onUpload={handleUpload}
               step={step}
               submission={submission}
+              liveStatus={liveStatus.status}
             />
           ) : (
             <View style={styles.actions}>
@@ -306,8 +314,8 @@ export default function UploadScreen() {
           )}
 
           <Text style={styles.note}>
-            Selected files upload to Supabase Storage via a signed URL. Analysis
-            kick-off + progress polling land in checkpoint 4d.
+            Selected files upload to Supabase Storage via a signed URL. Status
+            updates automatically while analysis runs in the background.
           </Text>
         </View>
       </ScrollView>
@@ -345,18 +353,45 @@ function ActionButton({
   );
 }
 
+function liveStatusEyebrow(status: BillStatus): string {
+  switch (status) {
+    case 'uploading': return 'WAITING TO START…';
+    case 'ocr_processing': return 'READING YOUR BILL…';
+    case 'analyzing': return 'ANALYZING…';
+    case 'complete': return 'ANALYSIS COMPLETE';
+    case 'failed': return 'ANALYSIS FAILED';
+  }
+}
+
+function liveStatusHint(status: BillStatus): string {
+  switch (status) {
+    case 'uploading':
+      return 'Your bill is in line. Analysis usually starts within a few seconds.';
+    case 'ocr_processing':
+      return 'We are reading every line on your bill.';
+    case 'analyzing':
+      return 'Checking each line for errors and overcharges.';
+    case 'complete':
+      return 'Your report is ready. Open it from the Home tab.';
+    case 'failed':
+      return 'Something went wrong with the analysis. Tap Upload another bill to try again.';
+  }
+}
+
 function PickedFilePreview({
   file,
   onClear,
   onUpload,
   step,
   submission,
+  liveStatus,
 }: {
   file: PickedFile;
   onClear: () => void;
   onUpload: () => void;
   step: UploadStep;
   submission: SubmissionResult | null;
+  liveStatus: BillStatus | null;
 }) {
   const sizeKb = file.size / 1024;
   const sizeStr =
@@ -368,6 +403,7 @@ function PickedFilePreview({
   const eyebrow =
     step === 'uploading' ? 'UPLOADING…' :
     step === 'analyzing' ? 'ANALYZING…' :
+    isSubmitted && liveStatus ? liveStatusEyebrow(liveStatus) :
     submission && !analysisDeferred ? 'SUBMITTED FOR ANALYSIS' :
     submission && analysisDeferred ? 'SAVED. ANALYSIS PENDING.' :
     'READY TO UPLOAD';
@@ -408,16 +444,21 @@ function PickedFilePreview({
           <Text style={styles.billIdMeta} selectable>
             Bill ID: {submission.billId}
           </Text>
-          {analysisDeferred ? (
+          {analysisDeferred && liveStatus === 'uploading' ? (
             <Text style={styles.statusHintWarn}>
               Your bill is saved. We couldn&rsquo;t start the analysis right
               now because the service is temporarily unavailable. It will
               retry automatically. No need to upload again.
             </Text>
+          ) : liveStatus ? (
+            <Text
+              style={liveStatus === 'failed' ? styles.statusHintWarn : styles.statusHint}
+            >
+              {liveStatusHint(liveStatus)}
+            </Text>
           ) : (
             <Text style={styles.statusHint}>
-              Analysis is running in the background. The bill will appear on
-              the Home tab when it&rsquo;s ready (status polling lands in 4e).
+              Checking analysis status…
             </Text>
           )}
         </>

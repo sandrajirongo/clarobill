@@ -1,4 +1,4 @@
-import type { BillUploadResponse } from '@clarobill/shared';
+import type { BillStatus, BillUploadResponse } from '@clarobill/shared';
 import { File, UploadType } from 'expo-file-system';
 import { apiFetch, ApiError } from './client';
 
@@ -74,4 +74,15 @@ export async function triggerAnalysis(
       county: options.county ?? null,
     },
   });
+}
+
+/**
+ * Lightweight status fetch for the polling loop. The web's `/api/bills/[id]`
+ * GET handler returns just `{id, status}` so this is cheap to call on a
+ * 3-second interval until the bill reaches a terminal state.
+ */
+export async function getBillStatus(
+  billId: string,
+): Promise<{ id: string; status: BillStatus }> {
+  return apiFetch(`/api/bills/${billId}`, { method: 'GET' });
 }
