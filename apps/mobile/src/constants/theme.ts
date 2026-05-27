@@ -7,20 +7,31 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+// ClaroBill brand palette. Sage + cream + ink — see docs/product/brand-guidelines.md.
+// Tabs, buttons, and accents all key off these tokens so the app stays consistent
+// across light and dark system themes.
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#1A1A14',           // ink — primary text
+    textSecondary: '#5A5A50',  // body
+    background: '#F4F2EC',     // cream — page bg
+    backgroundElement: '#ffffff', // white — card / input bg
+    backgroundSelected: '#2D4A2A', // sage — selected tab / pressed
+    accent: '#2D4A2A',         // sage — buttons, links, indicators
+    accentOn: '#ffffff',       // text/icon color on sage
+    border: '#E2DDD4',
+    muted: '#9A9A8E',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#F4F2EC',
+    textSecondary: '#B8B5AC',
+    background: '#1A1A14',
+    backgroundElement: '#2A2A22',
+    backgroundSelected: '#2D4A2A',
+    accent: '#C8F060',         // lime accent on dark
+    accentOn: '#1A1A14',
+    border: '#3A3A30',
+    muted: '#7A7A6E',
   },
 } as const;
 

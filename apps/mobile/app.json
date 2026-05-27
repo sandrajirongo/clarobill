@@ -14,7 +14,12 @@
         "tinted": "./assets/images/icon-tinted.png"
       },
       "bundleIdentifier": "com.clarobill.app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "ClaroBill uses the camera to photograph your medical bill so we can analyze it for errors and overcharges.",
+        "NSPhotoLibraryUsageDescription": "ClaroBill needs access to your photos so you can upload an image of your medical bill for analysis.",
+        "NSPhotoLibraryAddUsageDescription": "ClaroBill saves your dispute letter or report to your photos when you tap Save."
+      }
     },
     "android": {
       "package": "com.clarobill.app",
@@ -41,7 +46,14 @@
           "imageWidth": 96
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ClaroBill needs access to your photos so you can upload an image of your medical bill for analysis.",
+          "cameraPermission": "ClaroBill uses the camera to photograph your medical bill so we can analyze it for errors and overcharges."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

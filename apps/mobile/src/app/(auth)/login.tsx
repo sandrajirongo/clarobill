@@ -12,13 +12,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 
 import { BrandLogo } from '@/components/brand-logo';
 import { useAuth } from '@/lib/auth/context';
 
 export default function LoginScreen() {
   const { signInWithPassword } = useAuth();
+  const router = useRouter();
   const passwordRef = useRef<TextInput>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -147,21 +148,17 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            <Link
-              href="/magic-link"
-              asChild
-              accessibilityRole="link"
+            <Pressable
+              onPress={() => router.push('/magic-link')}
+              accessibilityRole="button"
               accessibilityLabel="Email me a sign-in code instead"
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.buttonPressed,
+              ]}
             >
-              <Pressable
-                style={({ pressed }) => [
-                  styles.secondaryButton,
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <Text style={styles.secondaryButtonText}>Email me a code instead</Text>
-              </Pressable>
-            </Link>
+              <Text style={styles.secondaryButtonText}>Email me a code instead</Text>
+            </Pressable>
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>New to ClaroBill?</Text>
