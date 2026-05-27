@@ -107,7 +107,12 @@ export async function middleware(request: NextRequest) {
     PUBLIC_EXACT.has(pathname) ||
     PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
-  if (!user && !isPublicRoute) {
+  // API routes do their own auth + return JSON 401 so non-browser clients
+  // (mobile app, service-to-service) can read the error code. Redirecting
+  // them to the HTML sign-in page would break Bearer-token flows.
+  const isApiRoute = pathname.startsWith('/api/');
+
+  if (!user && !isPublicRoute && !isApiRoute) {
     const signInUrl = request.nextUrl.clone();
     signInUrl.pathname = '/auth/sign-in';
     signInUrl.searchParams.set('redirect', pathname);
