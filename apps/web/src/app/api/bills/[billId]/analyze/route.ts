@@ -60,21 +60,49 @@ export async function POST(
 
   // Forward to Python engine — fire and forget (engine updates bill status async)
   const engineUrl = process.env.ENGINE_URL ?? 'http://localhost:8000';
-  const idToken = await getCloudRunIdToken(engineUrl);
-  const engineResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/analyze`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
-      ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
-    },
-    body: JSON.stringify({ bill_id: billId, file_path: bill.file_path, user_id: user.id, state, county }),
-  });
+
+  // Vercel → Cloud Run via Workload Identity Federation. If WIF env is
+  // misconfigured the helper throws; match the verify route's pattern and
+  // continue without an auth header so the engine can reject with a clear
+  // 401/403 instead of bubbling a generic 500 up to clients.
+  let idToken: string | null = null;
+  try {
+    idToken = await getCloudRunIdToken(engineUrl);
+  } catch (e) {
+    console.error('[analyze] getCloudRunIdToken failed', { billId, error: e instanceof Error ? e.message : e });
+  }
+
+  let engineResponse: Response;
+  try {
+    engineResponse = await fetch(`${engineUrl}/api/v1/bills/${billId}/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+        ...(process.env.ENGINE_API_KEY ? { 'X-Engine-Api-Key': process.env.ENGINE_API_KEY } : {}),
+      },
+      body: JSON.stringify({ bill_id: billId, file_path: bill.file_path, user_id: user.id, state, county }),
+    });
+  } catch (e) {
+    // Network-level failure (engine unreachable, DNS failure, etc.). Return a
+    // structured 502 so the mobile/web client can surface a useful message
+    // instead of "500 internal server error".
+    console.error('[analyze] Engine fetch failed', { billId, error: e instanceof Error ? e.message : e });
+    return NextResponse.json(
+      { error: { code: 'ANALYSIS_FAILED', detail: 'Analysis service unreachable. Please try again.', step: 'engine_fetch' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { status: 502 }
+    );
+  }
 
   if (!engineResponse.ok) {
-    console.error('[analyze] Engine rejected analysis request', { billId, status: engineResponse.status });
+    const engineBody = await engineResponse.text().catch(() => '');
+    console.error('[analyze] Engine rejected analysis request', {
+      billId,
+      status: engineResponse.status,
+      body: engineBody.slice(0, 500),
+    });
     return NextResponse.json(
-      { error: { code: 'ANALYSIS_FAILED', detail: 'Analysis service unavailable. Please try again.', step: 'engine_dispatch' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
+      { error: { code: 'ANALYSIS_FAILED', detail: `Analysis service rejected the request (${engineResponse.status}). Please try again.`, step: 'engine_dispatch' }, requestId: crypto.randomUUID() } satisfies ApiErrorResponse,
       { status: 502 }
     );
   }
