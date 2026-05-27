@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Platform,
@@ -15,6 +16,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import PdfThumbnail from 'react-native-pdf-thumbnail';
 
 import { BrandLogo } from '@/components/brand-logo';
+import { initBillUpload, putBillFile } from '@/lib/api/bills';
+import { ApiError } from '@/lib/api/client';
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB — matches /api/bills/upload server-side limit
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -49,6 +52,8 @@ function resolveImageMime(
 export default function UploadScreen() {
   const [picked, setPicked] = useState<PickedFile | null>(null);
   const [isPicking, setIsPicking] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedBillId, setUploadedBillId] = useState<string | null>(null);
 
   function validate(file: PickedFile): string | null {
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -183,6 +188,30 @@ export default function UploadScreen() {
 
   function handleClear() {
     setPicked(null);
+    setUploadedBillId(null);
+  }
+
+  async function handleUpload() {
+    if (!picked) return;
+    setIsUploading(true);
+    try {
+      const { billId, uploadUrl } = await initBillUpload({
+        fileName: picked.name,
+        fileSize: picked.size,
+        mimeType: picked.mimeType as 'application/pdf' | 'image/jpeg' | 'image/png',
+      });
+      await putBillFile({
+        uploadUrl,
+        fileUri: picked.uri,
+        mimeType: picked.mimeType,
+      });
+      setUploadedBillId(billId);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.detail : e instanceof Error ? e.message : String(e);
+      Alert.alert('Upload failed', msg);
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -206,7 +235,13 @@ export default function UploadScreen() {
           </Text>
 
           {picked ? (
-            <PickedFilePreview file={picked} onClear={handleClear} />
+            <PickedFilePreview
+              file={picked}
+              onClear={handleClear}
+              onUpload={handleUpload}
+              isUploading={isUploading}
+              uploadedBillId={uploadedBillId}
+            />
           ) : (
             <View style={styles.actions}>
               <ActionButton
@@ -231,8 +266,8 @@ export default function UploadScreen() {
           )}
 
           <Text style={styles.note}>
-            Upload to ClaroBill is wired in checkpoint 4c. Today's build verifies
-            file selection from camera, library, and Files works end-to-end.
+            Selected files upload to Supabase Storage via a signed URL. Analysis
+            kick-off + progress polling land in checkpoint 4d.
           </Text>
         </View>
       </ScrollView>
@@ -270,14 +305,29 @@ function ActionButton({
   );
 }
 
-function PickedFilePreview({ file, onClear }: { file: PickedFile; onClear: () => void }) {
+function PickedFilePreview({
+  file,
+  onClear,
+  onUpload,
+  isUploading,
+  uploadedBillId,
+}: {
+  file: PickedFile;
+  onClear: () => void;
+  onUpload: () => void;
+  isUploading: boolean;
+  uploadedBillId: string | null;
+}) {
   const sizeKb = file.size / 1024;
   const sizeStr =
     sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb.toFixed(0)} KB`;
+  const isUploaded = Boolean(uploadedBillId);
 
   return (
     <View style={styles.preview}>
-      <Text style={styles.previewEyebrow}>READY TO UPLOAD</Text>
+      <Text style={styles.previewEyebrow}>
+        {isUploaded ? 'UPLOADED' : isUploading ? 'UPLOADING…' : 'READY TO UPLOAD'}
+      </Text>
 
       {file.isImage ? (
         <Image
@@ -306,25 +356,49 @@ function PickedFilePreview({ file, onClear }: { file: PickedFile; onClear: () =>
         {file.mimeType} · {sizeStr}
       </Text>
 
+      {isUploaded && uploadedBillId ? (
+        <Text style={styles.billIdMeta} selectable>
+          Bill ID: {uploadedBillId}
+        </Text>
+      ) : null}
+
       <View style={styles.previewActions}>
         <Pressable
           onPress={onClear}
+          disabled={isUploading}
           accessibilityRole="button"
-          accessibilityLabel="Choose a different file"
-          style={({ pressed }) => [styles.secondaryBtn, pressed && styles.actionBtnPressed]}
+          accessibilityLabel={isUploaded ? 'Upload another bill' : 'Choose a different file'}
+          style={({ pressed }) => [
+            styles.secondaryBtn,
+            pressed && styles.actionBtnPressed,
+            isUploading && styles.actionBtnDisabled,
+          ]}
         >
-          <Text style={styles.secondaryBtnText}>Choose a different file</Text>
+          <Text style={styles.secondaryBtnText}>
+            {isUploaded ? 'Upload another bill' : 'Choose a different file'}
+          </Text>
         </Pressable>
 
-        <Pressable
-          disabled
-          accessibilityRole="button"
-          accessibilityLabel="Upload bill — wiring lands in 4c"
-          accessibilityState={{ disabled: true }}
-          style={[styles.actionBtn, styles.actionBtnDisabled]}
-        >
-          <Text style={styles.actionBtnText}>Upload bill (4c)</Text>
-        </Pressable>
+        {!isUploaded ? (
+          <Pressable
+            onPress={onUpload}
+            disabled={isUploading}
+            accessibilityRole="button"
+            accessibilityLabel="Upload bill"
+            accessibilityState={{ disabled: isUploading, busy: isUploading }}
+            style={({ pressed }) => [
+              styles.actionBtn,
+              pressed && styles.actionBtnPressed,
+              isUploading && styles.actionBtnDisabled,
+            ]}
+          >
+            {isUploading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.actionBtnText}>Upload bill</Text>
+            )}
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -416,6 +490,12 @@ const styles = StyleSheet.create({
   previewMeta: {
     fontSize: 13,
     color: '#9A9A8E',
+    marginBottom: 8,
+  },
+  billIdMeta: {
+    fontSize: 12,
+    color: '#2D4A2A',
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
     marginBottom: 16,
   },
   previewActions: { gap: 10 },
